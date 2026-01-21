@@ -1,0 +1,1711 @@
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be0ae-b7d6-7933-98bb-8adb12f7f8c3
+--------
+user
+# JUDGE AGENT (3-phase harness)
+
+You are the JUDGE in a Planner→Worker→Judge pipeline.
+Your job: evaluate the Worker’s changes against the acceptance criteria and quality bar.
+Then decide: PASS / NEEDS_WORK / BLOCKED, update durable state, and steer the next cycle.
+
+Non-interactive run (`codex exec`): do not ask questions.
+
+## Stop conditions
+- If `.agent/STOP` exists: append “STOP seen” to `.agent/progress.md` and exit.
+- If `.agent/DONE` exists: append “DONE seen” to `.agent/progress.md` and exit.
+
+## Inputs you MUST read
+- `.agent/PROJECT.md` (authoritative)
+- `AGENTS.md`
+- `docs/spec.md`
+- `.agent/plan.md`
+- `.agent/worker_report.md`
+- `.agent/queue.md`
+- `.agent/progress.md`
+- `.agent/state.md`
+- `.agent/BLOCKED.md` (if present)
+- relevant `.agent/logs/*` for this iteration (if present)
+
+## What you are allowed to change
+- `.agent/**` (including queue, state, judge feedback)
+- `docs/**` (only if needed for correctness)
+Optionally: you MAY commit if AUTO_COMMIT=yes and the change passes.
+Avoid editing product/source code; your role is evaluation and steering.
+
+## Required checks (do these)
+1) Inspect repo state:
+   - `git status --porcelain` (if git exists)
+   - `git diff` (skim for scope creep, hacks, missing tests, secrets)
+2) Re-run TEST_CMD yourself (preferred). If it is clearly too slow, rely on worker logs but SAY SO.
+3) Compare outcome to the acceptance criteria in `.agent/plan.md`.
+
+## Verdict logic
+- PASS:
+  - Tests pass
+  - Acceptance criteria met
+  - No obvious regressions / unacceptable hacks
+  - No secrets in logs or UI
+- NEEDS_WORK:
+  - Close but failing tests, missing acceptance criteria, incorrect behavior, poor UX, missing docs/tests
+- BLOCKED:
+  - Cannot proceed without human input, missing credentials, ambiguous spec, environment broken, etc.
+
+## State updates (MUST do)
+Update `.agent/state.md` with:
+- last_task_id
+- last_verdict (PASS/NEEDS_WORK/BLOCKED)
+- consecutive_failures (increment if not PASS; reset to 0 on PASS)
+
+Update `.agent/queue.md`:
+- On PASS: move the task to Done (checked)
+- On NEEDS_WORK: keep task unchecked; optionally add a “Fix …” subtask at top of Now
+- On BLOCKED:
+  - keep task unchecked
+  - ensure `.agent/BLOCKED.md` exists
+  - create `.agent/STOP` so the outer loop halts
+
+Write `.agent/judge_feedback.md`:
+- On PASS: write “PASS” + brief notes (or minimal “no issues”)
+- On NEEDS_WORK: write a very actionable checklist for the next Worker attempt
+- On BLOCKED: write exactly what is needed from a human
+
+Append a JUDGE entry to `.agent/progress.md`:
+- timestamp
+- CODEX_ITERATION
+- verdict + why
+- test results (your rerun or what you relied on)
+
+If queue has no unchecked tasks left: create `.agent/DONE`.
+
+## Optional auto-commit
+If AUTO_COMMIT=yes and verdict=PASS and git repo exists:
+- make a single commit: "<task id>: <title>"
+If git is not configured or commit fails, just log it and move on.
+
+## Output
+Print a short summary (10–20 lines):
+- verdict
+- tests status
+- queue next task
+- where to look (judge_feedback, progress)
+
+mcp startup: no servers
+
+thinking
+**Setting up controlled file reading**
+
+I'm preparing commands to read files within the repo safely while monitoring for STOP or DONE signals early in the process.
+exec
+/bin/zsh -lc ls in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Checking agent stop files**
+exec
+/bin/zsh -lc 'ls .agent' in /Users/ivankhokhlov/code/mlx-ui succeeded in 89ms:
+BLOCKED.md
+PROJECT.md
+judge.md
+judge_feedback.md
+last_judge.txt
+last_planner.txt
+last_worker.txt
+logs
+plan.md
+planner.md
+progress.md
+queue.md
+state.md
+worker.md
+worker_report.md
+
+thinking
+**Planning sequential file reads**
+
+I'll read multiple required agent files sequentially using shell commands like sed to keep output manageable and maintain context before proceeding with analysis.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/PROJECT.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 92ms:
+# PROJECT (single source of truth for the harness)
+
+PROJECT_NAME: "whisper-webui-mlx"
+REPO_KIND: "new repo"
+
+## Brief (1–2 paragraphs)
+Build a **local macOS app for Apple Silicon (M1+)** that exposes a **Web UI on localhost** to manage **offline transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX). https://github.com/JosefAlbers/whisper-turbo-mlx
+
+Turn the current console workflow (e.g. `wtm ... --any_lang=True`) into a tool that is easy to deploy on another M1+ Mac with **one command**, supports **batch uploads**, a **strictly sequential** processing queue (no parallelism), **job history + downloads**, optional **Telegram delivery of TXT results**, and (in the final phase) **live recording + chunked transcription**.
+
+## Primary stack
+Python 3.11+
+- Backend/Web: FastAPI + Uvicorn
+- Templates/UI: Jinja2 + minimal vanilla JS (no external CDNs; must work offline)
+- Storage: SQLite (jobs metadata) + local filesystem (uploads/results/logs)
+- Worker: a single sequential worker consuming a persistent queue
+- Transcription: subprocess call to `wtm` with explicit language selection
+
+## Commands (choose defaults if unknown)
+TEST_CMD: "make test"
+
+thinking
+**Inspecting AGENTS.md**
+
+I'm opening AGENTS.md to understand the agent framework details before proceeding further.
+exec
+/bin/zsh -lc "sed -n '1,200p' AGENTS.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 66ms:
+# AGENTS.md
+
+This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
+Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
+
+## Source of truth
+- `.agent/PROJECT.md` — high-level constraints and commands
+- `docs/spec.md` — product requirements
+- `.agent/queue.md` — backlog (Judge marks tasks done)
+
+## How to run
+- Tests: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
+- Run server: `make run`
+
+If Makefile does not exist yet, create it during bootstrap.
+
+## Safety / security rules
+- Never touch anything outside the repo root.
+
+thinking
+**Reviewing specification document**
+exec
+/bin/zsh -lc "sed -n '1,200p' docs/spec.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+# Spec — whisper-webui-mlx
+
+## Goal
+Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+
+The tool must be easy to deploy to another M1+ Mac (one command), and after the initial setup + model download it must work **fully offline**.
+
+## MVP: Batch file transcription via Web UI
+### UX
+- User opens Web UI (localhost).
+- User uploads **one or multiple files** (audio or video).
+- User selects the **language manually** (no auto-detect).
+- Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
+- UI has:
+  - Queue view: current job + pending jobs
+  - History view: completed jobs + access to results
+
+### Processing rules
+- One worker processes one job at a time (sequential).
+- Keep the ML model “warm” behavior in mind: avoid parallelism and avoid reinitialization churn.
+
+thinking
+**Reviewing agent plan documentation**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/plan.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 63ms:
+# Plan
+
+Task: WUI-040 — Telegram delivery
+Acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked
+
+Assumptions:
+- Telegram config is provided via environment variables and can be accessed from the worker process.
+- Each completed job has a deterministic `.txt` result path to attach.
+
+Implementation steps:
+1) Inspect the worker completion flow to find where result paths are available and where to hook delivery.
+2) Add a small config helper to read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, plus a masking helper for logs.
+3) Implement Telegram send helper with a short timeout; send a message plus the `.txt` file; catch and log failures without raising.
+4) Call the helper after successful transcription; skip if config missing or `.txt` is absent; ensure pipeline continues.
+5) Add tests with mocked HTTP calls to cover success, missing config (no call), and failure (no exception, masked logs).
+6) Update docs to note the env vars if not already documented.
+
+Files likely to touch:
+- `mlx_ui/worker.py`
+- `mlx_ui/transcriber.py` or `mlx_ui/app.py`
+
+thinking
+**Noting missing requirement**
+
+The worker_report is identified as needed, indicating the next step involves locating or implementing this component.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/worker_report.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 58ms:
+# Worker Report
+
+Task: WUI-040 — Telegram delivery
+
+What changed:
+- Added Telegram delivery helper with config parsing, masking, multipart send, and best-effort error handling.
+- Hooked the worker completion path to send the message and transcript after successful jobs.
+- Added Telegram delivery tests and documented env vars.
+
+Files changed:
+- mlx_ui/telegram.py
+- mlx_ui/worker.py
+- tests/test_telegram.py
+- docs/dev.md
+- docs/tree.md
+
+Commands run + result:
+- make test (pass)
+- make lint (pass)
+
+thinking
+**Listing required features**
+
+I identified that the implementation needs a queue, progress tracking, state management, and blocking logic.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/queue.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 64ms:
+# Queue
+
+## Now
+- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+
+## Next
+- [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+
+## Later
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Done
+- [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+- [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+
+thinking
+**Recognizing need for progress state**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/progress.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 76ms:
+# Progress Log (append-only)
+
+- 2026-01-21T09:49:08 — INIT — Harness files created. Next: run the 3-phase loop.
+- 2026-01-21T10:33:08Z — PLANNER — CODEX_ITERATION=1 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:37:23Z — WORKER — CODEX_ITERATION=1 — WUI-001 — tests: failed (pytest missing); lint: not run
+- 2026-01-21T10:39:53Z — JUDGE — CODEX_ITERATION=1 — NEEDS_WORK — make test failed (pytest missing in venv); tests: failed (make test)
+- 2026-01-21T10:42:24Z — PLANNER — CODEX_ITERATION=2 — selected WUI-001A (Fix pytest availability for `make test`). Queue updated (format fix for WUI-001A).
+- 2026-01-21T10:49:11Z — WORKER — CODEX_ITERATION=2 — WUI-001A — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:52:47Z — JUDGE — CODEX_ITERATION=2 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:56:28Z — PLANNER — CODEX_ITERATION=3 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:58:25Z — WORKER — CODEX_ITERATION=3 — WUI-001 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:01:51Z — JUDGE — CODEX_ITERATION=3 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:05:17Z — PLANNER — CODEX_ITERATION=4 — selected WUI-002 (Minimal WebUI shell). Queue unchanged.
+- 2026-01-21T11:11:48Z — WORKER — CODEX_ITERATION=4 — WUI-002 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:16:13Z — JUDGE — CODEX_ITERATION=4 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:23:27Z — PLANNER — CODEX_ITERATION=5 — selected WUI-010 (Upload endpoint + local storage). Queue updated (moved WUI-010 to Now).
+- 2026-01-21T11:33:16Z — WORKER — CODEX_ITERATION=5 — WUI-010 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:37:21Z — JUDGE — CODEX_ITERATION=5 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
+- 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
+
+thinking
+**Identifying missing state management**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/state.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 88ms:
+last_task_id: WUI-030
+last_verdict: PASS
+consecutive_failures: 0
+
+thinking
+**Noting need for blocked file**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/BLOCKED.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 59ms:
+# BLOCKED (resolved)
+
+- Resolved: WUI-001 no longer blocked; tests and lint now pass.
+- Previous issue: `make test` failed because pytest was missing in the environment.
+- Previous error: `/Users/ivankhokhlov/code/mlx-ui/.venv/bin/python: No module named pytest`
+
+thinking
+**Checking existing logs**
+
+I'm listing files in the `.agent/logs` directory to see what relevant logs are available for troubleshooting or insight.
+exec
+/bin/zsh -lc 'ls .agent/logs' in /Users/ivankhokhlov/code/mlx-ui succeeded in 107ms:
+judge_1.err
+judge_1.out
+judge_10.err
+judge_10.out
+judge_11.err
+judge_11.out
+judge_2.err
+judge_2.out
+judge_3.err
+judge_3.out
+judge_4.err
+judge_4.out
+judge_5.err
+judge_5.out
+judge_6.err
+judge_6.out
+judge_7.err
+judge_7.out
+judge_8.err
+judge_8.out
+
+thinking
+**Planning log review for iteration 11**
+
+I’m focusing on reading test_11.log, lint_11.log, and possibly worker_11.out or .err to gather relevant logs for iteration 11. I’ll start by sampling these files to assess their usefulness.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/logs/test_11.log" in /Users/ivankhokhlov/code/mlx-ui succeeded in 61ms:
+poetry run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ivankhokhlov/code/mlx-ui
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 9 items
+
+tests/test_app.py ....                                                   [ 44%]
+tests/test_telegram.py ...                                               [ 77%]
+tests/test_transcriber.py .                                              [ 88%]
+tests/test_worker.py .                                                   [100%]
+
+=============================== warnings summary ===============================
+mlx_ui/app.py:25
+  /Users/ivankhokhlov/code/mlx-ui/mlx_ui/app.py:25: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+thinking
+**Reviewing lint results**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/logs/lint_11.log" in /Users/ivankhokhlov/code/mlx-ui succeeded in 56ms:
+poetry run ruff check .
+All checks passed!
+
+thinking
+**Checking repository state**
+exec
+/bin/zsh -lc 'git status --porcelain' in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+ M .agent/last_judge.txt
+ M .agent/last_planner.txt
+ M .agent/last_worker.txt
+ M .agent/logs/judge_10.err
+ M .agent/logs/judge_10.out
+ M .agent/logs/judge_9.err
+ M .agent/logs/judge_9.out
+ M .agent/plan.md
+ M .agent/progress.md
+ M .agent/queue.md
+ M .agent/worker_report.md
+ M docs/dev.md
+ M docs/tree.md
+ M mlx_ui/worker.py
+?? .agent/logs/judge_11.err
+?? .agent/logs/judge_11.out
+?? .agent/logs/lint_11.log
+?? .agent/logs/planner_11.err
+?? .agent/logs/planner_11.out
+?? .agent/logs/test_11.log
+
+thinking
+**Preparing to review code changes**
+exec
+/bin/zsh -lc 'git diff' in /Users/ivankhokhlov/code/mlx-ui succeeded in 106ms:
+diff --git a/.agent/last_judge.txt b/.agent/last_judge.txt
+index 246aa85..eb4107c 100644
+--- a/.agent/last_judge.txt
++++ b/.agent/last_judge.txt
+@@ -1,12 +1,18 @@
+ **Verdict**
+-- PASS for WUI-030; acceptance met (one-command script installs deps, downloads model, starts server, opens browser).
+-- Tests: `make test` passed (rerun by judge).
+-- Lint: `make lint` passed (rerun by judge).
+-- Queue: WUI-030 moved to Done; next task is WUI-040 — Telegram delivery.
+-- Commit: `WUI-030: One-command setup & run on M1+ macOS`.
+-
+-**Notes**
+-- Feedback: `.agent/judge_feedback.md`.
+-- Progress: `.agent/progress.md`.
+-- State: `.agent/state.md`.
+-- Repo status: untracked `data/` and updated `.agent/logs/`.
++- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
++
++**Tests**
+
+thinking
+**Checking new telegram file**
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/telegram.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 58ms:
+from dataclasses import dataclass
+import logging
+import mimetypes
+import os
+from pathlib import Path
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+from mlx_ui.db import JobRecord
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TIMEOUT = 10.0
+
+
+@dataclass(frozen=True)
+class TelegramConfig:
+    token: str
+
+thinking
+**Preparing to add tests**
+exec
+/bin/zsh -lc "sed -n '1,200p' tests/test_telegram.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 89ms:
+import logging
+from pathlib import Path
+import urllib.error
+import urllib.request
+
+from mlx_ui.db import JobRecord
+from mlx_ui.telegram import maybe_send_telegram, mask_secret
+
+
+class DummyResponse:
+    def __init__(self, status: int = 200, body: bytes | None = None) -> None:
+        self._status = status
+        self._body = body or b"ok"
+
+    def read(self) -> bytes:
+        return self._body
+
+    def getcode(self) -> int:
+        return self._status
+
+
+thinking
+**Checking transcriber for result path handling**
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/transcriber.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 82ms:
+import logging
+import os
+from pathlib import Path
+import subprocess
+from typing import Protocol
+
+from mlx_ui.db import JobRecord
+
+logger = logging.getLogger(__name__)
+
+
+class Transcriber(Protocol):
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        raise NotImplementedError
+
+
+class FakeTranscriber:
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        results_dir = Path(results_dir)
+        job_dir = results_dir / job.id
+
+thinking
+**Running tests after path refactor**
+
+Planning to run `make test` to verify changes after updating the transcriber to return Path objects and the worker's use of the result path, ensuring no regressions.
+exec
+/bin/zsh -lc 'make test' in /Users/ivankhokhlov/code/mlx-ui succeeded in 999ms:
+poetry run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ivankhokhlov/code/mlx-ui
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 9 items
+
+tests/test_app.py ....                                                   [ 44%]
+tests/test_telegram.py ...                                               [ 77%]
+tests/test_transcriber.py .                                              [ 88%]
+tests/test_worker.py .                                                   [100%]
+
+=============================== warnings summary ===============================
+mlx_ui/app.py:25
+  /Users/ivankhokhlov/code/mlx-ui/mlx_ui/app.py:25: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+
+thinking
+**Evaluating worker changes and transcribe return type**
+
+I'm verifying that the worker correctly returns result_path and updating the transcribe function to return a Path instead of None, then checking other code relying on transcribe to prevent regressions.
+exec
+/bin/zsh -lc "rg \"transcribe\\(\" -n mlx_ui tests" in /Users/ivankhokhlov/code/mlx-ui succeeded in 94ms:
+mlx_ui/transcriber.py:13:    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+mlx_ui/transcriber.py:18:    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+mlx_ui/transcriber.py:37:    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+mlx_ui/worker.py:63:            result_path = self.transcriber.transcribe(job, self.results_dir)
+tests/test_transcriber.py:38:    result_path = transcriber.transcribe(job, results_dir)
+tests/test_worker.py:17:    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+
+thinking
+**Checking test updates**
+
+I need to verify if tests/test_worker requires updates to handle transcribe returning a Path instead of a string.
+exec
+/bin/zsh -lc "sed -n '1,200p' tests/test_worker.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 87ms:
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import threading
+import time
+
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.worker import start_worker, stop_worker
+
+
+class RecordingTranscriber:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._active = False
+        self.concurrent_detected = False
+        self.seen: list[str] = []
+
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        with self._lock:
+            if self._active:
+                self.concurrent_detected = True
+
+
+thinking
+**Verifying message send and job status update**
+
+The worker reliably updates job status to done even if sending the Telegram message fails, as the send function internally catches errors without raising. The message send expects the transcription result_path to be a file, which aligns with the WtmTranscriber but includes a safety check to log and skip if not a file.
+thinking
+**Confirming error masking and graceful failure handling**
+
+Logs properly mask tokens in network errors and warnings, and exceptions in sending Telegram messages are caught and logged without raising, ensuring pipeline stability. The code verifies result_path is a file before sending, handles missing config silently, and documents reflect updates; overall, failures don't break the pipeline and secrets remain protected.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/worker.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 84ms:
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+import threading
+
+from mlx_ui.db import claim_next_job, update_job_status
+from mlx_ui.telegram import maybe_send_telegram
+from mlx_ui.transcriber import Transcriber, WtmTranscriber
+
+logger = logging.getLogger(__name__)
+
+_worker_lock = threading.Lock()
+_worker_instance: Worker | None = None
+
+
+class Worker:
+    def __init__(
+        self,
+        db_path: Path,
+
+thinking
+**Checking language property in job record**
+
+Noticed a possible issue with the transcriber returning a Path while WtmTranscriber uses a job.language attribute; I'll verify if the job record in the database actually includes this language property.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/db.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 67ms:
+from dataclasses import dataclass
+from pathlib import Path
+import sqlite3
+
+
+@dataclass
+class JobRecord:
+    id: str
+    filename: str
+    status: str
+    created_at: str
+    upload_path: str
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+
+
+thinking
+**Reviewing token masking and test coverage**
+
+I confirmed token masking safely replaces secrets without logging raw tokens and tests verify masking properly; environment variables control message and doc sending, both covered in tests without real ML calls or parallelism. Next, I'll check usage of the updated transcriber protocol returning Path to ensure no regressions.
+thinking
+**Confirming acceptance criteria met and preparing state updates**
+
+I verified Telegram sending is optional, non-blocking on failure, and secrets are properly masked in logs; no regressions from protocol changes or docs. All acceptance conditions are met, so I'll update agent state, queue, judge feedback, and progress files accordingly for a PASS verdict.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/judge_feedback.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 71ms:
+PASS
+
+Notes:
+- `make test` passed (rerun).
+- `make lint` passed (rerun).
+- Acceptance criteria met for WUI-030.
+
+thinking
+**Planning agent state and progress updates**
+
+I'm preparing to update agent files for state, queue, judge_feedback, and progress with the latest iteration and timestamp, keeping changes minimal and consistent.
+exec
+/bin/zsh -lc 'date -u "+%Y-%m-%dT%H:%M:%SZ"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 62ms:
+2026-01-21T13:15:41Z
+
+thinking
+**Planning multi-file patch application**
+
+I'll update multiple agent files in a single apply_patch call, carefully moving the item in the queue from Now to Done and appending judge entries, ensuring ordering and grammar are correct.
+exec
+/bin/zsh -lc "sed -n '1,120p' .agent/queue.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 57ms:
+# Queue
+
+## Now
+- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+
+## Next
+- [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+
+## Later
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Done
+- [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+- [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+
+
+thinking
+**Updating task status and progress log**
+
+I'm setting the last task to done with a PASS verdict and zero failures, updating judge feedback with minimal notes, and appending a new progress line noting tests rerun and passed while lint was not rerun but passed per the worker.
+thinking
+**Finalizing feedback and test/lint status**
+
+I'll format the progress entry using consistent phrasing: "tests: passed (make test); lint: not rerun (worker reported pass)" and proceed to update the judge feedback accordingly.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/queue.md
+@@ -3,3 +3,2 @@
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+@@ -12,2 +11,3 @@
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+apply_patch(auto_approved=true) exited 0 in 19ms:
+Success. Updated the following files:
+M .agent/queue.md
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+
+thinking
+**Applying unified patch to agent files**
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/state.md
+@@ -1,2 +1,2 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/judge_feedback.md
+@@ -4,3 +4,2 @@
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/progress.md
+@@ -35 +35,2 @@
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+apply_patch(auto_approved=true) exited 0 in 40ms:
+Success. Updated the following files:
+M .agent/state.md
+M .agent/judge_feedback.md
+M .agent/progress.md
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+thinking
+**Verifying agent state and git status**
+
+I'm confirming that .agent/state was updated correctly while .agent/BLOCKED.md remains unchanged, and I'll check git status to verify modifications and any new logs after tests.
+exec
+/bin/zsh -lc 'git status --porcelain' in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+ M .agent/judge_feedback.md
+ M .agent/last_judge.txt
+ M .agent/last_planner.txt
+ M .agent/last_worker.txt
+ M .agent/logs/judge_10.err
+ M .agent/logs/judge_10.out
+ M .agent/logs/judge_9.err
+ M .agent/logs/judge_9.out
+ M .agent/plan.md
+ M .agent/progress.md
+ M .agent/queue.md
+ M .agent/state.md
+ M .agent/worker_report.md
+ M docs/dev.md
+ M docs/tree.md
+ M mlx_ui/worker.py
+?? .agent/logs/judge_11.err
+?? .agent/logs/judge_11.out
+?? .agent/logs/lint_11.log
+?? .agent/logs/planner_11.err
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+
+thinking
+**Evaluating which .agent files to commit**
+
+The .agent/plan and worker_report files have updates from the worker and should likely be included in the commit to reflect this iteration. The .agent/last_* files show changes from prior runs by the worker; I'll verify their content to decide if they need updating or can be left untouched.
+thinking
+**Considering updating last_judge summary**
+
+The last_judge file is modified but reflects an older iteration; I'll check its content to decide if updating it to the current iteration's summary (WUI-040) is needed for consistency, though it's not explicitly required.
+exec
+/bin/zsh -lc 'cat .agent/last_judge.txt' in /Users/ivankhokhlov/code/mlx-ui succeeded in 77ms:
+**Verdict**
+- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
+
+**Tests**
+- `make test` passed (rerun).
+- `make lint` passed (rerun).
+
+**Queue**
+- Next: WUI-040 — Telegram delivery.
+
+**Commit**
+- `WUI-030: One-command setup & run on M1+ macOS`.
+
+**Where To Look**
+- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+
+**Repo Status**
+- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+
+thinking
+**Considering updating last_judge state**
+
+The last_judge file in .agent is allowed to be updated and typically holds summary info; updating it to reflect this run would keep state consistent and avoid stale data, though it isn't explicitly required by instructions.
+thinking
+**Planning cautious updates to agent state**
+
+I'll update last_judge to reflect the current verdict and check if last_planner.txt and last_worker.txt also need updating, as they were modified in previous runs.
+exec
+/bin/zsh -lc 'cat .agent/last_planner.txt' in /Users/ivankhokhlov/code/mlx-ui succeeded in 56ms:
+Selected WUI-040 — Telegram delivery and prepared a concrete worker plan; updated the queue to bring it into Now and logged the selection.  
+Files updated: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.  
+Worker should follow `.agent/plan.md` to add Telegram delivery on successful jobs (masked secrets, best‑effort), add tests, and run `make test` + `make lint`.
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+thinking
+**Confirming iteration update for commit**
+exec
+/bin/zsh -lc 'cat .agent/last_worker.txt' in /Users/ivankhokhlov/code/mlx-ui succeeded in 64ms:
+Implemented best‑effort Telegram delivery using env-configured bot token/chat ID, sending a completion message plus the `.txt` transcript after successful jobs with masked-token logging, and wired it into the worker completion flow. Added focused Telegram tests and documented the env vars, with the repo tree updated for the new module/tests.
+
+Details:
+- Added Telegram helpers and masking in `mlx_ui/telegram.py`, and invoked delivery after transcription in `mlx_ui/worker.py`.
+- Added Telegram delivery tests in `tests/test_telegram.py` for success, missing config, and masked-log failures.
+- Documented optional Telegram env vars in `docs/dev.md` and updated `docs/tree.md`.
+
+Tests:
+- `make test` (pass)
+- `make lint` (pass)
+
+Logs/report:
+- `.agent/worker_report.md`
+- `.agent/logs/test_11.log`
+- `.agent/logs/lint_11.log`
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+
+thinking
+**Updating last judge state**
+
+Planning to update .agent/last_judge.txt to reflect the current verdict and run results for consistency, including test outcomes and next tasks. Also considering committing related modified files like .agent/plan and worker reports, while keeping untracked logs separate as done previously.
+thinking
+**Verifying existing judge logs**
+
+Checking untracked .agent/logs/judge_11.* files from previous runs to confirm their contents and ensure no sensitive data before deciding on including them in commits.
+exec
+/bin/zsh -lc "sed -n '1,120p' .agent/logs/judge_11.out" in /Users/ivankhokhlov/code/mlx-ui succeeded in 60ms:
+
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+exec
+/bin/zsh -lc "sed -n '1,120p' .agent/logs/judge_11.err" in /Users/ivankhokhlov/code/mlx-ui succeeded in 77ms:
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be0ae-b7d6-7933-98bb-8adb12f7f8c3
+--------
+user
+# JUDGE AGENT (3-phase harness)
+
+You are the JUDGE in a Planner→Worker→Judge pipeline.
+Your job: evaluate the Worker’s changes against the acceptance criteria and quality bar.
+Then decide: PASS / NEEDS_WORK / BLOCKED, update durable state, and steer the next cycle.
+
+Non-interactive run (`codex exec`): do not ask questions.
+
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+
+thinking
+**Planning judge log handling**
+
+Judge logs are large and may be updated after commit; earlier commits included them, so this iteration will likely include judge_11 logs at the end. I’ll verify logs contain no secrets and check docs/dev for conflicts with modifications.
+thinking
+**Preparing judge feedback update**
+
+The run passes with minor potential issues noted but no blockers; I'll update .agent/last_judge.txt with a detailed summary including verdict, tests, queue, and planned commit message aligned to task WUI-040 before committing changes.
+file update
+D /Users/ivankhokhlov/code/mlx-ui/./.agent/last_judge.txt
+**Verdict**
+- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
+
+**Tests**
+- `make test` passed (rerun).
+- `make lint` passed (rerun).
+
+**Queue**
+- Next: WUI-040 — Telegram delivery.
+
+**Commit**
+- `WUI-030: One-command setup & run on M1+ macOS`.
+
+**Where To Look**
+- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+
+**Repo Status**
+- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+apply_patch(auto_approved=true) exited 0 in 36ms:
+Success. Updated the following files:
+D .agent/last_judge.txt
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/last_judge.txt b/.agent/last_judge.txt
+deleted file mode 100644
+index eb4107ca1d436473303d662d0004e146e15cd506..0000000000000000000000000000000000000000
+--- a/.agent/last_judge.txt
++++ /dev/null
+@@ -1,18 +0,0 @@
+-**Verdict**
+-- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
+-
+-**Tests**
+-- `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-
+-**Queue**
+-- Next: WUI-040 — Telegram delivery.
+-
+-**Commit**
+-- `WUI-030: One-command setup & run on M1+ macOS`.
+-
+-**Where To Look**
+-- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+-
+-**Repo Status**
+-- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+\ No newline at end of file
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/last_judge.txt b/.agent/last_judge.txt
+deleted file mode 100644
+index eb4107ca1d436473303d662d0004e146e15cd506..0000000000000000000000000000000000000000
+--- a/.agent/last_judge.txt
++++ /dev/null
+@@ -1,18 +0,0 @@
+-**Verdict**
+-- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
+-
+-**Tests**
+-- `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-
+-**Queue**
+-- Next: WUI-040 — Telegram delivery.
+-
+-**Commit**
+-- `WUI-030: One-command setup & run on M1+ macOS`.
+-
+-**Where To Look**
+-- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+-
+-**Repo Status**
+-- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+\ No newline at end of file
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+thinking
+**Restoring deleted file with new content**
+file update
+A /Users/ivankhokhlov/code/mlx-ui/./.agent/last_judge.txt
+**Verdict**
+- PASS — WUI-040 acceptance met (Telegram delivery sends message + .txt; failures do not break pipeline; secrets masked).
+
+**Tests**
+- `make test` passed (rerun).
+- `make lint` not rerun; worker reported pass.
+
+**Queue**
+- Next: WUI-050 — Update check at startup.
+
+**Commit**
+- `WUI-040: Telegram delivery`.
+
+**Where To Look**
+- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+
+**Repo Status**
+- Untracked `data/` and updated `.agent/logs/`.
+apply_patch(auto_approved=true) exited 0 in 50ms:
+Success. Updated the following files:
+A .agent/last_judge.txt
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/last_judge.txt b/.agent/last_judge.txt
+index eb4107ca1d436473303d662d0004e146e15cd506..3a9dadec4a9a3dbca92978625d443da5cc32bc3f
+--- a/.agent/last_judge.txt
++++ b/.agent/last_judge.txt
+@@ -1,18 +1,18 @@
+ **Verdict**
+-- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
++- PASS — WUI-040 acceptance met (Telegram delivery sends message + .txt; failures do not break pipeline; secrets masked).
+ 
+ **Tests**
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
++- `make lint` not rerun; worker reported pass.
+ 
+ **Queue**
+-- Next: WUI-040 — Telegram delivery.
++- Next: WUI-050 — Update check at startup.
+ 
+ **Commit**
+-- `WUI-030: One-command setup & run on M1+ macOS`.
++- `WUI-040: Telegram delivery`.
+ 
+ **Where To Look**
+ - `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+ 
+ **Repo Status**
+-- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+\ No newline at end of file
++- Untracked `data/` and updated `.agent/logs/`.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+file update:
+diff --git a/.agent/judge_feedback.md b/.agent/judge_feedback.md
+index 18673ce40870866ee6efd0aaa0b0326ac15c30ea..b94448d53533cd871ea4491313738a1c88ac87c9
+--- a/.agent/judge_feedback.md
++++ b/.agent/judge_feedback.md
+@@ -2,5 +2,4 @@
+ 
+ Notes:
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
+-- Acceptance criteria met for WUI-030.
++- Acceptance criteria met for WUI-040.
+diff --git a/.agent/last_judge.txt b/.agent/last_judge.txt
+index eb4107ca1d436473303d662d0004e146e15cd506..3a9dadec4a9a3dbca92978625d443da5cc32bc3f
+--- a/.agent/last_judge.txt
++++ b/.agent/last_judge.txt
+@@ -1,18 +1,18 @@
+ **Verdict**
+-- PASS — WUI-030 acceptance met (one-command setup script installs deps, downloads model, starts server, opens browser).
++- PASS — WUI-040 acceptance met (Telegram delivery sends message + .txt; failures do not break pipeline; secrets masked).
+ 
+ **Tests**
+ - `make test` passed (rerun).
+-- `make lint` passed (rerun).
++- `make lint` not rerun; worker reported pass.
+ 
+ **Queue**
+-- Next: WUI-040 — Telegram delivery.
++- Next: WUI-050 — Update check at startup.
+ 
+ **Commit**
+-- `WUI-030: One-command setup & run on M1+ macOS`.
++- `WUI-040: Telegram delivery`.
+ 
+ **Where To Look**
+ - `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+ 
+ **Repo Status**
+-- Modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`; untracked `data/`.
+\ No newline at end of file
++- Untracked `data/` and updated `.agent/logs/`.
+diff --git a/.agent/progress.md b/.agent/progress.md
+index 909e52c02c429382afa426f71722fba38889b0f0..21d6d64f7ac8e55fab449db98052aa5838bc1583
+--- a/.agent/progress.md
++++ b/.agent/progress.md
+@@ -33,3 +33,4 @@
+ - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+ - 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+ - 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
++- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 8287018a3b913d8765f84a7c757607c71e3bf89f..d3211043c99aa237b24f45ee655975386833de78
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,7 +1,6 @@
+ # Queue
+ 
+ ## Now
+-- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ 
+ ## Next
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+@@ -10,6 +9,7 @@
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+ 
+ ## Done
++- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+ - [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+diff --git a/.agent/state.md b/.agent/state.md
+index 4b08f5a0ca59b010c9db85d42a1c2ccaad9795a3..fe670106c2ff0787756badb89cf7e7f0d83d4d53
+--- a/.agent/state.md
++++ b/.agent/state.md
+@@ -1,3 +1,3 @@
+-last_task_id: WUI-030
++last_task_id: WUI-040
+ last_verdict: PASS
+ consecutive_failures: 0
+
+
+
+thinking
+**Reviewing compliance with docs, feedback, and type safety**
+
+I confirmed docs updates for repo structure changes and verified no forbidden instructions or stop conditions were introduced. The handling of transcriber outputs aligns with expectations, and type consistency is intact. Next, I'll check for any unexpected changes beyond planned diffs.
+thinking
+**Planning precise commit staging excluding noisy logs**
+
+The plan is to commit all new and relevant modified files, including iteration 11 logs, but exclude unrelated and appended older logs to avoid bloating the commit. This maintains clean versioning while preserving necessary iteration artifacts. Next, I'll stage these exact files before committing with the appropriate message.
+exec
+/bin/zsh -lc 'git add mlx_ui/telegram.py mlx_ui/worker.py tests/test_telegram.py docs/dev.md docs/tree.md .agent/plan.md .agent/worker_report.md .agent/queue.md .agent/state.md .agent/progress.md .agent/judge_feedback.md .agent/last_judge.txt .agent/last_planner.txt .agent/last_worker.txt .agent/logs/planner_11.err .agent/logs/planner_11.out .agent/logs/worker_11.err .agent/logs/worker_11.out .agent/logs/test_11.log .agent/logs/lint_11.log .agent/logs/judge_11.err .agent/logs/judge_11.out' in /Users/ivankhokhlov/code/mlx-ui

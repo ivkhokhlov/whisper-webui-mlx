@@ -22,6 +22,13 @@ make test
 make run
 ```
 
+## Telegram delivery (optional)
+Set environment variables before starting the app:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+
 ## Notes
 - The app must bind only to `127.0.0.1`.
 - Keep network usage optional and best-effort (Telegram, update check).

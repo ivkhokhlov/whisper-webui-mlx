@@ -5,6 +5,7 @@ from pathlib import Path
 import threading
 
 from mlx_ui.db import claim_next_job, update_job_status
+from mlx_ui.telegram import maybe_send_telegram
 from mlx_ui.transcriber import Transcriber, WtmTranscriber
 
 logger = logging.getLogger(__name__)
@@ -59,11 +60,15 @@ class Worker:
         if job is None:
             return False
         try:
-            self.transcriber.transcribe(job, self.results_dir)
+            result_path = self.transcriber.transcribe(job, self.results_dir)
         except Exception:
             logger.exception("Worker failed to transcribe job %s", job.id)
             update_job_status(self.db_path, job.id, "failed")
             return True
+        try:
+            maybe_send_telegram(job, result_path)
+        except Exception:
+            logger.exception("Worker failed to deliver Telegram message for job %s", job.id)
         update_job_status(self.db_path, job.id, "done")
         return True
 

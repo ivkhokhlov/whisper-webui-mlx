@@ -31,3 +31,6 @@
 - 2026-01-21T12:44:46Z — PLANNER — CODEX_ITERATION=10 — selected WUI-030 (One-command setup & run on M1+ macOS). Queue updated (moved WUI-030 to Now).
 - 2026-01-21T12:53:27Z — WORKER — CODEX_ITERATION=10 — WUI-030 — tests: passed (make test); lint: passed (make lint)
 - 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T13:04:26Z — PLANNER — CODEX_ITERATION=11 — selected WUI-040 (Telegram delivery). Queue updated (moved WUI-040 to Now; WUI-050 to Next).
+- 2026-01-21T13:11:11Z — WORKER — CODEX_ITERATION=11 — WUI-040 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T13:15:41Z — JUDGE — CODEX_ITERATION=11 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)

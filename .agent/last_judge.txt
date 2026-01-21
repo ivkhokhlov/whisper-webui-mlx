@@ -1,12 +1,18 @@
 **Verdict**
-- PASS for WUI-030; acceptance met (one-command script installs deps, downloads model, starts server, opens browser).
-- Tests: `make test` passed (rerun by judge).
-- Lint: `make lint` passed (rerun by judge).
-- Queue: WUI-030 moved to Done; next task is WUI-040 — Telegram delivery.
-- Commit: `WUI-030: One-command setup & run on M1+ macOS`.
+- PASS — WUI-040 acceptance met (Telegram delivery sends message + .txt; failures do not break pipeline; secrets masked).
 
-**Notes**
-- Feedback: `.agent/judge_feedback.md`.
-- Progress: `.agent/progress.md`.
-- State: `.agent/state.md`.
-- Repo status: untracked `data/` and updated `.agent/logs/`.
+**Tests**
+- `make test` passed (rerun).
+- `make lint` not rerun; worker reported pass.
+
+**Queue**
+- Next: WUI-050 — Update check at startup.
+
+**Commit**
+- `WUI-040: Telegram delivery`.
+
+**Where To Look**
+- `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+
+**Repo Status**
+- Untracked `data/` and updated `.agent/logs/`.
