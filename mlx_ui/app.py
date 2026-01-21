@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
+import threading
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -8,6 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
 from mlx_ui.worker import start_worker
 
 app = FastAPI(title="Whisper WebUI (MLX)")
@@ -20,6 +22,7 @@ app.state.uploads_dir = DEFAULT_UPLOADS_DIR
 app.state.results_dir = DEFAULT_RESULTS_DIR
 app.state.db_path = DEFAULT_DB_PATH
 app.state.worker_enabled = True
+app.state.update_check_enabled = True
 
 
 @app.on_event("startup")
@@ -27,6 +30,17 @@ def startup() -> None:
     init_db(get_db_path())
     if getattr(app.state, "worker_enabled", True):
         start_worker(get_db_path(), get_results_dir())
+    if (
+        getattr(app.state, "update_check_enabled", True)
+        and not is_update_check_disabled()
+    ):
+        thread = threading.Thread(
+            target=check_for_updates,
+            kwargs={"timeout": DEFAULT_TIMEOUT},
+            name="mlx-ui-update-check",
+            daemon=True,
+        )
+        thread.start()
 
 
 def get_job_store() -> list[JobRecord]:

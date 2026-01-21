@@ -32,4 +32,5 @@ Failures are logged and do not break the job pipeline. Tokens are masked in logs
 ## Notes
 - The app must bind only to `127.0.0.1`.
 - Keep network usage optional and best-effort (Telegram, update check).
+- Update check runs at startup; set `DISABLE_UPDATE_CHECK=1` to skip or `UPDATE_CHECK_URL` to override the releases endpoint.
 - Prefer tests that do not require the real ML model; mock `wtm` execution.

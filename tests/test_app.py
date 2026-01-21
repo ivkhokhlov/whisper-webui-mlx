@@ -12,6 +12,7 @@ def _configure_app(tmp_path: Path) -> None:
     app.state.results_dir = tmp_path / "results"
     app.state.db_path = tmp_path / "jobs.db"
     app.state.worker_enabled = False
+    app.state.update_check_enabled = False
 
 
 def test_root_ok(tmp_path: Path) -> None:
