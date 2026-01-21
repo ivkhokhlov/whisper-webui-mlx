@@ -10,11 +10,9 @@
 ./scripts/setup_and_run.sh
 ```
 
-## Manual dev loop (placeholder until code exists)
+## Manual dev loop
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+poetry install --with dev
 
 make test
 make run
