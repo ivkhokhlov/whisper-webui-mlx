@@ -135,6 +135,86 @@
         display: block;
       }
 
+      .upload-card {
+        margin-top: 18px;
+        padding: 16px;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid #f4e6d8;
+        display: grid;
+        gap: 12px;
+      }
+
+      .upload-label {
+        font-weight: 600;
+      }
+
+      .upload-input {
+        display: block;
+        width: 100%;
+      }
+
+      .upload-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .cta {
+        appearance: none;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .cta:hover {
+        background: var(--accent-strong);
+      }
+
+      .hint {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
+      .job-list {
+        margin-top: 16px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .job-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #fff;
+        border: 1px solid #f4e6d8;
+      }
+
+      .job-name {
+        font-weight: 600;
+      }
+
+      .job-meta {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
+      .job-status {
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 0.72rem;
+        color: var(--accent-strong);
+        align-self: center;
+      }
+
       .placeholder {
         margin-top: 16px;
         padding-top: 16px;
@@ -164,6 +244,16 @@
         .tablist {
           flex-direction: column;
           align-items: stretch;
+        }
+
+        .upload-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .job-row {
+          flex-direction: column;
+          align-items: flex-start;
         }
 
         .status-card {
@@ -221,10 +311,40 @@
           >
             <h2>Queue</h2>
             <p>Upload files to start a sequential transcription run.</p>
-            <div class="placeholder">
-              <div class="placeholder-row">No jobs queued yet.</div>
-              <div class="placeholder-row">Waiting for uploads.</div>
-            </div>
+            <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
+              <label class="upload-label" for="file-input">Select audio or video files</label>
+              <input
+                id="file-input"
+                class="upload-input"
+                type="file"
+                name="files"
+                multiple
+                required
+                accept="audio/*,video/*"
+              >
+              <div class="upload-actions">
+                <button class="cta" type="submit">Queue uploads</button>
+                <span class="hint">Files stay local in data/uploads.</span>
+              </div>
+            </form>
+            {% if jobs %}
+              <div class="job-list" aria-live="polite">
+                {% for job in jobs %}
+                  <div class="job-row">
+                    <div>
+                      <div class="job-name">{{ job.filename }}</div>
+                      <div class="job-meta">Queued {{ job.created_at }}</div>
+                    </div>
+                    <div class="job-status">{{ job.status }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="placeholder">
+                <div class="placeholder-row">No jobs queued yet.</div>
+                <div class="placeholder-row">Waiting for uploads.</div>
+              </div>
+            {% endif %}
           </section>
 
           <section
