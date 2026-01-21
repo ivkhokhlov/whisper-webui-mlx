@@ -3,8 +3,8 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
@@ -51,9 +51,26 @@ def ensure_uploads_dir() -> Path:
     return uploads_dir
 
 
+def is_safe_path_component(value: str) -> bool:
+    return value not in {"", ".", ".."} and Path(value).name == value
+
+
 def sanitize_filename(filename: str) -> str:
     safe_name = Path(filename).name
     return safe_name or "upload.bin"
+
+
+def list_result_files(job_id: str) -> list[str]:
+    if not is_safe_path_component(job_id):
+        return []
+    job_dir = get_results_dir() / job_id
+    if not job_dir.is_dir():
+        return []
+    return sorted(path.name for path in job_dir.iterdir() if path.is_file())
+
+
+def build_results_index(jobs: list[JobRecord]) -> dict[str, list[str]]:
+    return {job.id: list_result_files(job.id) for job in jobs}
 
 
 def new_job_record(job_id: str, filename: str, upload_path: Path) -> JobRecord:
@@ -68,10 +85,11 @@ def new_job_record(job_id: str, filename: str, upload_path: Path) -> JobRecord:
 
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
+    jobs = get_job_store()
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"jobs": get_job_store()},
+        {"jobs": jobs, "results_by_job": build_results_index(jobs)},
     )
 
 
@@ -100,5 +118,25 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"jobs": jobs},
+        {"jobs": jobs, "results_by_job": build_results_index(jobs)},
     )
+
+
+@app.get("/results/{job_id}/{filename}")
+def download_result(job_id: str, filename: str):
+    if not is_safe_path_component(job_id) or not is_safe_path_component(filename):
+        raise HTTPException(status_code=404)
+
+    results_dir = get_results_dir()
+    job_dir = results_dir / job_id
+    results_dir_resolved = results_dir.resolve()
+    job_dir_resolved = job_dir.resolve()
+    file_path = (job_dir / filename).resolve()
+
+    if not job_dir_resolved.is_relative_to(results_dir_resolved):
+        raise HTTPException(status_code=404)
+
+    if not file_path.is_file() or not file_path.is_relative_to(job_dir_resolved):
+        raise HTTPException(status_code=404)
+
+    return FileResponse(file_path)

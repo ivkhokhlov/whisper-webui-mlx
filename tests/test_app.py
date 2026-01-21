@@ -1,9 +1,10 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from mlx_ui.app import app
-from mlx_ui.db import list_jobs
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
 
 def _configure_app(tmp_path: Path) -> None:
@@ -62,3 +63,42 @@ def test_jobs_persist_across_restart(tmp_path: Path) -> None:
     jobs = list_jobs(Path(app.state.db_path))
     assert len(jobs) == 1
     assert "alpha.txt" in response.text
+
+
+def test_history_lists_results_and_download_endpoint(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-123"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="done",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+    )
+    insert_job(db_path, job)
+
+    results_dir = Path(app.state.results_dir) / job_id
+    results_dir.mkdir(parents=True, exist_ok=True)
+    txt_path = results_dir / "alpha.txt"
+    txt_path.write_text("transcript", encoding="utf-8")
+    srt_path = results_dir / "alpha.srt"
+    srt_path.write_text("subtitles", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+        assert response.status_code == 200
+        assert f"/results/{job_id}/alpha.txt" in response.text
+        assert f"/results/{job_id}/alpha.srt" in response.text
+
+        download = client.get(f"/results/{job_id}/alpha.txt")
+        assert download.status_code == 200
+        assert download.text == "transcript"

@@ -215,6 +215,66 @@
         align-self: center;
       }
 
+      .results {
+        margin-top: 10px;
+      }
+
+      .result-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--accent-strong);
+      }
+
+      .result-list {
+        list-style: none;
+        margin: 6px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .result-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .result-link {
+        color: var(--accent-strong);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .result-link:hover {
+        text-decoration: underline;
+      }
+
+      .result-link.is-text {
+        color: var(--accent);
+      }
+
+      .result-action {
+        font-size: 0.78rem;
+        color: var(--ink-muted);
+        text-decoration: none;
+        border: 1px solid #f1e2d2;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+
+      .result-action:hover {
+        color: var(--accent-strong);
+        border-color: var(--accent);
+      }
+
+      .result-empty {
+        margin-top: 6px;
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
       .placeholder {
         margin-top: 16px;
         padding-top: 16px;
@@ -363,6 +423,35 @@
                     <div>
                       <div class="job-name">{{ job.filename }}</div>
                       <div class="job-meta">Added {{ job.created_at }}</div>
+                      <div class="results">
+                        <div class="result-label">Results</div>
+                        {% set results = results_by_job.get(job.id, []) %}
+                        {% if results %}
+                          <ul class="result-list">
+                            {% for result in results %}
+                              <li class="result-item">
+                                <a
+                                  class="result-link{% if result.endswith('.txt') %} is-text{% endif %}"
+                                  href="/results/{{ job.id }}/{{ result }}"
+                                  target="_blank"
+                                  rel="noopener"
+                                >
+                                  {{ result }}
+                                </a>
+                                <a
+                                  class="result-action"
+                                  href="/results/{{ job.id }}/{{ result }}"
+                                  download="{{ result }}"
+                                >
+                                  Download
+                                </a>
+                              </li>
+                            {% endfor %}
+                          </ul>
+                        {% else %}
+                          <div class="result-empty">No results yet.</div>
+                        {% endif %}
+                      </div>
                     </div>
                     <div class="job-status">{{ job.status }}</div>
                   </div>
