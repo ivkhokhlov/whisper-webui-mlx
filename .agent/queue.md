@@ -5,9 +5,9 @@
 ## Next
 
 ## Later
-- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
 
 ## Done
+- [x] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
 - [x] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
 - [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
 - [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)

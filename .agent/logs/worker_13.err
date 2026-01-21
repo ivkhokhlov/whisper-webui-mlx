@@ -1,0 +1,5421 @@
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be0ca-fd0b-7d52-89be-afd1baedaec1
+--------
+user
+# WORKER AGENT (3-phase harness)
+
+You are the WORKER in a Planner→Worker→Judge pipeline.
+Your job: execute `.agent/plan.md` as written, with minimal scope creep.
+
+Non-interactive run (`codex exec`): do not ask questions. If unclear, make the smallest reasonable assumption and log it.
+
+## Stop conditions
+- If `.agent/STOP` exists: append “STOP seen” to `.agent/progress.md` and exit.
+- If `.agent/DONE` exists: append “DONE seen” to `.agent/progress.md` and exit.
+
+## Inputs you MUST read
+- `.agent/PROJECT.md` (authoritative; includes TEST_CMD/LINT_CMD)
+- `AGENTS.md` (repo rules)
+- `docs/spec.md`
+- `docs/dev.md` (if exists)
+- `.agent/plan.md`
+- `.agent/judge_feedback.md` (if present)
+- `.agent/queue.md`
+- `.agent/progress.md`
+- `.agent/state.md`
+
+## Core rules
+- Implement ONLY the single task in `.agent/plan.md`.
+- Do NOT mark tasks done in `.agent/queue.md` (Judge owns that).
+- Prefer small, coherent changes. No big refactors unless the task explicitly requires it.
+- All network-dependent logic must be best-effort with timeouts and exception handling.
+- Bind server to localhost only.
+- Queue must be strictly sequential: one job at a time; no parallel transcription runs.
+- Never print secrets. If you need to log config, mask tokens.
+
+## Logging
+Ensure `.agent/logs/` exists.
+Write/overwrite `.agent/worker_report.md` with:
+- task id/title
+- what changed (bullets)
+- files changed (list)
+- commands run + result (pass/fail)
+- if failure: include a short excerpt of the error and what you think is next
+
+Also append a WORKER entry to `.agent/progress.md` with:
+- timestamp
+- CODEX_ITERATION
+- task id
+- test + lint status summary
+
+## Verification (must do)
+Run TEST_CMD (from PROJECT.md). Capture output into a file.
+
+Tip: to preserve exit codes with tee:
+- use: `bash -lc "set -o pipefail; <TEST_CMD> 2>&1 | tee .agent/logs/test_${CODEX_ITERATION}.log"`
+
+If LINT_CMD is set and command exists, run similarly and capture output:
+- `.agent/logs/lint_${CODEX_ITERATION}.log`
+
+If tests fail and you cannot fix quickly:
+- write/update `.agent/BLOCKED.md` with exact errors + next steps
+- exit (do not thrash)
+
+## Output
+Print a short summary:
+- what you implemented
+- test status
+- pointers to worker_report + log files
+
+mcp startup: no servers
+
+thinking
+**Listing directory contents**
+exec
+/bin/zsh -lc ls in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Locating agent documentation**
+
+I'm accessing AGENTS and .agent/PROJECT.md files to gather details about the agent setup and project structure to inform next steps.
+exec
+/bin/zsh -lc 'cat AGENTS.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 77ms:
+# AGENTS.md
+
+This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
+Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
+
+## Source of truth
+- `.agent/PROJECT.md` — high-level constraints and commands
+- `docs/spec.md` — product requirements
+- `.agent/queue.md` — backlog (Judge marks tasks done)
+
+## How to run
+- Tests: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
+- Run server: `make run`
+
+If Makefile does not exist yet, create it during bootstrap.
+
+## Safety / security rules
+- Never touch anything outside the repo root.
+
+thinking
+**Listing files to read**
+exec
+/bin/zsh -lc 'ls .agent' in /Users/ivankhokhlov/code/mlx-ui succeeded in 91ms:
+BLOCKED.md
+PROJECT.md
+judge.md
+judge_feedback.md
+last_judge.txt
+last_planner.txt
+last_worker.txt
+logs
+plan.md
+planner.md
+progress.md
+queue.md
+state.md
+worker.md
+worker_report.md
+
+thinking
+**Planning repo file checks**
+
+I'm preparing to read key project and documentation files along with agent state and progress files, while also verifying if stop or done signals exist before proceeding.
+exec
+/bin/zsh -lc 'ls .agent/STOP .agent/DONE' in /Users/ivankhokhlov/code/mlx-ui exited 1 in 89ms:
+ls: .agent/DONE: No such file or directory
+ls: .agent/STOP: No such file or directory
+
+thinking
+**Reading required files**
+exec
+/bin/zsh -lc 'cat .agent/PROJECT.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 68ms:
+# PROJECT (single source of truth for the harness)
+
+PROJECT_NAME: "whisper-webui-mlx"
+REPO_KIND: "new repo"
+
+## Brief (1–2 paragraphs)
+Build a **local macOS app for Apple Silicon (M1+)** that exposes a **Web UI on localhost** to manage **offline transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX). https://github.com/JosefAlbers/whisper-turbo-mlx
+
+Turn the current console workflow (e.g. `wtm ... --any_lang=True`) into a tool that is easy to deploy on another M1+ Mac with **one command**, supports **batch uploads**, a **strictly sequential** processing queue (no parallelism), **job history + downloads**, optional **Telegram delivery of TXT results**, and (in the final phase) **live recording + chunked transcription**.
+
+## Primary stack
+Python 3.11+
+- Backend/Web: FastAPI + Uvicorn
+- Templates/UI: Jinja2 + minimal vanilla JS (no external CDNs; must work offline)
+- Storage: SQLite (jobs metadata) + local filesystem (uploads/results/logs)
+- Worker: a single sequential worker consuming a persistent queue
+- Transcription: subprocess call to `wtm` with explicit language selection
+
+## Commands (choose defaults if unknown)
+TEST_CMD: "make test"
+
+thinking
+**Noting missing documentation**
+
+The docs/spec.md file is currently missing and needs to be created or added.
+exec
+/bin/zsh -lc 'cat docs/spec.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 86ms:
+# Spec — whisper-webui-mlx
+
+## Goal
+Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+
+The tool must be easy to deploy to another M1+ Mac (one command), and after the initial setup + model download it must work **fully offline**.
+
+## MVP: Batch file transcription via Web UI
+### UX
+- User opens Web UI (localhost).
+- User uploads **one or multiple files** (audio or video).
+- User selects the **language manually** (no auto-detect).
+- Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
+- UI has:
+  - Queue view: current job + pending jobs
+  - History view: completed jobs + access to results
+
+### Processing rules
+- One worker processes one job at a time (sequential).
+- Keep the ML model “warm” behavior in mind: avoid parallelism and avoid reinitialization churn.
+
+thinking
+**Checking for docs/dev.md existence**
+exec
+/bin/zsh -lc 'ls docs' in /Users/ivankhokhlov/code/mlx-ui succeeded in 94ms:
+dev.md
+spec.md
+tree.md
+
+thinking
+**Reviewing development documentation**
+exec
+/bin/zsh -lc 'cat docs/dev.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 63ms:
+# Developer guide
+
+## Requirements (target)
+- macOS Apple Silicon (M1+)
+- Python 3.11+
+- Homebrew (for system deps like ffmpeg)
+
+## Quick start (eventual)
+```bash
+./scripts/setup_and_run.sh
+```
+Notes:
+- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
+- First run needs network access to install `whisper-turbo-mlx` and download the default model.
+- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+
+## Manual dev loop
+```bash
+poetry install --with dev
+
+
+thinking
+**Reviewing plan documentation**
+
+I'm reading the plan file in the .agent directory to understand the current strategy and details for advancing the project.
+exec
+/bin/zsh -lc 'cat .agent/plan.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 97ms:
+# Plan
+
+Task: WUI-090 - Live mode skeleton
+Acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet
+
+Assumptions:
+- Live mode is a UI stub only; no recording, chunking, or worker changes in this task.
+- Adding a "Live" tab alongside Queue/History is acceptable.
+
+Implementation steps:
+1) Add a /live route in the FastAPI app that renders a new template with stub copy and a clear "coming soon" status.
+2) Create a Jinja template for the Live page and add a navigation link/tab to it in the shared layout.
+3) Document a short technical plan for Live mode (browser capture → chunking → server ingestion → sequential transcription) in docs.
+4) Add a minimal test that asserts the /live page renders (and optionally that nav includes Live).
+5) Update docs/tree.md if any new files are added.
+
+Files likely to touch:
+- mlx_ui/app.py
+- mlx_ui/templates/base.html
+- mlx_ui/templates/live.html
+
+thinking
+**Checking for judge feedback presence**
+exec
+/bin/zsh -lc 'cat .agent/judge_feedback.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 72ms:
+PASS
+
+Notes:
+- `make test` and `make lint` passed (rerun).
+- Acceptance criteria met for WUI-050.
+
+thinking
+**Identifying need for queue and state management**
+exec
+/bin/zsh -lc 'cat .agent/queue.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 63ms:
+# Queue
+
+## Now
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Next
+
+## Later
+
+## Done
+- [x] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+- [x] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+- [x] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+- [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+exec
+/bin/zsh -lc 'cat .agent/progress.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 63ms:
+# Progress Log (append-only)
+
+- 2026-01-21T09:49:08 — INIT — Harness files created. Next: run the 3-phase loop.
+- 2026-01-21T10:33:08Z — PLANNER — CODEX_ITERATION=1 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:37:23Z — WORKER — CODEX_ITERATION=1 — WUI-001 — tests: failed (pytest missing); lint: not run
+- 2026-01-21T10:39:53Z — JUDGE — CODEX_ITERATION=1 — NEEDS_WORK — make test failed (pytest missing in venv); tests: failed (make test)
+- 2026-01-21T10:42:24Z — PLANNER — CODEX_ITERATION=2 — selected WUI-001A (Fix pytest availability for `make test`). Queue updated (format fix for WUI-001A).
+- 2026-01-21T10:49:11Z — WORKER — CODEX_ITERATION=2 — WUI-001A — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:52:47Z — JUDGE — CODEX_ITERATION=2 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:56:28Z — PLANNER — CODEX_ITERATION=3 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:58:25Z — WORKER — CODEX_ITERATION=3 — WUI-001 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:01:51Z — JUDGE — CODEX_ITERATION=3 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:05:17Z — PLANNER — CODEX_ITERATION=4 — selected WUI-002 (Minimal WebUI shell). Queue unchanged.
+- 2026-01-21T11:11:48Z — WORKER — CODEX_ITERATION=4 — WUI-002 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:16:13Z — JUDGE — CODEX_ITERATION=4 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:23:27Z — PLANNER — CODEX_ITERATION=5 — selected WUI-010 (Upload endpoint + local storage). Queue updated (moved WUI-010 to Now).
+- 2026-01-21T11:33:16Z — WORKER — CODEX_ITERATION=5 — WUI-010 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:37:21Z — JUDGE — CODEX_ITERATION=5 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
+- 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
+
+thinking
+**Noting missing state file**
+exec
+/bin/zsh -lc 'cat .agent/state.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+last_task_id: WUI-050
+last_verdict: PASS
+consecutive_failures: 0
+
+thinking
+**Starting code inspection from main app file**
+exec
+/bin/zsh -lc "sed -n '1,220p' mlx_ui/app.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 82ms:
+from datetime import datetime, timezone
+from pathlib import Path
+import shutil
+import threading
+from uuid import uuid4
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
+from mlx_ui.worker import start_worker
+
+app = FastAPI(title="Whisper WebUI (MLX)")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+DEFAULT_RESULTS_DIR = BASE_DIR / "data" / "results"
+DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
+
+thinking
+**Checking templates for /live route**
+
+I'm reviewing the base and index templates to see how to implement the /live route.
+exec
+/bin/zsh -lc "sed -n '1,220p' mlx_ui/templates/base.html" in /Users/ivankhokhlov/code/mlx-ui exited 1 in 65ms:
+sed: mlx_ui/templates/base.html: No such file or directory
+
+thinking
+**Identifying template needs**
+exec
+/bin/zsh -lc 'ls mlx_ui/templates' in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+index.html
+
+thinking
+**Checking layout usage for single index**
+exec
+/bin/zsh -lc "sed -n '1,240p' mlx_ui/templates/index.html" in /Users/ivankhokhlov/code/mlx-ui succeeded in 68ms:
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Whisper WebUI (MLX)</title>
+    <style>
+      :root {
+        --ink: #1d1b16;
+        --ink-muted: #5d5d5d;
+        --panel: #fff7ee;
+        --accent: #d46a3e;
+        --accent-strong: #8b3f1f;
+        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+exec
+/bin/zsh -lc "sed -n '240,520p' mlx_ui/templates/index.html" in /Users/ivankhokhlov/code/mlx-ui succeeded in 98ms:
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .result-link {
+        color: var(--accent-strong);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .result-link:hover {
+        text-decoration: underline;
+      }
+
+      .result-link.is-text {
+        color: var(--accent);
+      }
+
+      .result-action {
+        font-size: 0.78rem;
+
+
+thinking
+**Planning Live page routing and navigation**
+
+I'm deciding whether to add the Live page as a separate route with its own template and minimal stub, and how to integrate its navigation—either by adding a new tab alongside Queue/History in the existing JS tablist or by adding a top-level nav with anchor links, noting there's no shared base layout currently.
+thinking
+**Evaluating base layout introduction**
+
+I'm weighing creating a new base template to share styles and navigation between index and /live for maintainability versus duplicating nav code for minimal changes; creating a base would improve clarity but requires more restructuring, while adding a nav link to /live in the existing tablist can be done with less effort. Next, I'll review existing tests to add minimal coverage for the /live route.
+exec
+/bin/zsh -lc "sed -n '1,240p' tests/test_app.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 63ms:
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from mlx_ui.app import app
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+
+
+def _configure_app(tmp_path: Path) -> None:
+    app.state.uploads_dir = tmp_path / "uploads"
+    app.state.results_dir = tmp_path / "results"
+    app.state.db_path = tmp_path / "jobs.db"
+    app.state.worker_enabled = False
+    app.state.update_check_enabled = False
+
+
+def test_root_ok(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    with TestClient(app) as client:
+
+thinking
+**Planning Live mode tests and docs**
+
+I'm preparing to add a test for the /live route and verify the "Live" link in navigation. I'll also document the Live mode flow in a new or existing docs file and update docs/tree.md if I add new files.
+exec
+/bin/zsh -lc 'cat docs/tree.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+# Project tree (curated)
+
+This file is a human-maintained map of the repo. Update when structure changes.
+
+## Current (bootstrap)
+- `.agent/` — durable loop state + prompts
+- `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+- `docs/` — spec + dev notes + this tree map
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+- `mlx_ui/templates/` — Jinja2 templates
+- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+- `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+- `Makefile` — dev commands
+- `pyproject.toml` — dependencies and tooling
+- `README.md` — repo overview
+
+
+thinking
+**Planning live mode docs and template**
+
+Deciding to add a new live.html template (requiring tree update) and to document the live mode plan by adding a section in an existing doc to avoid extra files and tree changes there. The template will reuse existing CSS by replicating structure to keep changes minimal and ASCII-only.
+thinking
+**Designing navigation integration and template strategy**
+
+Deciding to add a new `live.html` template with duplicated header and CSS for minimal changes, plus a `/live` route. Navigation on index and live pages will include a "Live" link styled like tabs but as an anchor without JS toggling to keep semantics and accessibility simple. Considering creating a base template for shared layout but favoring minimal refactor for now. Also planning to update docs and tests accordingly.
+exec
+/bin/zsh -lc 'printenv CODEX_ITERATION' in /Users/ivankhokhlov/code/mlx-ui succeeded in 102ms:
+13
+
+
+
+thinking
+**Planning live route addition**
+
+I'm preparing to add a `/live` route in app.py with an HTML response and create a matching live.html template styled consistently. Commit is skipped since auto-commit isn't explicitly required.
+thinking
+**Designing consistent Live page navigation**
+
+I'm planning to add a Live link styled like the existing queue/history tabs, using anchors without data-tab to avoid JS tab toggling issues, and update CSS to style anchors like tabs with no underline. I'll implement minimal query-param support in index.js for initial tab selection to improve navigation consistency.
+thinking
+**Finalizing tab semantics and Live page creation**
+
+I'm resolving ARIA conflicts by adding the Live link as an anchor inside the existing tablist without full tab semantics, updating index to support query-param tab selection, and creating a separate Live page template with consistent styling and stub content. Next, I'll implement these changes via targeted patches.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./mlx_ui/templates/index.html
+@@ -107,2 +107,3 @@
+         cursor: pointer;
++        text-decoration: none;
+       }
+@@ -361,2 +362,3 @@
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+@@ -490,2 +492,7 @@
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+apply_patch(auto_approved=true) exited 0 in 16ms:
+Success. Updated the following files:
+M mlx_ui/templates/index.html
+file update:
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+
+file update:
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+
+
+
+thinking
+**Designing live mode page**
+
+I'm creating a simplified live.html page modeled on index.html with a similar header, CSS, and tab navigation using anchor links for Queue, History, and Live (active). The main content is a stub status card and placeholder text announcing live transcription is coming soon.
+thinking
+**Completing live page HTML**
+
+The live.html page includes a placeholder description outlining the intended live transcription flow with clear ASCII-safe text and consistent indentation. Next, I'll create the file using apply_patch.
+file update
+A /Users/ivankhokhlov/code/mlx-ui/./mlx_ui/templates/live.html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Whisper WebUI (MLX) - Live</title>
+    <style>
+      :root {
+        --ink: #1d1b16;
+        --ink-muted: #5d5d5d;
+        --panel: #fff7ee;
+        --accent: #d46a3e;
+        --accent-strong: #8b3f1f;
+        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
+          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
+          #f5f1ea;
+      }
+
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 48px 24px 64px;
+      }
+
+      .hero {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.72rem;
+        color: var(--accent-strong);
+      }
+
+      h1 {
+        margin: 8px 0 10px;
+        font-size: clamp(2rem, 3vw, 3rem);
+      }
+
+      p {
+        margin: 0;
+        color: var(--ink-muted);
+        line-height: 1.5;
+      }
+
+      .status-card {
+        background: var(--panel);
+        border: 1px solid #f1e2d2;
+        border-radius: 16px;
+        padding: 16px 20px;
+        min-width: 180px;
+        box-shadow: var(--shadow);
+      }
+
+      .status-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--accent-strong);
+      }
+
+      .status {
+        font-size: 1.4rem;
+        font-weight: 700;
+        margin: 6px 0;
+      }
+
+      .tabs {
+        margin-top: 32px;
+      }
+
+      .tablist {
+        display: flex;
+        gap: 12px;
+        padding: 8px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
+        flex-wrap: wrap;
+      }
+
+      .tab {
+        appearance: none;
+        border: none;
+        background: transparent;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--ink);
+        cursor: pointer;
+        text-decoration: none;
+      }
+
+      .tab.is-active {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
+      }
+
+      .tab:focus-visible {
+        outline: 2px solid var(--accent-strong);
+        outline-offset: 2px;
+      }
+
+      .panels {
+        margin-top: 16px;
+      }
+
+      .panel {
+        display: block;
+        background: var(--panel);
+        border: 1px solid #f1e2d2;
+        border-radius: 18px;
+        padding: 24px;
+        box-shadow: var(--shadow);
+      }
+
+      .placeholder {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px dashed #e3d2c1;
+        display: grid;
+        gap: 10px;
+      }
+
+      .placeholder-row {
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: #fff;
+        border: 1px solid #f4e6d8;
+        color: var(--ink-muted);
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 32px 18px 48px;
+        }
+
+        .hero {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .tablist {
+          align-items: stretch;
+        }
+
+        .status-card {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <div>
+          <div class="eyebrow">Live capture</div>
+          <h1>Live mode</h1>
+          <p>Stream microphone + browser audio into the sequential transcriber.</p>
+        </div>
+        <div class="status-card" aria-live="polite">
+          <div class="status-label">Status</div>
+          <div class="status">Coming soon</div>
+          <p>Stub UI only; recording is not wired yet.</p>
+        </div>
+      </header>
+
+      <section class="tabs" aria-label="Main sections">
+        <div class="tablist" role="navigation">
+          <a class="tab" href="/?tab=queue">Queue</a>
+          <a class="tab" href="/?tab=history">History</a>
+          <a class="tab is-active" href="/live" aria-current="page">Live</a>
+        </div>
+
+        <div class="panels">
+          <section class="panel">
+            <h2>Live transcription (stub)</h2>
+            <p>Coming soon. This page will guide recording and show incremental text.</p>
+            <div class="placeholder">
+              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
+              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
+              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
+              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+apply_patch(auto_approved=true) exited 0 in 27ms:
+Success. Updated the following files:
+A mlx_ui/templates/live.html
+file update:
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+
+file update:
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+
+
+thinking
+**Adding new live route**
+
+I'm preparing to add a `/live` route to app.py that returns the live.html template, placing it near the root route and ensuring HTMLResponse is already imported.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./mlx_ui/app.py
+@@ -109,2 +109,7 @@
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+apply_patch(auto_approved=true) exited 0 in 27ms:
+Success. Updated the following files:
+M mlx_ui/app.py
+file update:
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+
+file update:
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+
+
+thinking
+**Adding live page test**
+
+I'm adding a new test for the live page that verifies the response status, HTML content-type, and presence of "Live mode" and "Coming soon" in the page text.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./tests/test_app.py
+@@ -28,2 +28,13 @@
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+apply_patch(auto_approved=true) exited 0 in 30ms:
+Success. Updated the following files:
+M tests/test_app.py
+file update:
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+file update:
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+thinking
+**Adding live mode plan to dev docs**
+
+I'm inserting a new "Live mode plan" section before the "Notes" in docs/dev.md, outlining audio capture, chunking, server transcription, and UI streaming details in plain ASCII format.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./docs/dev.md
+@@ -31,2 +31,9 @@
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+apply_patch(auto_approved=true) exited 0 in 37ms:
+Success. Updated the following files:
+M docs/dev.md
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+thinking
+**Updating docs/tree.md for templates**
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./docs/tree.md
+@@ -9,3 +9,3 @@
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+apply_patch(auto_approved=true) exited 0 in 45ms:
+Success. Updated the following files:
+M docs/tree.md
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+
+thinking
+**Confirming tab navigation and query param handling**
+
+The index page correctly uses query params only on load to activate tabs, with queue/history buttons updating content without changing URL. The Live tab remains without a data-tab attribute and without query params, matching current behavior. Next, running tests and linting.
+thinking
+**Preparing and confirming test environment**
+
+Checked formatting and logging setup; ensured logs directory exists before running tests with output captured for review. Now running the full test suite.
+exec
+/bin/zsh -lc 'bash -lc "set -o pipefail; make test 2>&1 | tee .agent/logs/test_13.log"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 1.14s:
+poetry run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ivankhokhlov/code/mlx-ui
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 14 items
+
+tests/test_app.py .....                                                  [ 35%]
+tests/test_telegram.py ...                                               [ 57%]
+tests/test_transcriber.py .                                              [ 64%]
+tests/test_update_check.py ....                                          [ 92%]
+tests/test_worker.py .                                                   [100%]
+
+=============================== warnings summary ===============================
+mlx_ui/app.py:28
+  /Users/ivankhokhlov/code/mlx-ui/mlx_ui/app.py:28: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+thinking
+**Running lint after tests**
+exec
+/bin/zsh -lc 'bash -lc "set -o pipefail; make lint 2>&1 | tee .agent/logs/lint_13.log"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 609ms:
+poetry run ruff check .
+All checks passed!
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+
+thinking
+**Updating worker report and progress logs**
+
+I'm preparing the worker report with task details, changes, files, and command results per the WUI-090 task, then appending an entry with timestamp, iteration, task id, and test/lint status to the progress log.
+thinking
+**Using here-document for file updates**
+exec
+/bin/zsh -lc "cat <<'EOF' > .agent/worker_report.md
+# Worker Report
+
+Task: WUI-090 - Live mode skeleton
+
+## What changed
+- Added a /live route and a stub Live template with a clear coming-soon status and navigation.
+- Added a Live link to the main tab bar and support for ?tab=queue/history on load.
+- Documented the live mode technical plan in developer docs.
+- Added a minimal test that asserts the /live page renders.
+
+## Files changed
+- mlx_ui/app.py
+- mlx_ui/templates/index.html
+- mlx_ui/templates/live.html
+- tests/test_app.py
+- docs/dev.md
+- docs/tree.md
+
+## Commands run
+- make test (pass)
+- make lint (pass)
+EOF" in /Users/ivankhokhlov/code/mlx-ui succeeded in 55ms:
+
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+thinking
+**Appending progress log entry**
+
+I'm preparing to append a new timestamped line to .agent/progress.md following the existing ISO Z format and style, including iteration, task ID, and test/lint results.
+exec
+/bin/zsh -lc "bash -lc 'timestamp="'$(date -u +"%Y-%m-%dT%H:%M:%SZ"); echo "- ${timestamp} — WORKER — CODEX_ITERATION=13 — WUI-090 — tests: passed (make test); lint: passed (make lint)" >> .agent/progress.md'"'" in /Users/ivankhokhlov/code/mlx-ui succeeded in 320ms:
+
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+
+
+thinking
+**Planning final summary message**
+
+I'm outlining the final message to include implemented features, test pass status, and references to `.agent/worker_report.md`, `.agent/logs/test_13.log`, and `.agent/logs/lint_13.log` as stand-alone inline code, plus a brief summary of key changes for clarity.
+thinking
+**Crafting final concise summary message**
+
+I'm preparing a clear final message that briefly explains the Live mode stub additions with key file references, confirms tests and lint passed, points to relevant reports and logs, and suggests running `make run` to preview the stub at `/live`.
+codex
+Added a Live mode stub page and route, linked it from the main UI, and documented the live pipeline plan so the “coming soon” entry point is visible and scoped (`mlx_ui/app.py`, `mlx_ui/templates/index.html`, `mlx_ui/templates/live.html`, `docs/dev.md`, `docs/tree.md`, `tests/test_app.py`).
+
+Tests: passed `make test`; lint: passed `make lint`.
+
+Reports/logs: `.agent/worker_report.md`, `.agent/logs/test_13.log`, `.agent/logs/lint_13.log`.
+
+Next steps:
+1) Run `make run` and visit http://127.0.0.1:8000/live to preview the stub UI.
+file update:
+diff --git a/docs/dev.md b/docs/dev.md
+index 821cd61662fde764a1e220f187e2160b21a966df..3f1f8d88c83f59abf5ccf4a246d2bec064122187
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -29,6 +29,13 @@
+ 
+ Failures are logged and do not break the job pipeline. Tokens are masked in logs.
+ 
++## Live mode plan (stub)
++- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
++- Mix streams client-side, encode, chunk into ~10s segments.
++- POST chunks to a server session endpoint with selected language.
++- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
++- UI streams partial transcript updates and saves final text to results.
++
+ ## Notes
+ - The app must bind only to `127.0.0.1`.
+ - Keep network usage optional and best-effort (Telegram, update check).
+diff --git a/docs/tree.md b/docs/tree.md
+index c96333ac02235457d28ca299f84b19a7ba212724..0098f22c37e92ce1ff2065b9c36f7d9337ecb0eb
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -7,7 +7,7 @@
+ - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+-- `mlx_ui/templates/` — Jinja2 templates
++- `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
+ - `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
+ - `Makefile` — dev commands
+diff --git a/mlx_ui/app.py b/mlx_ui/app.py
+index 52ea7856986eae8e4fe8a62616c3e435c80695fd..1dc0c5f25a17aaacc3f9b7b3405b10442f445b75
+--- a/mlx_ui/app.py
++++ b/mlx_ui/app.py
+@@ -107,6 +107,11 @@
+     )
+ 
+ 
++@app.get("/live", response_class=HTMLResponse)
++def read_live(request: Request):
++    return templates.TemplateResponse(request, "live.html", {})
++
++
+ @app.post("/upload", response_class=HTMLResponse)
+ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+     uploads_dir = ensure_uploads_dir()
+diff --git a/mlx_ui/templates/index.html b/mlx_ui/templates/index.html
+index 6af02f106d99e68b998bd306ba7733a343867dfe..e971a1ace19b24ffd209dfeb9c7dd33423f662e7
+--- a/mlx_ui/templates/index.html
++++ b/mlx_ui/templates/index.html
+@@ -105,6 +105,7 @@
+         font-weight: 600;
+         color: var(--ink);
+         cursor: pointer;
++        text-decoration: none;
+       }
+ 
+       .tab.is-active {
+@@ -359,6 +360,7 @@
+           >
+             History
+           </button>
++          <a class="tab" href="/live">Live</a>
+         </div>
+ 
+         <div class="panels">
+@@ -488,6 +490,11 @@
+           });
+         }
+ 
++        const initialTab = new URLSearchParams(window.location.search).get("tab");
++        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
++          activate(initialTab);
++        }
++
+         tabs.forEach((tab) => {
+           tab.addEventListener("click", () => activate(tab.dataset.tab));
+         });
+diff --git a/mlx_ui/templates/live.html b/mlx_ui/templates/live.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..5db58a66b809098a1cd96d059558e8950f16f91f
+--- /dev/null
++++ b/mlx_ui/templates/live.html
+@@ -0,0 +1,209 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <title>Whisper WebUI (MLX) - Live</title>
++    <style>
++      :root {
++        --ink: #1d1b16;
++        --ink-muted: #5d5d5d;
++        --panel: #fff7ee;
++        --accent: #d46a3e;
++        --accent-strong: #8b3f1f;
++        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
++      }
++
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        min-height: 100vh;
++        font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif;
++        color: var(--ink);
++        background: radial-gradient(circle at top left, #f6e6d4, transparent 55%),
++          radial-gradient(circle at bottom right, #cfe1f2, transparent 45%),
++          #f5f1ea;
++      }
++
++      main {
++        max-width: 980px;
++        margin: 0 auto;
++        padding: 48px 24px 64px;
++      }
++
++      .hero {
++        display: flex;
++        flex-wrap: wrap;
++        gap: 24px;
++        align-items: center;
++        justify-content: space-between;
++      }
++
++      .eyebrow {
++        text-transform: uppercase;
++        letter-spacing: 0.18em;
++        font-size: 0.72rem;
++        color: var(--accent-strong);
++      }
++
++      h1 {
++        margin: 8px 0 10px;
++        font-size: clamp(2rem, 3vw, 3rem);
++      }
++
++      p {
++        margin: 0;
++        color: var(--ink-muted);
++        line-height: 1.5;
++      }
++
++      .status-card {
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 16px;
++        padding: 16px 20px;
++        min-width: 180px;
++        box-shadow: var(--shadow);
++      }
++
++      .status-label {
++        font-size: 0.8rem;
++        text-transform: uppercase;
++        letter-spacing: 0.14em;
++        color: var(--accent-strong);
++      }
++
++      .status {
++        font-size: 1.4rem;
++        font-weight: 700;
++        margin: 6px 0;
++      }
++
++      .tabs {
++        margin-top: 32px;
++      }
++
++      .tablist {
++        display: flex;
++        gap: 12px;
++        padding: 8px;
++        border-radius: 14px;
++        background: rgba(255, 255, 255, 0.7);
++        box-shadow: 0 12px 30px rgba(29, 27, 22, 0.08);
++        flex-wrap: wrap;
++      }
++
++      .tab {
++        appearance: none;
++        border: none;
++        background: transparent;
++        padding: 10px 18px;
++        border-radius: 10px;
++        font-size: 1rem;
++        font-weight: 600;
++        color: var(--ink);
++        cursor: pointer;
++        text-decoration: none;
++      }
++
++      .tab.is-active {
++        background: var(--accent);
++        color: #fff;
++        box-shadow: 0 12px 24px rgba(212, 106, 62, 0.35);
++      }
++
++      .tab:focus-visible {
++        outline: 2px solid var(--accent-strong);
++        outline-offset: 2px;
++      }
++
++      .panels {
++        margin-top: 16px;
++      }
++
++      .panel {
++        display: block;
++        background: var(--panel);
++        border: 1px solid #f1e2d2;
++        border-radius: 18px;
++        padding: 24px;
++        box-shadow: var(--shadow);
++      }
++
++      .placeholder {
++        margin-top: 16px;
++        padding-top: 16px;
++        border-top: 1px dashed #e3d2c1;
++        display: grid;
++        gap: 10px;
++      }
++
++      .placeholder-row {
++        padding: 12px 14px;
++        border-radius: 10px;
++        background: #fff;
++        border: 1px solid #f4e6d8;
++        color: var(--ink-muted);
++      }
++
++      @media (max-width: 720px) {
++        main {
++          padding: 32px 18px 48px;
++        }
++
++        .hero {
++          flex-direction: column;
++          align-items: flex-start;
++        }
++
++        .tablist {
++          align-items: stretch;
++        }
++
++        .status-card {
++          width: 100%;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <main>
++      <header class="hero">
++        <div>
++          <div class="eyebrow">Live capture</div>
++          <h1>Live mode</h1>
++          <p>Stream microphone + browser audio into the sequential transcriber.</p>
++        </div>
++        <div class="status-card" aria-live="polite">
++          <div class="status-label">Status</div>
++          <div class="status">Coming soon</div>
++          <p>Stub UI only; recording is not wired yet.</p>
++        </div>
++      </header>
++
++      <section class="tabs" aria-label="Main sections">
++        <div class="tablist" role="navigation">
++          <a class="tab" href="/?tab=queue">Queue</a>
++          <a class="tab" href="/?tab=history">History</a>
++          <a class="tab is-active" href="/live" aria-current="page">Live</a>
++        </div>
++
++        <div class="panels">
++          <section class="panel">
++            <h2>Live transcription (stub)</h2>
++            <p>Coming soon. This page will guide recording and show incremental text.</p>
++            <div class="placeholder">
++              <div class="placeholder-row">Capture microphone + browser tab audio in the browser.</div>
++              <div class="placeholder-row">Chunk the stream into ~10s segments and upload to the server.</div>
++              <div class="placeholder-row">Server enqueues chunks for the sequential worker and merges text.</div>
++              <div class="placeholder-row">UI streams partial transcript and links final results.</div>
++            </div>
++          </section>
++        </div>
++      </section>
++    </main>
++  </body>
++</html>
+diff --git a/tests/test_app.py b/tests/test_app.py
+index f763e505a4cec14f1d1e1c03135dde409fd16623..a67695fd07f41a6de2b12ab40ecaa751a55c84ff
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -26,6 +26,17 @@
+     assert "History" in response.text
+ 
+ 
++def test_live_page_ok(tmp_path: Path) -> None:
++    _configure_app(tmp_path)
++    with TestClient(app) as client:
++        response = client.get("/live")
++
++    assert response.status_code == 200
++    assert response.headers["content-type"].startswith("text/html")
++    assert "Live mode" in response.text
++    assert "Coming soon" in response.text
++
++
+ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
+     _configure_app(tmp_path)
+     files = [
+
+tokens used
+56,349

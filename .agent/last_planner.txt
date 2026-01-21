@@ -1,3 +1,3 @@
-Selected task: WUI-050 - Update check at startup  
+Selected task: WUI-090 — Live mode skeleton  
 Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`  
-Worker next: follow `.agent/plan.md` to implement the best-effort startup update check (module + startup hook + tests + doc note), then run `make test` and `make lint`.
+Worker next: implement the /live stub page + nav link, write the Live-mode technical plan doc, add a minimal /live render test, update `docs/tree.md` if new files are added, then run `make test` and `make lint`.

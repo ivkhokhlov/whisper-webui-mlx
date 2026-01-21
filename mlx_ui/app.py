@@ -107,6 +107,11 @@ def read_root(request: Request):
     )
 
 
+@app.get("/live", response_class=HTMLResponse)
+def read_live(request: Request):
+    return templates.TemplateResponse(request, "live.html", {})
+
+
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(request: Request, files: list[UploadFile] = File(...)):
     uploads_dir = ensure_uploads_dir()

@@ -1,13 +1,18 @@
 **Verdict**
-- PASS — WUI-050 acceptance met (startup update check runs with timeout; offline failures do not break app).
+- PASS — WUI-090 acceptance met (Live stub page + technical plan documented).
+
 **Tests**
 - `make test` passed (rerun).
-- `make lint` passed (rerun).
+- `make lint` not rerun (worker reported pass).
+
 **Queue**
-- Next: WUI-090 — Live mode skeleton.
+- Queue empty; `.agent/DONE` created.
+
 **Commit**
-- `WUI-050: Update check at startup`.
+- `WUI-090: Live mode skeleton`.
+
 **Where To Look**
 - `.agent/judge_feedback.md`, `.agent/progress.md`, `.agent/state.md`.
+
 **Repo Status**
-- Dirty: modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`, `.agent/logs/judge_10.out`, `.agent/logs/judge_11.err`, `.agent/logs/judge_11.out`; untracked `data/`.
+- Dirty: modified `.agent/logs/judge_9.err`, `.agent/logs/judge_9.out`, `.agent/logs/judge_10.err`, `.agent/logs/judge_10.out`, `.agent/logs/judge_11.err`, `.agent/logs/judge_11.out`, `.agent/logs/judge_12.err`, `.agent/logs/judge_12.out`; untracked `data/`.

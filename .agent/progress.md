@@ -37,3 +37,6 @@
 - 2026-01-21T13:23:02Z — PLANNER — CODEX_ITERATION=12 — selected WUI-050 (Update check at startup). Queue updated (moved WUI-050 to Now).
 - 2026-01-21T13:31:52Z — WORKER — CODEX_ITERATION=12 — WUI-050 — tests: passed (make test); lint: passed (make lint)
 - 2026-01-21T13:36:37Z — JUDGE — CODEX_ITERATION=12 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T13:42:17Z — PLANNER — CODEX_ITERATION=13 — selected WUI-090 (Live mode skeleton). Queue updated (moved WUI-090 to Now).
+- 2026-01-21T13:49:53Z — WORKER — CODEX_ITERATION=13 — WUI-090 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T13:53:55Z — JUDGE — CODEX_ITERATION=13 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)

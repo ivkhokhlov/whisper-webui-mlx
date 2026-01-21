@@ -1,20 +1,21 @@
 # Worker Report
 
-Task: WUI-050 — Update check at startup
+Task: WUI-090 - Live mode skeleton
 
-What changed:
-- Added update check helper with URL resolution, local version detection, and version comparison logging.
-- Triggered update check on startup in a daemon thread with opt-out via env/app state.
-- Added update check tests and documented the env overrides.
+## What changed
+- Added a /live route and a stub Live template with a clear coming-soon status and navigation.
+- Added a Live link to the main tab bar and support for ?tab=queue/history on load.
+- Documented the live mode technical plan in developer docs.
+- Added a minimal test that asserts the /live page renders.
 
-Files changed:
-- mlx_ui/update_check.py
+## Files changed
 - mlx_ui/app.py
-- tests/test_update_check.py
+- mlx_ui/templates/index.html
+- mlx_ui/templates/live.html
 - tests/test_app.py
 - docs/dev.md
 - docs/tree.md
 
-Commands run + result:
+## Commands run
 - make test (pass)
 - make lint (pass)
