@@ -1,17 +1,16 @@
 # Worker Report
 
-Task: WUI-021 — Results browsing + download
-
-What changed:
-- Added result file indexing plus a safe download endpoint.
-- Rendered per-job result links with view/download actions in History.
-- Added tests covering history links and the results endpoint.
-
-Files changed:
-- mlx_ui/app.py
-- mlx_ui/templates/index.html
-- tests/test_app.py
-
-Commands run:
-- make test (pass)
-- make lint (pass)
+- Task: WUI-030 — One-command setup & run on M1+ macOS
+- What changed:
+  - Added `scripts/setup_and_run.sh` to install deps, install `wtm`, prefetch model weights, and run the server + open browser.
+  - Documented the one-command setup in `README.md` and `docs/dev.md`.
+  - Updated `docs/tree.md` to include the new script.
+- Files changed:
+  - scripts/setup_and_run.sh
+  - README.md
+  - docs/dev.md
+  - docs/tree.md
+- Commands run:
+  - `make test` (pass) -> .agent/logs/test_10.log
+  - `make lint` (pass) -> .agent/logs/lint_10.log
+- Failures: none

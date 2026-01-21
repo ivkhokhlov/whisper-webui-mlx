@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+log() {
+  printf '%s\n' "==> $*"
+}
+
+warn() {
+  printf '%s\n' "WARN: $*" >&2
+}
+
+fail() {
+  printf '%s\n' "ERROR: $*" >&2
+  exit 1
+}
+
+require_macos_arm64() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    fail "This script supports macOS only."
+  fi
+  if [[ "$(uname -m)" != "arm64" ]]; then
+    fail "Apple Silicon (arm64) is required."
+  fi
+}
+
+ensure_brew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
+  fi
+}
+
+python_is_compatible() {
+  "$1" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+}
+
+select_python() {
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    if python_is_compatible python3; then
+      echo "python3"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+ensure_python() {
+  local python_bin
+  python_bin="$(select_python || true)"
+  if [[ -n "$python_bin" ]]; then
+    echo "$python_bin"
+    return 0
+  fi
+
+  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
+  brew install python@3.11
+  hash -r
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
+  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
+}
+
+ensure_poetry() {
+  if command -v poetry >/dev/null 2>&1; then
+    return 0
+  fi
+  log "Poetry not found. Installing via Homebrew..."
+  brew install poetry
+}
+
+ensure_ffmpeg() {
+  if command -v ffmpeg >/dev/null 2>&1; then
+    return 0
+  fi
+  log "ffmpeg not found. Installing via Homebrew..."
+  brew install ffmpeg
+}
+
+ensure_git() {
+  if command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
+}
+
+ensure_python_deps() {
+  local python_bin="$1"
+  export POETRY_VIRTUALENVS_IN_PROJECT=true
+  log "Configuring Poetry environment..."
+  poetry env use "$python_bin" >/dev/null
+  log "Installing Python dependencies..."
+  poetry install
+}
+
+ensure_wtm() {
+  if poetry run python - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
+PY
+  then
+    return 0
+  fi
+
+  log "Installing whisper-turbo-mlx (wtm)..."
+  poetry run pip install --upgrade \
+    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
+}
+
+download_model() {
+  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
+    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
+    return 0
+  fi
+  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
+  if ! poetry run python - <<'PY'
+from huggingface_hub import hf_hub_download, snapshot_download
+
+snapshot_download(
+    repo_id="openai/whisper-large-v3-turbo",
+    allow_patterns=["config.json", "model.safetensors"],
+)
+hf_hub_download(
+    repo_id="JosefAlbers/whisper",
+    filename="multilingual.tiktoken",
+)
+PY
+  then
+    fail "Model download failed. Check your network and rerun."
+  fi
+}
+
+prepare_data_dirs() {
+  mkdir -p data/uploads data/results data/logs
+}
+
+wait_for_server() {
+  local url="http://127.0.0.1:8000"
+  local attempts=40
+  local delay=0.5
+
+  for _ in $(seq 1 "$attempts"); do
+    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
+
+open_browser() {
+  local url="http://127.0.0.1:8000"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
+  else
+    warn "open command not available; navigate to $url manually."
+  fi
+}
+
+start_server() {
+  log "Starting server (http://127.0.0.1:8000)..."
+  make run &
+  server_pid=$!
+
+  if wait_for_server; then
+    open_browser
+  else
+    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
+  fi
+
+  wait "$server_pid"
+}
+
+require_macos_arm64
+ensure_brew
+ensure_git
+PYTHON_BIN="$(ensure_python)"
+ensure_poetry
+ensure_ffmpeg
+ensure_python_deps "$PYTHON_BIN"
+ensure_wtm
+download_model
+prepare_data_dirs
+
+server_pid=""
+trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
+
+start_server

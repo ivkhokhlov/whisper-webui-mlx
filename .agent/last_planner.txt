@@ -1,5 +1,5 @@
-Selected task: WUI-021 — Results browsing + download.
+Selected task: WUI-030 — One-command setup & run on M1+ macOS.
 
 Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
 
-Worker should now follow `.agent/plan.md`: add per-job result listing + download endpoint in `mlx_ui/app.py`, update `mlx_ui/templates/index.html`, add tests in `tests/test_app.py`, then run `make test` and `make lint`.
+Worker next: follow `.agent/plan.md` to add `scripts/setup_and_run.sh` (deps install, `wtm` install/model download, start server, open browser), update `docs/dev.md`, `README.md`, and `docs/tree.md`, then run `make test` and `make lint`.

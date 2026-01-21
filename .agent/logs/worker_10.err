@@ -1,0 +1,5159 @@
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be096-44f7-7d93-a3ac-a170572bd3f1
+--------
+user
+# WORKER AGENT (3-phase harness)
+
+You are the WORKER in a Planner→Worker→Judge pipeline.
+Your job: execute `.agent/plan.md` as written, with minimal scope creep.
+
+Non-interactive run (`codex exec`): do not ask questions. If unclear, make the smallest reasonable assumption and log it.
+
+## Stop conditions
+- If `.agent/STOP` exists: append “STOP seen” to `.agent/progress.md` and exit.
+- If `.agent/DONE` exists: append “DONE seen” to `.agent/progress.md` and exit.
+
+## Inputs you MUST read
+- `.agent/PROJECT.md` (authoritative; includes TEST_CMD/LINT_CMD)
+- `AGENTS.md` (repo rules)
+- `docs/spec.md`
+- `docs/dev.md` (if exists)
+- `.agent/plan.md`
+- `.agent/judge_feedback.md` (if present)
+- `.agent/queue.md`
+- `.agent/progress.md`
+- `.agent/state.md`
+
+## Core rules
+- Implement ONLY the single task in `.agent/plan.md`.
+- Do NOT mark tasks done in `.agent/queue.md` (Judge owns that).
+- Prefer small, coherent changes. No big refactors unless the task explicitly requires it.
+- All network-dependent logic must be best-effort with timeouts and exception handling.
+- Bind server to localhost only.
+- Queue must be strictly sequential: one job at a time; no parallel transcription runs.
+- Never print secrets. If you need to log config, mask tokens.
+
+## Logging
+Ensure `.agent/logs/` exists.
+Write/overwrite `.agent/worker_report.md` with:
+- task id/title
+- what changed (bullets)
+- files changed (list)
+- commands run + result (pass/fail)
+- if failure: include a short excerpt of the error and what you think is next
+
+Also append a WORKER entry to `.agent/progress.md` with:
+- timestamp
+- CODEX_ITERATION
+- task id
+- test + lint status summary
+
+## Verification (must do)
+Run TEST_CMD (from PROJECT.md). Capture output into a file.
+
+Tip: to preserve exit codes with tee:
+- use: `bash -lc "set -o pipefail; <TEST_CMD> 2>&1 | tee .agent/logs/test_${CODEX_ITERATION}.log"`
+
+If LINT_CMD is set and command exists, run similarly and capture output:
+- `.agent/logs/lint_${CODEX_ITERATION}.log`
+
+If tests fail and you cannot fix quickly:
+- write/update `.agent/BLOCKED.md` with exact errors + next steps
+- exit (do not thrash)
+
+## Output
+Print a short summary:
+- what you implemented
+- test status
+- pointers to worker_report + log files
+
+mcp startup: no servers
+
+thinking
+**Listing files in directory**
+exec
+/bin/zsh -lc ls in /Users/ivankhokhlov/code/mlx-ui succeeded in 75ms:
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Preparing to read inputs**
+exec
+/bin/zsh -lc 'ls .agent' in /Users/ivankhokhlov/code/mlx-ui succeeded in 96ms:
+BLOCKED.md
+PROJECT.md
+judge.md
+judge_feedback.md
+last_judge.txt
+last_planner.txt
+last_worker.txt
+logs
+plan.md
+planner.md
+progress.md
+queue.md
+state.md
+worker.md
+worker_report.md
+
+thinking
+**Checking for STOP/DONE signals**
+
+Considering verifying stop conditions by inspecting the presence of a STOP file in the .agent directory, potentially via a test or listing files.
+exec
+/bin/zsh -lc 'test -f .agent/STOP && echo STOP || echo NO_STOP' in /Users/ivankhokhlov/code/mlx-ui succeeded in 97ms:
+NO_STOP
+
+thinking
+**Confirming completion**
+exec
+/bin/zsh -lc 'test -f .agent/DONE && echo DONE || echo NO_DONE' in /Users/ivankhokhlov/code/mlx-ui succeeded in 77ms:
+NO_DONE
+
+thinking
+**Reading key project files**
+exec
+/bin/zsh -lc 'cat AGENTS.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 68ms:
+# AGENTS.md
+
+This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
+Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
+
+## Source of truth
+- `.agent/PROJECT.md` — high-level constraints and commands
+- `docs/spec.md` — product requirements
+- `.agent/queue.md` — backlog (Judge marks tasks done)
+
+## How to run
+- Tests: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
+- Run server: `make run`
+
+If Makefile does not exist yet, create it during bootstrap.
+
+## Safety / security rules
+- Never touch anything outside the repo root.
+
+thinking
+**Reviewing project documentation**
+
+I'm examining the .agent/PROJECT.md file to gather project-specific details that could guide the implementation or provide context on architecture and key components.
+exec
+/bin/zsh -lc 'cat .agent/PROJECT.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 64ms:
+# PROJECT (single source of truth for the harness)
+
+PROJECT_NAME: "whisper-webui-mlx"
+REPO_KIND: "new repo"
+
+## Brief (1–2 paragraphs)
+Build a **local macOS app for Apple Silicon (M1+)** that exposes a **Web UI on localhost** to manage **offline transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX). https://github.com/JosefAlbers/whisper-turbo-mlx
+
+Turn the current console workflow (e.g. `wtm ... --any_lang=True`) into a tool that is easy to deploy on another M1+ Mac with **one command**, supports **batch uploads**, a **strictly sequential** processing queue (no parallelism), **job history + downloads**, optional **Telegram delivery of TXT results**, and (in the final phase) **live recording + chunked transcription**.
+
+## Primary stack
+Python 3.11+
+- Backend/Web: FastAPI + Uvicorn
+- Templates/UI: Jinja2 + minimal vanilla JS (no external CDNs; must work offline)
+- Storage: SQLite (jobs metadata) + local filesystem (uploads/results/logs)
+- Worker: a single sequential worker consuming a persistent queue
+- Transcription: subprocess call to `wtm` with explicit language selection
+
+## Commands (choose defaults if unknown)
+TEST_CMD: "make test"
+
+thinking
+**Noting missing docs file**
+exec
+/bin/zsh -lc 'cat docs/spec.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+# Spec — whisper-webui-mlx
+
+## Goal
+Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+
+The tool must be easy to deploy to another M1+ Mac (one command), and after the initial setup + model download it must work **fully offline**.
+
+## MVP: Batch file transcription via Web UI
+### UX
+- User opens Web UI (localhost).
+- User uploads **one or multiple files** (audio or video).
+- User selects the **language manually** (no auto-detect).
+- Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
+- UI has:
+  - Queue view: current job + pending jobs
+  - History view: completed jobs + access to results
+
+### Processing rules
+- One worker processes one job at a time (sequential).
+- Keep the ML model “warm” behavior in mind: avoid parallelism and avoid reinitialization churn.
+
+thinking
+**Checking for docs/dev.md presence**
+exec
+/bin/zsh -lc 'test -f docs/dev.md && cat docs/dev.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 66ms:
+# Developer guide
+
+## Requirements (target)
+- macOS Apple Silicon (M1+)
+- Python 3.11+
+- Homebrew (for system deps like ffmpeg)
+
+## Quick start (eventual)
+```bash
+./scripts/setup_and_run.sh
+```
+
+## Manual dev loop
+```bash
+poetry install --with dev
+
+make test
+make run
+```
+
+
+thinking
+**Planning next steps**
+exec
+/bin/zsh -lc 'cat .agent/plan.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 62ms:
+# Plan
+
+Task: WUI-030 — One-command setup & run on M1+ macOS
+
+Acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser
+
+Assumptions:
+- Homebrew is available for system deps (ffmpeg), or the script will fail fast with a clear message.
+- Network is available on first run to install deps and download the ML model; subsequent runs should work offline.
+- `whisper-turbo-mlx` / `wtm` install path is via pip (poetry) unless upstream docs indicate otherwise.
+
+Implementation steps:
+- Review upstream `whisper-turbo-mlx` / `wtm` installation and model download instructions to select a default model and the CLI flags for pre-download.
+- Add `scripts/setup_and_run.sh` that checks macOS + Apple Silicon, ensures `python3.11` + `poetry` are available (install/exit with guidance if missing), installs Python deps, installs `wtm`, and pre-downloads the default model.
+- Ensure the script creates needed data directories, exports any required env vars (e.g., `WTM_PATH`), and starts the server via `make run` bound to `127.0.0.1`.
+- Open the browser to `http://127.0.0.1:8000` once the server is up (best-effort, no failure if `open` fails).
+- Update docs to mention the one-command script and update `docs/tree.md` to include the new script.
+
+Files likely to touch:
+- `scripts/setup_and_run.sh`
+exec
+/bin/zsh -lc 'test -f .agent/judge_feedback.md && cat .agent/judge_feedback.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 87ms:
+PASS
+
+Notes:
+- `make test` passes (rerun).
+- `make lint` not rerun (judge); worker reported pass.
+- Acceptance criteria met for WUI-021.
+
+thinking
+**Identifying key components**
+
+I'm noting the need to implement a queue, progress tracking, and state management as core parts of the system.
+exec
+/bin/zsh -lc 'cat .agent/queue.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+# Queue
+
+## Now
+- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+
+## Next
+
+## Later
+- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+- [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Done
+- [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+exec
+/bin/zsh -lc 'cat .agent/progress.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 89ms:
+# Progress Log (append-only)
+
+- 2026-01-21T09:49:08 — INIT — Harness files created. Next: run the 3-phase loop.
+- 2026-01-21T10:33:08Z — PLANNER — CODEX_ITERATION=1 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:37:23Z — WORKER — CODEX_ITERATION=1 — WUI-001 — tests: failed (pytest missing); lint: not run
+- 2026-01-21T10:39:53Z — JUDGE — CODEX_ITERATION=1 — NEEDS_WORK — make test failed (pytest missing in venv); tests: failed (make test)
+- 2026-01-21T10:42:24Z — PLANNER — CODEX_ITERATION=2 — selected WUI-001A (Fix pytest availability for `make test`). Queue updated (format fix for WUI-001A).
+- 2026-01-21T10:49:11Z — WORKER — CODEX_ITERATION=2 — WUI-001A — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:52:47Z — JUDGE — CODEX_ITERATION=2 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:56:28Z — PLANNER — CODEX_ITERATION=3 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:58:25Z — WORKER — CODEX_ITERATION=3 — WUI-001 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:01:51Z — JUDGE — CODEX_ITERATION=3 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:05:17Z — PLANNER — CODEX_ITERATION=4 — selected WUI-002 (Minimal WebUI shell). Queue unchanged.
+- 2026-01-21T11:11:48Z — WORKER — CODEX_ITERATION=4 — WUI-002 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:16:13Z — JUDGE — CODEX_ITERATION=4 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:23:27Z — PLANNER — CODEX_ITERATION=5 — selected WUI-010 (Upload endpoint + local storage). Queue updated (moved WUI-010 to Now).
+- 2026-01-21T11:33:16Z — WORKER — CODEX_ITERATION=5 — WUI-010 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:37:21Z — JUDGE — CODEX_ITERATION=5 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
+- 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
+
+thinking
+**Identifying missing state management**
+
+I noted that state is needed, indicating the next step is deciding where and how to manage application state effectively.
+exec
+/bin/zsh -lc 'cat .agent/state.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 75ms:
+last_task_id: WUI-021
+last_verdict: PASS
+consecutive_failures: 0
+
+thinking
+**Inspecting scripts directory**
+
+I'm listing the scripts directory to identify files relevant to implementing WUI-030 before examining them for necessary details.
+exec
+/bin/zsh -lc 'ls scripts' in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+codex_loop_3phase.sh
+status.sh
+
+thinking
+**Planning setup script**
+
+I'm preparing to create a setup_and_run.sh script ensuring ASCII compatibility and will review the Makefile, README, and docs structure for relevant details.
+exec
+/bin/zsh -lc 'cat Makefile' in /Users/ivankhokhlov/code/mlx-ui succeeded in 84ms:
+PYTHON ?= python
+POETRY ?= poetry
+POETRY_RUN ?= $(POETRY) run
+
+.PHONY: test lint fmt run
+
+test:
+	$(POETRY_RUN) pytest
+
+lint:
+	$(POETRY_RUN) ruff check .
+
+fmt:
+	$(POETRY_RUN) ruff format .
+
+run:
+	$(POETRY_RUN) uvicorn mlx_ui.app:app --host 127.0.0.1 --port 8000
+
+thinking
+**Planning README creation**
+exec
+/bin/zsh -lc 'cat README.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 58ms:
+# whisper-webui-mlx (agent harness bootstrap)
+
+This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+
+## Quick start (app)
+Run the minimal FastAPI app on localhost:
+```bash
+make run
+```
+
+## Tests and lint
+```bash
+make test
+make lint
+make fmt
+```
+
+## Quick start (agent loop)
+```bash
+bash scripts/codex_loop_3phase.sh 50
+
+thinking
+**Noting missing docs/tree.md**
+exec
+/bin/zsh -lc 'cat docs/tree.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 96ms:
+# Project tree (curated)
+
+This file is a human-maintained map of the repo. Update when structure changes.
+
+## Current (bootstrap)
+- `.agent/` — durable loop state + prompts
+- `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+- `docs/` — spec + dev notes + this tree map
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+- `mlx_ui/templates/` — Jinja2 templates
+- `scripts/` — loop scripts + setup/run scripts (to be implemented)
+- `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+- `Makefile` — dev commands
+- `pyproject.toml` — dependencies and tooling
+- `README.md` — repo overview
+
+thinking
+**Checking transcriber for integration clues**
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/transcriber.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 61ms:
+import logging
+import os
+from pathlib import Path
+import subprocess
+from typing import Protocol
+
+from mlx_ui.db import JobRecord
+
+logger = logging.getLogger(__name__)
+
+
+class Transcriber(Protocol):
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        raise NotImplementedError
+
+
+class FakeTranscriber:
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        results_dir = Path(results_dir)
+        job_dir = results_dir / job.id
+
+thinking
+**Planning model install script**
+
+I need to create a script to install and download the model since there is no default one. I will check existing usage and tests for the `wtm` tool to understand how it manages model downloads before implementing.
+exec
+/bin/zsh -lc 'rg -n "wtm" -S' in /Users/ivankhokhlov/code/mlx-ui succeeded in 85ms:
+README.md:3:This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+AGENTS.md:30:- Tests must not require the real ML model by default; mock `wtm` execution unless running explicit integration tests.
+docs/spec.md:4:Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+docs/spec.md:65:   - installs/sets up `whisper-turbo-mlx` and `wtm`
+mlx_ui/transcriber.py:28:class WtmTranscriber:
+mlx_ui/transcriber.py:31:        wtm_path: str | None = None,
+mlx_ui/transcriber.py:34:        self.wtm_path = wtm_path or os.getenv("WTM_PATH") or "wtm"
+mlx_ui/transcriber.py:35:        self.language = (language or os.getenv("WTM_LANGUAGE") or "en").strip() or "en"
+mlx_ui/transcriber.py:45:            self.wtm_path,
+mlx_ui/transcriber.py:52:        logger.info("Running wtm for job %s", job.id)
+mlx_ui/transcriber.py:61:            message = _format_wtm_error(exc)
+mlx_ui/transcriber.py:67:                f"wtm completed but no .txt output found in {job_dir}"
+mlx_ui/transcriber.py:72:def _format_wtm_error(error: subprocess.CalledProcessError) -> str:
+mlx_ui/transcriber.py:75:    message = f"wtm failed with exit code {error.returncode}"
+tests/test_transcriber.py:6:from mlx_ui.transcriber import WtmTranscriber
+tests/test_transcriber.py:23:def test_wtm_transcriber_runs_and_returns_txt(tmp_path: Path, monkeypatch) -> None:
+tests/test_transcriber.py:37:    transcriber = WtmTranscriber(wtm_path="wtm", language="fr")
+tests/test_transcriber.py:42:    assert captured["cmd"][0] == "wtm"
+docs/dev.md:24:- Prefer tests that do not require the real ML model; mock `wtm` execution.
+mlx_ui/worker.py:8:from mlx_ui.transcriber import Transcriber, WtmTranscriber
+
+thinking
+**Searching for install scripts**
+exec
+/bin/zsh -lc 'rg -n "setup_and_run" -S' in /Users/ivankhokhlov/code/mlx-ui succeeded in 69ms:
+docs/dev.md:10:./scripts/setup_and_run.sh
+
+
+thinking
+**Planning script implementation and docs update**
+
+I'm preparing to implement a setup script that installs dependencies and downloads a default model (likely whisper-turbo-mlx) for offline use after the first run. I'll check the CLI for model download commands to integrate properly and plan to update relevant docs to mention the new script.
+thinking
+**Designing robust install script with fallback**
+
+I'm considering a script that attempts to install the model package via pip and optionally runs a download command if available, with configurable model and commands. Since wtm may be missing, the script will handle failures gracefully and provide guidance. Next, I'll check pyproject dependencies to confirm package details.
+exec
+/bin/zsh -lc 'cat pyproject.toml' in /Users/ivankhokhlov/code/mlx-ui succeeded in 96ms:
+[tool.poetry]
+name = "mlx-ui"
+version = "0.1.0"
+description = ""
+authors = ["Ivan Khokhlov <ivan.s.khokhlov@rt.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.6"
+jinja2 = "^3.1.4"
+uvicorn = "^0.32.1"
+python-multipart = "^0.0.21"
+
+[tool.poetry.group.dev.dependencies]
+httpx = "^0.28.1"
+pytest = "^8.3.4"
+ruff = "^0.14.13"
+
+
+
+
+thinking
+**Evaluating wtm installation strategy**
+
+Considering whether to add `wtm` to dependencies, it seems best to install it within the poetry environment to ensure availability when running with `poetry run uvicorn`, avoiding separate system installs and keeping PATH consistent.
+thinking
+**Planning install script and environment checks**
+
+I'm planning a setup script to verify Python, poetry, and ffmpeg presence, create needed data directories, and conditionally install `wtm` if missing, keeping the environment minimal. Next, I'll fetch whisper-turbo-mlx docs to confirm CLI usage and model download details.
+exec
+/bin/zsh -lc 'curl -L --silent https://raw.githubusercontent.com/JosefAlbers/whisper-turbo-mlx/main/README.md | head -n 120' in /Users/ivankhokhlov/code/mlx-ui succeeded in 508ms:
+# WTM (Whisper Turbo MLX)
+
+This repository provides a fast and lightweight implementation of the [Whisper](https://github.com/openai/whisper/discussions/2363) model using [MLX](https://github.com/ml-explore/mlx-examples/tree/main/whisper), all contained within a single file of under 300 lines, designed for efficient audio transcription.
+
+![Alt text](https://raw.githubusercontent.com/JosefAlbers/whisper-turbo-mlx/main/assets/benchmark.png)
+
+## Installation
+
+To install WTM on macOS, run:
+
+```zsh
+brew install ffmpeg
+git clone https://github.com/JosefAlbers/whisper-turbo-mlx.git
+cd whisper-turbo-mlx
+pip install -e .
+```
+To install the CUDA backend on Linux, run:
+
+```zsh
+pip install -e .[cuda]
+
+thinking
+**Assessing installation and model download**
+
+I'm considering using pip install from git for a one-command install but need to ensure offline use after initial setup since the model likely downloads weights on first run; I'll check README for model options or environment variables to control this.
+exec
+/bin/zsh -lc 'curl -L --silent https://raw.githubusercontent.com/JosefAlbers/whisper-turbo-mlx/main/whisper_turbo.py | head -n 120' in /Users/ivankhokhlov/code/mlx-ui succeeded in 511ms:
+import base64
+import glob
+import json
+import math
+import os
+import time
+from functools import lru_cache
+from subprocess import CalledProcessError, run
+
+import fire
+import librosa
+import mlx.core as mx
+import mlx.nn as nn
+import numpy as np
+import tiktoken
+from huggingface_hub import hf_hub_download, snapshot_download
+
+class Tokenizer:
+    def __init__(self):
+        path_tok = 'multilingual.tiktoken'
+
+thinking
+**Searching for CLI model options**
+
+I'm looking at the bottom of the file to find Fire CLI commands related to the model to identify available model options or sizes.
+exec
+/bin/zsh -lc 'curl -L --silent https://raw.githubusercontent.com/JosefAlbers/whisper-turbo-mlx/main/whisper_turbo.py | rg -n "def main|fire.Fire|arg"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 402ms:
+185:        self.positional_embedding = mx.zeros((cfg['max_target_positions'], cfg['d_model']))
+188:        self._mask = nn.MultiHeadAttention.create_additive_causal_mask(cfg['max_target_positions']).astype(mx.float16)
+226:            arg_hop = mx.argmax(piece).item()
+227:            hop = (piece[:,arg_hop].astype(mx.int32).item()-50365)*2
+228:            new_tok = mx.concatenate([new_tok, piece[:,:arg_hop]], axis=-1)
+237:        arg_hop = mx.argmax(new_tok, axis=-1).tolist()
+238:        new_tok = [i[:a] for i,a in zip(new_tok.astype(mx.int32).tolist(),arg_hop)]
+249:            txt = mx.argmax(logits[:,-1,:], axis=-1, keepdims=True) * goon
+260:    path_hf = snapshot_download(repo_id='openai/whisper-large-v3-turbo', allow_patterns=["config.json", "model.safetensors"])
+277:                arg = f'{path_audio.split('/')[-1]} {any_lang=} {quick=}'
+278:                print(f'--- {arg=}')
+282:                tics[arg] = tic
+286:    fire.Fire(transcribe)
+289:    fire.Fire(transcribe)
+
+thinking
+**Confirming default model download approach**
+
+The default model used is "openai/whisper-large-v3-turbo" downloaded via snapshot_download, so predownloading can be done by calling transcribe or load_model directly in Python before running tasks. Next, I'll check the CLI near the script bottom to see if it supports explicit predownload commands.
+exec
+/bin/zsh -lc 'curl -L --silent https://raw.githubusercontent.com/JosefAlbers/whisper-turbo-mlx/main/whisper_turbo.py | tail -n 120' in /Users/ivankhokhlov/code/mlx-ui succeeded in 414ms:
+        if kv_cache is None:
+            kv_cache = [None] * len(self.layers)
+        cross_qk = [None] * len(self.layers)
+        for e, block in enumerate(self.layers):
+            x, kv_cache[e], cross_qk[e] = block(x, xa, mask=self._mask, kv_cache=kv_cache[e])
+        x = self.layer_norm(x)
+        return self.embed_tokens.as_linear(x), kv_cache, cross_qk
+
+class Whisper(nn.Module):
+    def __init__(self, cfg):
+        self.encoder = AudioEncoder(cfg)
+        self.decoder = TextDecoder(cfg)
+    def __call__(self, mel, txt):
+        return self.decoder(txt, self.encoder(mel))[0]
+    def encode(self, mel):
+        return self.encoder(mel)
+    def decode(self, txt, mel, kv_cache):
+        return self.decoder(txt, mel, kv_cache)
+
+class Transcriber(nn.Module):
+
+
+thinking
+**Planning model predownload via snapshot_download**
+
+I identified using snapshot_download from huggingface_hub with the openai/whisper-large-v3-turbo repo to predownload the model without running heavy transcribe or benchmark calls. This can be scripted inside the installed wtm environment since huggingface_hub is a dependency, enabling a lightweight best-effort predownload step after installation.
+thinking
+**Designing comprehensive setup-and-run script**
+
+I detailed a macOS-only setup script that validates Apple Silicon and dependencies (Homebrew, Python 3.11+, Poetry), installs missing tools via Homebrew if available, predownloads required model files and tokenizer using huggingface_hub APIs, installs Whisper Turbo from GitHub, ensures ffmpeg is installed, creates necessary data directories, starts the server in background with browser auto-open, and handles clean shutdown—aiming for one-command setup that fully prepares the environment for offline use after initial run.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/db.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+from dataclasses import dataclass
+from pathlib import Path
+import sqlite3
+
+
+@dataclass
+class JobRecord:
+    id: str
+    filename: str
+    status: str
+    created_at: str
+    upload_path: str
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+
+thinking
+**Checking database path in app**
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/app.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 68ms:
+from datetime import datetime, timezone
+from pathlib import Path
+import shutil
+from uuid import uuid4
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.worker import start_worker
+
+app = FastAPI(title="Whisper WebUI (MLX)")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+DEFAULT_RESULTS_DIR = BASE_DIR / "data" / "results"
+DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
+app.state.uploads_dir = DEFAULT_UPLOADS_DIR
+app.state.results_dir = DEFAULT_RESULTS_DIR
+
+
+
+thinking
+**Designing setup script with Python and Homebrew checks**
+
+The script will prepare data directories and ensure environment readiness by verifying macOS arm64, checking for Python 3.11+, and installing it via Homebrew if missing, with careful PATH updates for Apple Silicon Homebrew locations.
+thinking
+**Designing robust setup script with dependency checks and model download**
+
+The plan is to create a bash script that ensures Homebrew, git, ffmpeg, Python 3.11+, and Poetry are installed (installing missing ones via Homebrew), handles Python version checks robustly including brew paths, installs whisper-turbo-mlx via Poetry, downloads the default model with error handling, sets Poetry to create the venv inside the repo for isolation, and prepares repo-local data directories while allowing a skip flag for model download.
+thinking
+**Finalizing setup script with server start, cleanup, and docs updates**
+
+I'm adding server launch with wait-for-ready and cleanup on exit, environment variable overrides for install and model repo, plus updating README, dev docs, and docs tree to reference the new script and usage details.
+Reconnecting... 1/5 (stream disconnected before completion: Transport error: network error: error decoding response body)
+
+
+thinking
+**Drafting macOS Apple Silicon setup script**
+
+I'm outlining a bash script that enforces running only on macOS Apple Silicon, verifies Homebrew presence, and will check for Python 3.11+. I'll include utility functions and set strict error handling for stability.
+thinking
+**Adding Python version and dependency checks**
+
+I'm drafting script functions to detect or install Python 3.11+, Poetry, and ffmpeg using Homebrew, handling paths updates and errors. The script plans to configure Poetry to create virtual environments inside the repo and install necessary Python packages, including whisper-turbo-mlx, with checks for git presence.
+exec
+/bin/zsh -lc 'ls -a' in /Users/ivankhokhlov/code/mlx-ui succeeded in 78ms:
+.
+..
+.DS_Store
+.agent
+.git
+.gitignore
+.pytest_cache
+.python-version
+.ruff_cache
+.venv
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Checking Python version management**
+
+The repo contains a `.venv` directory and a `.python-version` file, suggesting use of in-project virtualenv and pyenv; next, I'll verify the Python version specified in `.python-version`.
+exec
+/bin/zsh -lc 'cat .python-version' in /Users/ivankhokhlov/code/mlx-ui succeeded in 66ms:
+3.12
+
+thinking
+**Confirming test environment and script shell**
+
+The project uses a .venv created by Poetry, so tests run via make will use this existing environment. The script should explicitly use bash to avoid POSIX shell incompatibilities, and adding network usage details in docs might be helpful.
+file update
+A /Users/ivankhokhlov/code/mlx-ui/./scripts/setup_and_run.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+log() {
+  printf '%s\n' "==> $*"
+}
+
+warn() {
+  printf '%s\n' "WARN: $*" >&2
+}
+
+fail() {
+  printf '%s\n' "ERROR: $*" >&2
+  exit 1
+}
+
+require_macos_arm64() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    fail "This script supports macOS only."
+  fi
+  if [[ "$(uname -m)" != "arm64" ]]; then
+    fail "Apple Silicon (arm64) is required."
+  fi
+}
+
+ensure_brew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
+  fi
+}
+
+python_is_compatible() {
+  "$1" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+}
+
+select_python() {
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    if python_is_compatible python3; then
+      echo "python3"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+ensure_python() {
+  local python_bin
+  python_bin="$(select_python || true)"
+  if [[ -n "$python_bin" ]]; then
+    echo "$python_bin"
+    return 0
+  fi
+
+  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
+  brew install python@3.11
+  hash -r
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
+  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
+}
+
+ensure_poetry() {
+  if command -v poetry >/dev/null 2>&1; then
+    return 0
+  fi
+  log "Poetry not found. Installing via Homebrew..."
+  brew install poetry
+}
+
+ensure_ffmpeg() {
+  if command -v ffmpeg >/dev/null 2>&1; then
+    return 0
+  fi
+  log "ffmpeg not found. Installing via Homebrew..."
+  brew install ffmpeg
+}
+
+ensure_git() {
+  if command -v git >/dev/null 2>&1; then
+    return 0
+  fi
+  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
+}
+
+ensure_python_deps() {
+  local python_bin="$1"
+  export POETRY_VIRTUALENVS_IN_PROJECT=true
+  log "Configuring Poetry environment..."
+  poetry env use "$python_bin" >/dev/null
+  log "Installing Python dependencies..."
+  poetry install
+}
+
+ensure_wtm() {
+  if poetry run python - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
+PY
+  then
+    return 0
+  fi
+
+  log "Installing whisper-turbo-mlx (wtm)..."
+  poetry run pip install --upgrade \
+    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
+}
+
+download_model() {
+  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
+    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
+    return 0
+  fi
+  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
+  if ! poetry run python - <<'PY'
+from huggingface_hub import hf_hub_download, snapshot_download
+
+snapshot_download(
+    repo_id="openai/whisper-large-v3-turbo",
+    allow_patterns=["config.json", "model.safetensors"],
+)
+hf_hub_download(
+    repo_id="JosefAlbers/whisper",
+    filename="multilingual.tiktoken",
+)
+PY
+  then
+    fail "Model download failed. Check your network and rerun."
+  fi
+}
+
+prepare_data_dirs() {
+  mkdir -p data/uploads data/results data/logs
+}
+
+wait_for_server() {
+  local url="http://127.0.0.1:8000"
+  local attempts=40
+  local delay=0.5
+
+  for _ in $(seq 1 "$attempts"); do
+    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
+
+open_browser() {
+  local url="http://127.0.0.1:8000"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
+  else
+    warn "open command not available; navigate to $url manually."
+  fi
+}
+
+start_server() {
+  log "Starting server (http://127.0.0.1:8000)..."
+  make run &
+  server_pid=$!
+
+  if wait_for_server; then
+    open_browser
+  else
+    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
+  fi
+
+  wait "$server_pid"
+}
+
+require_macos_arm64
+ensure_brew
+ensure_git
+PYTHON_BIN="$(ensure_python)"
+ensure_poetry
+ensure_ffmpeg
+ensure_python_deps "$PYTHON_BIN"
+ensure_wtm
+download_model
+prepare_data_dirs
+
+server_pid=""
+trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
+
+start_server
+apply_patch(auto_approved=true) exited 0 in 19ms:
+Success. Updated the following files:
+A scripts/setup_and_run.sh
+file update:
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+file update:
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Setting script executable**
+exec
+/bin/zsh -lc 'chmod +x scripts/setup_and_run.sh' in /Users/ivankhokhlov/code/mlx-ui succeeded in 95ms:
+
+file update:
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Updating README with one-command setup**
+
+I'm adding a new concise section near the top of README for macOS M1+ one-command setup using the script, placed before the existing Quick start. It notes Homebrew and network requirements and mentions the optional environment variable to skip model download. Next, I'll update the other docs similarly.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./README.md
+@@ -4,2 +4,8 @@
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+apply_patch(auto_approved=true) exited 0 in 23ms:
+Success. Updated the following files:
+M README.md
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Expanding setup script documentation**
+
+I'm enhancing docs/dev.md to include details on prerequisites like Homebrew, network requirements, environment variables, and notes on ffmpeg usage and model downloading.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./docs/dev.md
+@@ -11,2 +11,6 @@
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+apply_patch(auto_approved=true) exited 0 in 42ms:
+Success. Updated the following files:
+M docs/dev.md
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Updating docs to include new script**
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./docs/tree.md
+@@ -10,3 +10,3 @@
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+apply_patch(auto_approved=true) exited 0 in 41ms:
+Success. Updated the following files:
+M docs/tree.md
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+
+thinking
+**Verifying script dependencies and variable handling**
+
+Confirmed `seq` is present on macOS, and the script safely initializes and uses `server_pid` with checks before killing. The `start_server` function correctly sets `server_pid` globally. Dependency imports and poetry environment setup assume success but will cause script exit on failure, aligning with the script's error handling.
+thinking
+**Checking dependency installation and test setup**
+
+Noted that `poetry install` requires network access and `ensure_wtm` relies on pip and git being available, with failure handling implicit. Scripts are confirmed present, and the next step is running tests and lint per instructions using the prescribed command and ensuring the `CODEX_ITERATION` environment variable is set.
+exec
+/bin/zsh -lc 'printenv CODEX_ITERATION' in /Users/ivankhokhlov/code/mlx-ui succeeded in 107ms:
+10
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Running test command with verified log path**
+exec
+/bin/zsh -lc 'bash -lc "set -o pipefail; make test 2>&1 | tee .agent/logs/test_10.log"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 1.43s:
+poetry run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.12, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/ivankhokhlov/code/mlx-ui
+configfile: pyproject.toml
+plugins: anyio-4.12.1
+collected 6 items
+
+tests/test_app.py ....                                                   [ 66%]
+tests/test_transcriber.py .                                              [ 83%]
+tests/test_worker.py .                                                   [100%]
+
+=============================== warnings summary ===============================
+mlx_ui/app.py:25
+  /Users/ivankhokhlov/code/mlx-ui/mlx_ui/app.py:25: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Running lint with make**
+exec
+/bin/zsh -lc 'bash -lc "set -o pipefail; make lint 2>&1 | tee .agent/logs/lint_10.log"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 679ms:
+poetry run ruff check .
+All checks passed!
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Preparing worker report with changed files**
+
+I'm planning to update the worker report with the list of changed files, using `git status -s` to gather modifications and record executed commands.
+exec
+/bin/zsh -lc 'git status -s' in /Users/ivankhokhlov/code/mlx-ui succeeded in 87ms:
+ M .agent/last_judge.txt
+ M .agent/last_planner.txt
+ M .agent/logs/judge_9.err
+ M .agent/logs/judge_9.out
+ M .agent/plan.md
+ M .agent/progress.md
+ M .agent/queue.md
+ M README.md
+ M docs/dev.md
+ M docs/tree.md
+?? .agent/logs/lint_10.log
+?? .agent/logs/planner_10.err
+?? .agent/logs/planner_10.out
+?? .agent/logs/test_10.log
+?? .agent/logs/worker_10.err
+?? .agent/logs/worker_10.out
+?? data/
+?? scripts/setup_and_run.sh
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+
+thinking
+**Updating agent logs with test and lint results**
+
+I'll prepare a new worker report summarizing changed files and commands run, then append a WORKER entry with timestamp, iteration, task ID, and pass statuses to the progress log.
+thinking
+**Preparing detailed worker report**
+
+I'm drafting a comprehensive worker report including task ID, title, specific file changes, command details with pass status, and script purpose before overwriting the existing report file.
+exec
+/bin/zsh -lc "cat <<'EOF' > .agent/worker_report.md
+# Worker Report
+
+- Task: WUI-030 — One-command setup & run on M1+ macOS
+- What changed:
+  - Added "'`scripts/setup_and_run.sh` to install deps, install `wtm`, prefetch model weights, and run the server + open browser.
+  - Documented the one-command setup in `README.md` and `docs/dev.md`.
+  - Updated `docs/tree.md` to include the new script.
+- Files changed:
+  - scripts/setup_and_run.sh
+  - README.md
+  - docs/dev.md
+  - docs/tree.md
+- Commands run:
+  - `make test` (pass) -> .agent/logs/test_10.log
+  - `make lint` (pass) -> .agent/logs/lint_10.log
+- Failures: none
+EOF' in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Appending progress entry with timestamp**
+
+I'm preparing to append a progress entry using a UTC ISO 8601 timestamp generated by the date command.
+exec
+/bin/zsh -lc 'date -u "+%Y-%m-%dT%H:%M:%SZ"' in /Users/ivankhokhlov/code/mlx-ui succeeded in 96ms:
+2026-01-21T12:53:27Z
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+thinking
+**Appending progress log**
+exec
+/bin/zsh -lc 'echo "- 2026-01-21T12:53:27Z — WORKER — CODEX_ITERATION=10 — WUI-030 — tests: passed (make test); lint: passed (make lint)" >> .agent/progress.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 60ms:
+
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+
+
+thinking
+**Finalizing agent output and messaging**
+
+The agent confirms necessary updates to log and report files and verifies no further state file changes or test blocking are required. It plans a concise final response summarizing changes, test results, and file pointers, advising on natural next steps like manual script run and noting environment considerations such as skipping model downloads.
+thinking
+**Finalizing detailed output structure**
+
+The agent plans a clear, plain-text final message starting with a concise change explanation followed by bullet points listing new and updated files with specific details. It will include test results with pass status, references to worker report and logs, and a natural next step suggestion to run the new setup script on a clean M1+ machine, all using inline code paths and restrained formatting per instructions.
+codex
+Added a one-command setup script that installs dependencies, installs `wtm`, prefetches the default model, and launches the server with a browser open; documented the flow and updated the tree map.
+
+- `scripts/setup_and_run.sh`: checks macOS arm64 + Homebrew, ensures Python/Poetry/ffmpeg, installs deps + `whisper-turbo-mlx`, downloads weights/tokenizer, starts `make run`, opens `http://127.0.0.1:8000`.
+- `README.md`: new one-command setup section.
+- `docs/dev.md`: script requirements and first-run notes.
+- `docs/tree.md`: scripts listing updated.
+
+Tests: `make test` (pass), `make lint` (pass). Logs in `.agent/logs/test_10.log` and `.agent/logs/lint_10.log`. Worker report in `.agent/worker_report.md`.
+
+If you want to validate acceptance, run `./scripts/setup_and_run.sh` on a clean M1+ machine and confirm it installs, downloads, launches, and opens the browser.
+file update:
+diff --git a/README.md b/README.md
+index 4edf279782c1a25f4b7a1a34232182f5d6d0b98e..af857bcdbff12c310af453c5b49f10d936096225
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,12 @@
+ 
+ This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+ 
++## One-command setup (macOS M1+)
++```bash
++./scripts/setup_and_run.sh
++```
++Notes: Homebrew is required; first run needs network access to install deps and download the model.
++
+ ## Quick start (app)
+ Run the minimal FastAPI app on localhost:
+ ```bash
+diff --git a/docs/dev.md b/docs/dev.md
+index dd1ebaf3027399d8cd54b1320f2a9e5ba65ac00e..37100462d208054a56f35bbb33d69ae4146c083e
+--- a/docs/dev.md
++++ b/docs/dev.md
+@@ -9,6 +9,10 @@
+ ```bash
+ ./scripts/setup_and_run.sh
+ ```
++Notes:
++- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
++- First run needs network access to install `whisper-turbo-mlx` and download the default model.
++- Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
+ 
+ ## Manual dev loop
+ ```bash
+diff --git a/docs/tree.md b/docs/tree.md
+index 9ad18896f5ab57fc92a96e6f89c0f4424e206def..897a8daf1a065f3ee0767fd7392097597255d8bd
+--- a/docs/tree.md
++++ b/docs/tree.md
+@@ -8,7 +8,7 @@
+ - `docs/` — spec + dev notes + this tree map
+ - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+ - `mlx_ui/templates/` — Jinja2 templates
+-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
++- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
+ - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+ - `Makefile` — dev commands
+ - `pyproject.toml` — dependencies and tooling
+diff --git a/scripts/setup_and_run.sh b/scripts/setup_and_run.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..3b8db5831783c3f8bb6d64a5d700815137226561
+--- /dev/null
++++ b/scripts/setup_and_run.sh
+@@ -0,0 +1,198 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT_DIR"
++
++log() {
++  printf '%s\n' "==> $*"
++}
++
++warn() {
++  printf '%s\n' "WARN: $*" >&2
++}
++
++fail() {
++  printf '%s\n' "ERROR: $*" >&2
++  exit 1
++}
++
++require_macos_arm64() {
++  if [[ "$(uname -s)" != "Darwin" ]]; then
++    fail "This script supports macOS only."
++  fi
++  if [[ "$(uname -m)" != "arm64" ]]; then
++    fail "Apple Silicon (arm64) is required."
++  fi
++}
++
++ensure_brew() {
++  if ! command -v brew >/dev/null 2>&1; then
++    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
++  fi
++}
++
++python_is_compatible() {
++  "$1" - <<'PY'
++import sys
++raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
++PY
++}
++
++select_python() {
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    if python_is_compatible python3; then
++      echo "python3"
++      return 0
++    fi
++  fi
++  return 1
++}
++
++ensure_python() {
++  local python_bin
++  python_bin="$(select_python || true)"
++  if [[ -n "$python_bin" ]]; then
++    echo "$python_bin"
++    return 0
++  fi
++
++  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
++  brew install python@3.11
++  hash -r
++  if command -v python3.11 >/dev/null 2>&1; then
++    echo "python3.11"
++    return 0
++  fi
++  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
++}
++
++ensure_poetry() {
++  if command -v poetry >/dev/null 2>&1; then
++    return 0
++  fi
++  log "Poetry not found. Installing via Homebrew..."
++  brew install poetry
++}
++
++ensure_ffmpeg() {
++  if command -v ffmpeg >/dev/null 2>&1; then
++    return 0
++  fi
++  log "ffmpeg not found. Installing via Homebrew..."
++  brew install ffmpeg
++}
++
++ensure_git() {
++  if command -v git >/dev/null 2>&1; then
++    return 0
++  fi
++  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
++}
++
++ensure_python_deps() {
++  local python_bin="$1"
++  export POETRY_VIRTUALENVS_IN_PROJECT=true
++  log "Configuring Poetry environment..."
++  poetry env use "$python_bin" >/dev/null
++  log "Installing Python dependencies..."
++  poetry install
++}
++
++ensure_wtm() {
++  if poetry run python - <<'PY'
++import importlib.util
++raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
++PY
++  then
++    return 0
++  fi
++
++  log "Installing whisper-turbo-mlx (wtm)..."
++  poetry run pip install --upgrade \
++    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
++}
++
++download_model() {
++  if [[ "${SKIP_MODEL_DOWNLOAD:-}" == "1" ]]; then
++    warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
++    return 0
++  fi
++  log "Downloading model weights (openai/whisper-large-v3-turbo)..."
++  if ! poetry run python - <<'PY'
++from huggingface_hub import hf_hub_download, snapshot_download
++
++snapshot_download(
++    repo_id="openai/whisper-large-v3-turbo",
++    allow_patterns=["config.json", "model.safetensors"],
++)
++hf_hub_download(
++    repo_id="JosefAlbers/whisper",
++    filename="multilingual.tiktoken",
++)
++PY
++  then
++    fail "Model download failed. Check your network and rerun."
++  fi
++}
++
++prepare_data_dirs() {
++  mkdir -p data/uploads data/results data/logs
++}
++
++wait_for_server() {
++  local url="http://127.0.0.1:8000"
++  local attempts=40
++  local delay=0.5
++
++  for _ in $(seq 1 "$attempts"); do
++    if curl --silent --fail --max-time 1 "$url" >/dev/null 2>&1; then
++      return 0
++    fi
++    sleep "$delay"
++  done
++  return 1
++}
++
++open_browser() {
++  local url="http://127.0.0.1:8000"
++  if command -v open >/dev/null 2>&1; then
++    open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
++  else
++    warn "open command not available; navigate to $url manually."
++  fi
++}
++
++start_server() {
++  log "Starting server (http://127.0.0.1:8000)..."
++  make run &
++  server_pid=$!
++
++  if wait_for_server; then
++    open_browser
++  else
++    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
++  fi
++
++  wait "$server_pid"
++}
++
++require_macos_arm64
++ensure_brew
++ensure_git
++PYTHON_BIN="$(ensure_python)"
++ensure_poetry
++ensure_ffmpeg
++ensure_python_deps "$PYTHON_BIN"
++ensure_wtm
++download_model
++prepare_data_dirs
++
++server_pid=""
++trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
++
++start_server
+
+tokens used
+67,115

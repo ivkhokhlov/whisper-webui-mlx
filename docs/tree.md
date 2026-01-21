@@ -8,7 +8,7 @@ This file is a human-maintained map of the repo. Update when structure changes.
 - `docs/` — spec + dev notes + this tree map
 - `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
 - `mlx_ui/templates/` — Jinja2 templates
-- `scripts/` — loop scripts + setup/run scripts (to be implemented)
+- `scripts/` — loop scripts + setup/run script (`setup_and_run.sh`)
 - `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
 - `Makefile` — dev commands
 - `pyproject.toml` — dependencies and tooling

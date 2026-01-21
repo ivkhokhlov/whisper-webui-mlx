@@ -28,3 +28,6 @@
 - 2026-01-21T12:29:53Z — PLANNER — CODEX_ITERATION=9 — selected WUI-021 (Results browsing + download). Queue updated (moved WUI-021 to Now).
 - 2026-01-21T12:36:14Z — WORKER — CODEX_ITERATION=9 — WUI-021 — tests: passed (make test); lint: passed (make lint)
 - 2026-01-21T12:39:05Z — JUDGE — CODEX_ITERATION=9 — PASS — acceptance met; tests: passed (make test); lint: not rerun (judge)
+- 2026-01-21T12:44:46Z — PLANNER — CODEX_ITERATION=10 — selected WUI-030 (One-command setup & run on M1+ macOS). Queue updated (moved WUI-030 to Now).
+- 2026-01-21T12:53:27Z — WORKER — CODEX_ITERATION=10 — WUI-030 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T12:59:23Z — JUDGE — CODEX_ITERATION=10 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)

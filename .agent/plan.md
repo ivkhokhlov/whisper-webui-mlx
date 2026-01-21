@@ -1,24 +1,26 @@
 # Plan
 
-Task: WUI-021 — Results browsing + download
+Task: WUI-030 — One-command setup & run on M1+ macOS
 
-Acceptance: history page shows per-job links to view/download TXT and other generated formats
+Acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser
 
 Assumptions:
-- Results live under `data/results/<job_id>/` and are safe to expose via file download routes.
-- Job history already exists and includes job IDs that map to results directories.
+- Homebrew is available for system deps (ffmpeg), or the script will fail fast with a clear message.
+- Network is available on first run to install deps and download the ML model; subsequent runs should work offline.
+- `whisper-turbo-mlx` / `wtm` install path is via pip (poetry) unless upstream docs indicate otherwise.
 
 Implementation steps:
-- Review current history rendering in `mlx_ui/templates/index.html` and job metadata access in `mlx_ui/app.py` to confirm what fields are available per job.
-- Add a helper to list result files for a job by scanning `data/results/<job_id>/`, filtering non-files, and sorting deterministically.
-- Add a download/view endpoint (e.g., `/results/{job_id}/{filename}`) using `FileResponse`, with path traversal protection and 404 for missing files.
-- Update the History section in the template to show per-job lists of result links (TXT emphasized) and a “no results yet” fallback.
-- Extend tests to create fake result files and assert history renders links and download endpoints return file content.
+- Review upstream `whisper-turbo-mlx` / `wtm` installation and model download instructions to select a default model and the CLI flags for pre-download.
+- Add `scripts/setup_and_run.sh` that checks macOS + Apple Silicon, ensures `python3.11` + `poetry` are available (install/exit with guidance if missing), installs Python deps, installs `wtm`, and pre-downloads the default model.
+- Ensure the script creates needed data directories, exports any required env vars (e.g., `WTM_PATH`), and starts the server via `make run` bound to `127.0.0.1`.
+- Open the browser to `http://127.0.0.1:8000` once the server is up (best-effort, no failure if `open` fails).
+- Update docs to mention the one-command script and update `docs/tree.md` to include the new script.
 
 Files likely to touch:
-- `mlx_ui/app.py`
-- `mlx_ui/templates/index.html`
-- `tests/test_app.py`
+- `scripts/setup_and_run.sh`
+- `docs/dev.md`
+- `README.md`
+- `docs/tree.md`
 
 Verification steps:
 - `make test`

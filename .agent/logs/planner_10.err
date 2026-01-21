@@ -1,0 +1,756 @@
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be093-948e-7490-aa04-1aa265338d8c
+--------
+user
+# PLANNER AGENT (3-phase harness)
+
+You are the PLANNER in a Planner→Worker→Judge pipeline.
+Your job is to keep the project “drivable” for long-running loops:
+- maintain durable state in files
+- define ONE executable task per cycle
+- write a crisp plan for the Worker
+- do NOT implement product/source code (leave that to Worker)
+
+This run is non-interactive (`codex exec`). Do not ask questions; make assumptions and log them.
+
+## Inputs you MUST read
+- `.agent/PROJECT.md` (authoritative)
+- `AGENTS.md` (if present)
+- `docs/spec.md` (if present)
+- `docs/dev.md` (if present)
+- `.agent/queue.md` (if present)
+- `.agent/progress.md` (if present)
+- `.agent/state.md` (if present)
+- `.agent/judge_feedback.md` (if present)
+- `.agent/BLOCKED.md` (if present)
+
+## Files you are allowed to create/modify
+- `.agent/**`
+- `docs/**`
+- `AGENTS.md`
+- `README.md`, `.gitignore`
+- `scripts/**`, `Makefile`, `pyproject.toml`, `requirements*.txt`
+
+Do NOT implement application/source code (e.g. `app/**`, `src/**`) in this PLANNER role.
+
+## Stop conditions
+- If `.agent/STOP` exists: append “STOP seen” to `.agent/progress.md` and exit.
+- If `.agent/DONE` exists: append “DONE seen” to `.agent/progress.md` and exit.
+
+## Required durable files (create if missing)
+Create directories as needed (`.agent/`, `.agent/logs/`, `docs/`).
+
+Ensure these exist (create minimal versions if missing):
+- `AGENTS.md` (repo-specific agent rules: how to run tests, style rules, definition of done)
+- `docs/spec.md` (spec derived from PROJECT.md; include MVP + later phases)
+- `docs/dev.md` (how to setup/run/test locally on macOS M1+; keep short)
+- `docs/tree.md` (curated tree map; can start small)
+- `.agent/queue.md` (task backlog in required format below)
+- `.agent/progress.md` (append-only log)
+- `.agent/state.md` (small key-values: last_task_id, last_verdict, consecutive_failures)
+- `.agent/plan.md` (overwrite each cycle)
+- `.agent/judge_feedback.md` (may exist; do not delete unless Judge says so)
+
+If `.agent/queue.md` is missing, seed it with 10–18 tasks in sensible order:
+- Harness/bootstrap tasks (Makefile, tests, minimal web skeleton)
+- MVP WebUI: uploads → queue → sequential worker → results
+- Integrate `wtm` CLI for real transcription (language selection, formats, robust errors)
+- One-command macOS setup/run script (brew/venv/pip/model download, open browser)
+- Observability/logging
+- Optional Telegram delivery
+- Optional update check at startup (best-effort; must not break offline)
+- Backlog: live mode + chunked transcription
+
+## Critical product constraints (must be reflected in plans/queue)
+- Bind ONLY to localhost (127.0.0.1). No LAN exposure.
+- Strictly sequential queue (no parallel transcriptions).
+- After initial dependency/model download, app must work fully offline.
+- Secrets (Telegram token) must never be printed or exposed in UI logs; always masked.
+- Telegram send must never break the pipeline; failures are logged only.
+- Tests should not require running the real ML model by default; mock `wtm` execution.
+
+## Queue format (MUST match exactly)
+`.agent/queue.md` must be:
+
+# Queue
+
+## Now
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Next
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Later
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Done
+- [x] <task id> — <short title>
+
+Rules:
+- The Worker does NOT mark tasks done; the Judge does.
+- You select the first unchecked item in Now (else Next, else Later).
+- If the selected task is too large, split it into smaller tasks and pick the first.
+
+## Planning logic (per cycle)
+1) Read `.agent/state.md` and `.agent/judge_feedback.md`.
+   - If the last verdict indicates repeated failure (>=3): split the task or create a narrower “fix” task at the top of Now.
+2) Choose exactly ONE task for the Worker.
+3) Write `.agent/plan.md` with:
+   - Task id + title
+   - Acceptance criteria (copy from queue)
+   - Assumptions (only if needed)
+   - Implementation steps (3–10 bullets)
+   - Files likely to touch
+   - Verification steps: run TEST_CMD (and LINT_CMD if set)
+4) Append to `.agent/progress.md` a PLANNER entry:
+   - timestamp
+   - CODEX_ITERATION (if available)
+   - selected task
+   - any queue changes (splits, reprioritization)
+
+## Output
+Print a short summary:
+- selected task id/title
+- what files you updated (queue/spec/plan/etc.)
+- what the Worker should do next
+
+mcp startup: no servers
+
+thinking
+**Planning initial repo inspection**
+
+I'm focusing on listing and searching files within the repo root to identify key documents like AGENTS.md for planning next steps.
+exec
+/bin/zsh -lc ls in /Users/ivankhokhlov/code/mlx-ui succeeded in 79ms:
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Listing .agent directory contents**
+exec
+/bin/zsh -lc 'ls -a' in /Users/ivankhokhlov/code/mlx-ui succeeded in 92ms:
+.
+..
+.DS_Store
+.agent
+.git
+.gitignore
+.pytest_cache
+.python-version
+.ruff_cache
+.venv
+AGENTS.md
+Makefile
+README.md
+data
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Listing key documentation files**
+
+I'm preparing to read the main agent-related docs and specs including AGENTS.md, docs/spec.md, docs/dev.md, docs/tree.md, .agent/queue.md, progress.md, state.md, judge_feedback.md, and .agent/PROJECT.md for a comprehensive understanding.
+exec
+/bin/zsh -lc "sed -n '1,160p' AGENTS.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 70ms:
+# AGENTS.md
+
+This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
+Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
+
+## Source of truth
+- `.agent/PROJECT.md` — high-level constraints and commands
+- `docs/spec.md` — product requirements
+- `.agent/queue.md` — backlog (Judge marks tasks done)
+
+## How to run
+- Tests: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
+- Run server: `make run`
+
+If Makefile does not exist yet, create it during bootstrap.
+
+## Safety / security rules
+- Never touch anything outside the repo root.
+
+thinking
+**Planning project documentation**
+
+I'm noting the need to add a PROJECT.md file under the .agent directory for project-specific documentation.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/PROJECT.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 92ms:
+# PROJECT (single source of truth for the harness)
+
+PROJECT_NAME: "whisper-webui-mlx"
+REPO_KIND: "new repo"
+
+## Brief (1–2 paragraphs)
+Build a **local macOS app for Apple Silicon (M1+)** that exposes a **Web UI on localhost** to manage **offline transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX). https://github.com/JosefAlbers/whisper-turbo-mlx
+
+Turn the current console workflow (e.g. `wtm ... --any_lang=True`) into a tool that is easy to deploy on another M1+ Mac with **one command**, supports **batch uploads**, a **strictly sequential** processing queue (no parallelism), **job history + downloads**, optional **Telegram delivery of TXT results**, and (in the final phase) **live recording + chunked transcription**.
+
+## Primary stack
+Python 3.11+
+- Backend/Web: FastAPI + Uvicorn
+- Templates/UI: Jinja2 + minimal vanilla JS (no external CDNs; must work offline)
+- Storage: SQLite (jobs metadata) + local filesystem (uploads/results/logs)
+- Worker: a single sequential worker consuming a persistent queue
+- Transcription: subprocess call to `wtm` with explicit language selection
+
+## Commands (choose defaults if unknown)
+TEST_CMD: "make test"
+
+thinking
+**Locating spec documentation**
+
+I'm checking the docs/spec.md file to find specification details that can inform the implementation.
+exec
+/bin/zsh -lc "sed -n '1,200p' docs/spec.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 83ms:
+# Spec — whisper-webui-mlx
+
+## Goal
+Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+
+The tool must be easy to deploy to another M1+ Mac (one command), and after the initial setup + model download it must work **fully offline**.
+
+## MVP: Batch file transcription via Web UI
+### UX
+- User opens Web UI (localhost).
+- User uploads **one or multiple files** (audio or video).
+- User selects the **language manually** (no auto-detect).
+- Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
+- UI has:
+  - Queue view: current job + pending jobs
+  - History view: completed jobs + access to results
+
+### Processing rules
+- One worker processes one job at a time (sequential).
+- Keep the ML model “warm” behavior in mind: avoid parallelism and avoid reinitialization churn.
+
+thinking
+**Noting missing documentation**
+
+The project lacks essential docs like dev.md, indicating a need to create or locate development documentation next.
+exec
+/bin/zsh -lc "sed -n '1,200p' docs/dev.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 122ms:
+# Developer guide
+
+## Requirements (target)
+- macOS Apple Silicon (M1+)
+- Python 3.11+
+- Homebrew (for system deps like ffmpeg)
+
+## Quick start (eventual)
+```bash
+./scripts/setup_and_run.sh
+```
+
+## Manual dev loop
+```bash
+poetry install --with dev
+
+make test
+make run
+```
+
+
+thinking
+**Identifying missing documentation file**
+exec
+/bin/zsh -lc "sed -n '1,200p' docs/tree.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 76ms:
+# Project tree (curated)
+
+This file is a human-maintained map of the repo. Update when structure changes.
+
+## Current (bootstrap)
+- `.agent/` — durable loop state + prompts
+- `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+- `docs/` — spec + dev notes + this tree map
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
+- `mlx_ui/templates/` — Jinja2 templates
+- `scripts/` — loop scripts + setup/run scripts (to be implemented)
+- `tests/` — pytest suite (`test_app.py`, `test_transcriber.py`, `test_worker.py`)
+- `Makefile` — dev commands
+- `pyproject.toml` — dependencies and tooling
+- `README.md` — repo overview
+
+thinking
+**Planning agent queue documentation**
+
+I'm identifying needed docs for .agent/queue.md, including progress, state, judge_feedback, and command statuses like BLOCKED, STOP, DONE, to understand the queue system better.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/queue.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+# Queue
+
+## Now
+
+## Next
+
+## Later
+- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+- [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Done
+- [x] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [x] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+
+thinking
+**Prioritizing first unchecked Later task**
+
+Since Now and Next are empty, I'll select the first unchecked item in Later, specifically WUI-030, while also reading the agent metadata files to gather all relevant state and progress information.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/progress.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 79ms:
+# Progress Log (append-only)
+
+- 2026-01-21T09:49:08 — INIT — Harness files created. Next: run the 3-phase loop.
+- 2026-01-21T10:33:08Z — PLANNER — CODEX_ITERATION=1 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:37:23Z — WORKER — CODEX_ITERATION=1 — WUI-001 — tests: failed (pytest missing); lint: not run
+- 2026-01-21T10:39:53Z — JUDGE — CODEX_ITERATION=1 — NEEDS_WORK — make test failed (pytest missing in venv); tests: failed (make test)
+- 2026-01-21T10:42:24Z — PLANNER — CODEX_ITERATION=2 — selected WUI-001A (Fix pytest availability for `make test`). Queue updated (format fix for WUI-001A).
+- 2026-01-21T10:49:11Z — WORKER — CODEX_ITERATION=2 — WUI-001A — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:52:47Z — JUDGE — CODEX_ITERATION=2 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:56:28Z — PLANNER — CODEX_ITERATION=3 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:58:25Z — WORKER — CODEX_ITERATION=3 — WUI-001 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:01:51Z — JUDGE — CODEX_ITERATION=3 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:05:17Z — PLANNER — CODEX_ITERATION=4 — selected WUI-002 (Minimal WebUI shell). Queue unchanged.
+- 2026-01-21T11:11:48Z — WORKER — CODEX_ITERATION=4 — WUI-002 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:16:13Z — JUDGE — CODEX_ITERATION=4 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:23:27Z — PLANNER — CODEX_ITERATION=5 — selected WUI-010 (Upload endpoint + local storage). Queue updated (moved WUI-010 to Now).
+- 2026-01-21T11:33:16Z — WORKER — CODEX_ITERATION=5 — WUI-010 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:37:21Z — JUDGE — CODEX_ITERATION=5 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
+- 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
+
+thinking
+**Noting missing state file**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/state.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 91ms:
+last_task_id: WUI-021
+last_verdict: PASS
+consecutive_failures: 0
+
+thinking
+**Suggesting adding judge feedback file**
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/judge_feedback.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 101ms:
+PASS
+
+Notes:
+- `make test` passes (rerun).
+- `make lint` not rerun (judge); worker reported pass.
+- Acceptance criteria met for WUI-021.
+exec
+/bin/zsh -lc "test -f .agent/BLOCKED.md && sed -n '1,200p' .agent/BLOCKED.md || true" in /Users/ivankhokhlov/code/mlx-ui succeeded in 97ms:
+# BLOCKED (resolved)
+
+- Resolved: WUI-001 no longer blocked; tests and lint now pass.
+- Previous issue: `make test` failed because pytest was missing in the environment.
+- Previous error: `/Users/ivankhokhlov/code/mlx-ui/.venv/bin/python: No module named pytest`
+
+thinking
+**Checking STOP/DONE file handling**
+
+I'm verifying if the presence of a .agent/STOP file triggers appending specific instructions as part of the agent's stopping process.
+exec
+/bin/zsh -lc 'test -f .agent/STOP && echo STOP || true; test -f .agent/DONE && echo DONE || true' in /Users/ivankhokhlov/code/mlx-ui succeeded in 92ms:
+
+
+
+thinking
+**Planning task queue update and next steps**
+
+I'll move task WUI-030 from Later to Now in the queue for clarity, update plan and progress files accordingly, and then outline steps for the Worker to implement the one-command setup script based on the scripts directory.
+thinking
+**Inspecting scripts directory to inform planning**
+
+I'll list and review scripts in the scripts directory to understand current setup and run processes before drafting the detailed plan.
+exec
+/bin/zsh -lc 'ls scripts' in /Users/ivankhokhlov/code/mlx-ui succeeded in 65ms:
+codex_loop_3phase.sh
+status.sh
+
+thinking
+**Planning setup script creation**
+
+I'm outlining a plan for the Worker to create a setup script that installs dependencies, downloads models, starts the server, and opens the browser. I'll also review the Makefile and consider updating docs/dev.md.
+exec
+/bin/zsh -lc "sed -n '1,200p' Makefile" in /Users/ivankhokhlov/code/mlx-ui succeeded in 82ms:
+PYTHON ?= python
+POETRY ?= poetry
+POETRY_RUN ?= $(POETRY) run
+
+.PHONY: test lint fmt run
+
+test:
+	$(POETRY_RUN) pytest
+
+lint:
+	$(POETRY_RUN) ruff check .
+
+fmt:
+	$(POETRY_RUN) ruff format .
+
+run:
+	$(POETRY_RUN) uvicorn mlx_ui.app:app --host 127.0.0.1 --port 8000
+
+thinking
+**Checking README for setup details**
+exec
+/bin/zsh -lc "sed -n '1,200p' README.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 74ms:
+# whisper-webui-mlx (agent harness bootstrap)
+
+This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+
+## Quick start (app)
+Run the minimal FastAPI app on localhost:
+```bash
+make run
+```
+
+## Tests and lint
+```bash
+make test
+make lint
+make fmt
+```
+
+## Quick start (agent loop)
+```bash
+bash scripts/codex_loop_3phase.sh 50
+
+thinking
+**Planning setup script and docs updates**
+
+I'm listing likely files to touch for the setup script and documentation and clarifying that only the plan and queue files (not state) need updating after planning, along with progress that includes a timestamp and iteration ID if available.
+exec
+/bin/zsh -lc 'printenv CODEX_ITERATION' in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+10
+
+thinking
+**Inspecting project dependencies**
+
+I'm checking the pyproject file to understand if `whisper-turbo-mlx` and other dependencies are specified, which will guide the one-command setup and run script approach.
+exec
+/bin/zsh -lc "sed -n '1,200p' pyproject.toml" in /Users/ivankhokhlov/code/mlx-ui succeeded in 75ms:
+[tool.poetry]
+name = "mlx-ui"
+version = "0.1.0"
+description = ""
+authors = ["Ivan Khokhlov <ivan.s.khokhlov@rt.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.6"
+jinja2 = "^3.1.4"
+uvicorn = "^0.32.1"
+python-multipart = "^0.0.21"
+
+[tool.poetry.group.dev.dependencies]
+httpx = "^0.28.1"
+pytest = "^8.3.4"
+ruff = "^0.14.13"
+
+
+
+thinking
+**Identifying external dependency usage**
+
+I'm confirming that the external tool likely requires the `wtm` CLI and planning to check `mlx_ui/transcriber.py` to understand how `wtm` is used and how model downloads are handled before creating an installation script.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/transcriber.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 81ms:
+import logging
+import os
+from pathlib import Path
+import subprocess
+from typing import Protocol
+
+from mlx_ui.db import JobRecord
+
+logger = logging.getLogger(__name__)
+
+
+class Transcriber(Protocol):
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        raise NotImplementedError
+
+
+class FakeTranscriber:
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        results_dir = Path(results_dir)
+        job_dir = results_dir / job.id
+
+
+thinking
+**Planning model download integration**
+
+Planning to instruct the worker to research `wtm` CLI options for model downloading (e.g., `--download`, `--list-models`) and integrate automatic or predownload steps in the setup script, with fallback to optionally skip downloading via an env var while ensuring the server binds to localhost.
+thinking
+**Reviewing existing scripts for style**
+exec
+/bin/zsh -lc "sed -n '1,200p' scripts/codex_loop_3phase.sh" in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage:
+#   bash scripts/codex_loop_3phase.sh 50
+#
+# Environment variables:
+#   SANDBOX=workspace-write|danger-full-access   (default: workspace-write)
+#   APPROVALS=never|on-request|...              (default: never)
+
+N="${1:-50}"
+SANDBOX="${SANDBOX:-danger-full-access}"
+# APPROVALS="${APPROVALS:-never}"
+
+mkdir -p .agent/logs
+
+for ((i=1; i<=N; i++)); do
+  if [[ -f .agent/STOP || -f .agent/DONE ]]; then
+    echo "STOP or DONE detected. Exiting."
+    break
+
+
+thinking
+**Planning script integration and documentation updates**
+
+I'm specifying that the Worker will create a new bash script with environment setup and update docs/tree.md to reflect the new script addition. The plan will include optionally updating docs/dev.md with script instructions, moving task WUI-030 from Later to Now in the queue, and ensuring queue and plan files maintain proper format and task ordering.
+thinking
+**Planning file updates with timestamps and assumptions**
+
+I'll use ISO-format UTC timestamps for progress log entries and prefer apply_patch for queue edits but cat for plan overwrites. The plan will explicitly state assumptions about environment tools like Homebrew and Poetry, ensuring clarity while avoiding questions and preserving .agent/plan.md formatting.
+exec
+/bin/zsh -lc "sed -n '1,200p' .agent/plan.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 103ms:
+# Plan
+
+Task: WUI-021 — Results browsing + download
+
+Acceptance: history page shows per-job links to view/download TXT and other generated formats
+
+Assumptions:
+- Results live under `data/results/<job_id>/` and are safe to expose via file download routes.
+- Job history already exists and includes job IDs that map to results directories.
+
+Implementation steps:
+- Review current history rendering in `mlx_ui/templates/index.html` and job metadata access in `mlx_ui/app.py` to confirm what fields are available per job.
+- Add a helper to list result files for a job by scanning `data/results/<job_id>/`, filtering non-files, and sorting deterministically.
+- Add a download/view endpoint (e.g., `/results/{job_id}/{filename}`) using `FileResponse`, with path traversal protection and 404 for missing files.
+- Update the History section in the template to show per-job lists of result links (TXT emphasized) and a “no results yet” fallback.
+- Extend tests to create fake result files and assert history renders links and download endpoints return file content.
+
+Files likely to touch:
+- `mlx_ui/app.py`
+- `mlx_ui/templates/index.html`
+
+
+thinking
+**Drafting initial script plan**
+
+I'm planning a setup script that runs once with network to install dependencies, avoids printing secrets or tokens, uses bash and ASCII, and supports offline operation after initial setup; I'll verify existing scripts and test configurations for Poetry usage next.
+thinking
+**Updating task queue to prioritize setup script**
+
+I'm moving the current setup task to the Now section in the queue and reorganizing other tasks accordingly, planning to apply a patch to update `.agent/queue.md` while leaving state files unchanged for now.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/queue.md
+@@ -3,2 +3,3 @@
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+@@ -7,3 +8,2 @@
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+apply_patch(auto_approved=true) exited 0 in 16ms:
+Success. Updated the following files:
+M .agent/queue.md
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 883f5442728e13e9276e5e006c83435d3ea93f9c..86fcbbd21671c373ecac7442351448f58cded56f
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,11 +1,11 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+ ## Next
+ 
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 883f5442728e13e9276e5e006c83435d3ea93f9c..86fcbbd21671c373ecac7442351448f58cded56f
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,11 +1,11 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+ ## Next
+ 
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+
+
+thinking
+**Drafting setup-and-run plan**
+
+I'm outlining a detailed plan for WUI-030 with assumptions on dependencies like Homebrew, ensuring the setup script installs dependencies, downloads models, starts the server, and opens the browser non-interactively, plus defining acceptance criteria around these behaviors.
+thinking
+**Completing plan with model, docs, and tests**
+
+I'm finalizing the plan to include using the recommended command to predownload the default small model, ensuring offline run after setup, updating docs tree with the script, and adding verification steps running tests and linting as part of acceptance criteria before writing the .agent/plan.md file.
+exec
+/bin/zsh -lc "cat <<'EOF' > .agent/plan.md
+# Plan
+
+Task: WUI-030 — One-command setup & run on M1+ macOS
+
+Acceptance: "'`./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser
+
+Assumptions:
+- Homebrew is available for system deps (ffmpeg), or the script will fail fast with a clear message.
+- Network is available on first run to install deps and download the ML model; subsequent runs should work offline.
+- `whisper-turbo-mlx` / `wtm` install path is via pip (poetry) unless upstream docs indicate otherwise.
+
+Implementation steps:
+- Review upstream `whisper-turbo-mlx` / `wtm` installation and model download instructions to select a default model and the CLI flags for pre-download.
+- Add `scripts/setup_and_run.sh` that checks macOS + Apple Silicon, ensures `python3.11` + `poetry` are available (install/exit with guidance if missing), installs Python deps, installs `wtm`, and pre-downloads the default model.
+- Ensure the script creates needed data directories, exports any required env vars (e.g., `WTM_PATH`), and starts the server via `make run` bound to `127.0.0.1`.
+- Open the browser to `http://127.0.0.1:8000` once the server is up (best-effort, no failure if `open` fails).
+- Update docs to mention the one-command script and update `docs/tree.md` to include the new script.
+
+Files likely to touch:
+- `scripts/setup_and_run.sh`
+- `docs/dev.md`
+- `README.md`
+- `docs/tree.md`
+
+Verification steps:
+- `make test`
+- `make lint`
+EOF
+' in /Users/ivankhokhlov/code/mlx-ui succeeded in 74ms:
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 883f5442728e13e9276e5e006c83435d3ea93f9c..86fcbbd21671c373ecac7442351448f58cded56f
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,11 +1,11 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+ ## Next
+ 
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+
+thinking
+**Updating progress log**
+
+I'm appending a new entry in .agent/progress.md with the current UTC timestamp, the CODEX_ITERATION, selected task, and updating the task queue to move WUI-030 to Now.
+exec
+/bin/zsh -lc 'ts=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo "- ${ts} — PLANNER — CODEX_ITERATION=10 — selected WUI-030 (One-command setup & run on M1+ macOS). Queue updated (moved WUI-030 to Now)." >> .agent/progress.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 67ms:
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 883f5442728e13e9276e5e006c83435d3ea93f9c..86fcbbd21671c373ecac7442351448f58cded56f
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,11 +1,11 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+ ## Next
+ 
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+
+
+thinking
+**Summarizing final output preparation**
+
+I'm confirming no disallowed changes or skipped instructions, verifying plan and queue files reflect the selected task and next steps clearly, and preparing a concise summary listing updated files and directing the Worker to implement the script and update docs per the plan.
+thinking
+**Finalizing concise summary and instructions**
+
+I'm preparing a minimal final message confirming selected task WUI-030, listing updated .agent files, and directing the Worker to implement the setup script, update relevant docs, run tests and linting, and follow the plan without extraneous formatting.
+codex
+Selected task: WUI-030 — One-command setup & run on M1+ macOS.
+
+Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
+
+Worker next: follow `.agent/plan.md` to add `scripts/setup_and_run.sh` (deps install, `wtm` install/model download, start server, open browser), update `docs/dev.md`, `README.md`, and `docs/tree.md`, then run `make test` and `make lint`.
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 883f5442728e13e9276e5e006c83435d3ea93f9c..86fcbbd21671c373ecac7442351448f58cded56f
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,11 +1,11 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ 
+ ## Next
+ 
+ ## Later
+-- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+ - [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+ - [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+ - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+tokens used
+25,248

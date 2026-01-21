@@ -1,0 +1,5 @@
+Selected task: WUI-030 — One-command setup & run on M1+ macOS.
+
+Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
+
+Worker next: follow `.agent/plan.md` to add `scripts/setup_and_run.sh` (deps install, `wtm` install/model download, start server, open browser), update `docs/dev.md`, `README.md`, and `docs/tree.md`, then run `make test` and `make lint`.
