@@ -19,3 +19,6 @@
 - 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
 - 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
 - 2026-01-21T11:51:41Z — JUDGE — CODEX_ITERATION=6 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:57:01Z — PLANNER — CODEX_ITERATION=7 — selected WUI-012 (Sequential worker + fake transcriber). Queue updated (moved WUI-012 to Now).
+- 2026-01-21T12:03:50Z — WORKER — CODEX_ITERATION=7 — WUI-012 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T12:08:25Z — JUDGE — CODEX_ITERATION=7 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)

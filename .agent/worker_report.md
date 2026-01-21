@@ -1,25 +1,23 @@
 # Worker Report
 
-Task: WUI-011 — Persistent job store (SQLite)
+Task: WUI-012 - Sequential worker + fake transcriber
 
 What changed:
-- Added a SQLite-backed job store module and initialize it on app startup.
-- Swapped in-memory job tracking for DB reads/writes during uploads and page renders.
-- Rendered persisted jobs on both Queue and History tabs.
-- Updated tests to use temporary DB paths and verify persistence across a simulated restart.
-- Updated the repo tree map to include the new database module and storage path.
+- Added an atomic job-claim API plus status updates for queued/running/done/failed.
+- Implemented a single background worker and fake transcriber that writes deterministic TXT output.
+- Wired worker startup into app startup and added a sequential worker test.
+- Updated existing app tests to keep the worker disabled during upload checks.
+- Updated docs tree to reflect new modules/tests.
 
 Files changed:
-- mlx_ui/db.py
 - mlx_ui/app.py
-- mlx_ui/templates/index.html
+- mlx_ui/db.py
+- mlx_ui/transcriber.py
+- mlx_ui/worker.py
 - tests/test_app.py
+- tests/test_worker.py
 - docs/tree.md
-- .agent/worker_report.md
-- .agent/progress.md
-- .agent/logs/test_6.log
-- .agent/logs/lint_6.log
 
-Commands run + result:
-- `make test` (pass)
-- `make lint` (pass)
+Commands run:
+- make test (pass)
+- make lint (pass)

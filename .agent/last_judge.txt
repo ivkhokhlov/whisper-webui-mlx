@@ -1,9 +1,9 @@
-- Verdict: PASS — WUI-011 acceptance met (jobs persist across restarts; History lists prior jobs).
+- Verdict: PASS — WUI-012 acceptance met (single worker runs sequentially with fake transcription output).
 - Tests: `make test` passed (rerun).
 - Lint: not rerun; worker reported `make lint` pass.
-- Acceptance check: Queue/History render persisted jobs from SQLite after restart.
-- State updated in `.agent/state.md` (last_task_id=WUI-011, failures=0).
-- Queue updated: WUI-011 moved to Done; next task is WUI-012.
-- Feedback written to `.agent/judge_feedback.md`.
-- Progress appended in `.agent/progress.md` (CODEX_ITERATION=6).
-- Commit created: `WUI-011: Persistent job store (SQLite)`.
+- Acceptance check: worker claims queued jobs one-at-a-time and writes `data/results/<job_id>/result.txt`.
+- State: updated `.agent/state.md` (last_task_id=WUI-012, failures=0).
+- Queue: WUI-012 moved to Done; next task is WUI-020.
+- Feedback: updated `.agent/judge_feedback.md`.
+- Progress: appended `.agent/progress.md` (CODEX_ITERATION=7).
+- Commit: `WUI-012: Sequential worker + fake transcriber`.

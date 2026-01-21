@@ -3,7 +3,6 @@
 ## Now
 
 ## Next
-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
 
 ## Later
 - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
@@ -14,6 +13,7 @@
 - [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
 
 ## Done
+- [x] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
 - [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
 - [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
 - [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)

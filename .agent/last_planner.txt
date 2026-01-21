@@ -1,5 +1,5 @@
-Selected task: WUI-011 — Persistent job store (SQLite).
+Selected task: WUI-012 — Sequential worker + fake transcriber.
 
 Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
 
-Worker next: implement the SQLite-backed job store per `.agent/plan.md`, update tests/UI to read persisted jobs, update `docs/tree.md` if new modules/paths are added, then run `make test` and `make lint` and record results in `.agent/worker_report.md`.
+Worker next: implement the sequential worker + fake transcriber per `.agent/plan.md`, add tests that avoid the real ML model, and run `make test` + `make lint`.

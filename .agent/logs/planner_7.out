@@ -1,0 +1,5 @@
+Selected task: WUI-012 — Sequential worker + fake transcriber.
+
+Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
+
+Worker next: implement the sequential worker + fake transcriber per `.agent/plan.md`, add tests that avoid the real ML model, and run `make test` + `make lint`.

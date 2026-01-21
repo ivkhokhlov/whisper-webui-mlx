@@ -8,19 +8,25 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.worker import start_worker
 
 app = FastAPI(title="Whisper WebUI (MLX)")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+DEFAULT_RESULTS_DIR = BASE_DIR / "data" / "results"
 DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
 app.state.uploads_dir = DEFAULT_UPLOADS_DIR
+app.state.results_dir = DEFAULT_RESULTS_DIR
 app.state.db_path = DEFAULT_DB_PATH
+app.state.worker_enabled = True
 
 
 @app.on_event("startup")
 def startup() -> None:
     init_db(get_db_path())
+    if getattr(app.state, "worker_enabled", True):
+        start_worker(get_db_path(), get_results_dir())
 
 
 def get_job_store() -> list[JobRecord]:
@@ -33,6 +39,10 @@ def get_db_path() -> Path:
 
 def get_uploads_dir() -> Path:
     return Path(app.state.uploads_dir)
+
+
+def get_results_dir() -> Path:
+    return Path(app.state.results_dir)
 
 
 def ensure_uploads_dir() -> Path:

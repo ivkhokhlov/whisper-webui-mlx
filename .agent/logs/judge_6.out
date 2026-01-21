@@ -1,0 +1,10 @@
+- Verdict: PASS — WUI-011 acceptance met (SQLite persistence + History shows prior jobs).
+- Tests: `make test` passed (rerun).
+- Lint: not rerun; worker reported `make lint` pass.
+- Acceptance check: persisted jobs render on Queue/History after restart.
+- State: updated `.agent/state.md` (last_task_id=WUI-011, failures=0).
+- Queue: WUI-011 moved to Done; next task is WUI-012.
+- Feedback: updated `.agent/judge_feedback.md`.
+- Progress: appended `.agent/progress.md` (CODEX_ITERATION=6).
+- Commit: `WUI-011: Persistent job store (SQLite)`.
+- Repo status: dirty `.agent/logs/judge_6.err` (post-commit harness log).

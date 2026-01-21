@@ -1,0 +1,758 @@
+OpenAI Codex v0.87.0 (research preview)
+--------
+workdir: /Users/ivankhokhlov/code/mlx-ui/.
+model: gpt-5.2-codex
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: auto
+session id: 019be067-fe7e-7402-b0c9-c0407739b285
+--------
+user
+# PLANNER AGENT (3-phase harness)
+
+You are the PLANNER in a Planner→Worker→Judge pipeline.
+Your job is to keep the project “drivable” for long-running loops:
+- maintain durable state in files
+- define ONE executable task per cycle
+- write a crisp plan for the Worker
+- do NOT implement product/source code (leave that to Worker)
+
+This run is non-interactive (`codex exec`). Do not ask questions; make assumptions and log them.
+
+## Inputs you MUST read
+- `.agent/PROJECT.md` (authoritative)
+- `AGENTS.md` (if present)
+- `docs/spec.md` (if present)
+- `docs/dev.md` (if present)
+- `.agent/queue.md` (if present)
+- `.agent/progress.md` (if present)
+- `.agent/state.md` (if present)
+- `.agent/judge_feedback.md` (if present)
+- `.agent/BLOCKED.md` (if present)
+
+## Files you are allowed to create/modify
+- `.agent/**`
+- `docs/**`
+- `AGENTS.md`
+- `README.md`, `.gitignore`
+- `scripts/**`, `Makefile`, `pyproject.toml`, `requirements*.txt`
+
+Do NOT implement application/source code (e.g. `app/**`, `src/**`) in this PLANNER role.
+
+## Stop conditions
+- If `.agent/STOP` exists: append “STOP seen” to `.agent/progress.md` and exit.
+- If `.agent/DONE` exists: append “DONE seen” to `.agent/progress.md` and exit.
+
+## Required durable files (create if missing)
+Create directories as needed (`.agent/`, `.agent/logs/`, `docs/`).
+
+Ensure these exist (create minimal versions if missing):
+- `AGENTS.md` (repo-specific agent rules: how to run tests, style rules, definition of done)
+- `docs/spec.md` (spec derived from PROJECT.md; include MVP + later phases)
+- `docs/dev.md` (how to setup/run/test locally on macOS M1+; keep short)
+- `docs/tree.md` (curated tree map; can start small)
+- `.agent/queue.md` (task backlog in required format below)
+- `.agent/progress.md` (append-only log)
+- `.agent/state.md` (small key-values: last_task_id, last_verdict, consecutive_failures)
+- `.agent/plan.md` (overwrite each cycle)
+- `.agent/judge_feedback.md` (may exist; do not delete unless Judge says so)
+
+If `.agent/queue.md` is missing, seed it with 10–18 tasks in sensible order:
+- Harness/bootstrap tasks (Makefile, tests, minimal web skeleton)
+- MVP WebUI: uploads → queue → sequential worker → results
+- Integrate `wtm` CLI for real transcription (language selection, formats, robust errors)
+- One-command macOS setup/run script (brew/venv/pip/model download, open browser)
+- Observability/logging
+- Optional Telegram delivery
+- Optional update check at startup (best-effort; must not break offline)
+- Backlog: live mode + chunked transcription
+
+## Critical product constraints (must be reflected in plans/queue)
+- Bind ONLY to localhost (127.0.0.1). No LAN exposure.
+- Strictly sequential queue (no parallel transcriptions).
+- After initial dependency/model download, app must work fully offline.
+- Secrets (Telegram token) must never be printed or exposed in UI logs; always masked.
+- Telegram send must never break the pipeline; failures are logged only.
+- Tests should not require running the real ML model by default; mock `wtm` execution.
+
+## Queue format (MUST match exactly)
+`.agent/queue.md` must be:
+
+# Queue
+
+## Now
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Next
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Later
+- [ ] <task id> — <short title> (acceptance: <one line>)
+
+## Done
+- [x] <task id> — <short title>
+
+Rules:
+- The Worker does NOT mark tasks done; the Judge does.
+- You select the first unchecked item in Now (else Next, else Later).
+- If the selected task is too large, split it into smaller tasks and pick the first.
+
+## Planning logic (per cycle)
+1) Read `.agent/state.md` and `.agent/judge_feedback.md`.
+   - If the last verdict indicates repeated failure (>=3): split the task or create a narrower “fix” task at the top of Now.
+2) Choose exactly ONE task for the Worker.
+3) Write `.agent/plan.md` with:
+   - Task id + title
+   - Acceptance criteria (copy from queue)
+   - Assumptions (only if needed)
+   - Implementation steps (3–10 bullets)
+   - Files likely to touch
+   - Verification steps: run TEST_CMD (and LINT_CMD if set)
+4) Append to `.agent/progress.md` a PLANNER entry:
+   - timestamp
+   - CODEX_ITERATION (if available)
+   - selected task
+   - any queue changes (splits, reprioritization)
+
+## Output
+Print a short summary:
+- selected task id/title
+- what files you updated (queue/spec/plan/etc.)
+- what the Worker should do next
+
+mcp startup: no servers
+
+thinking
+**Preparing to list agent files**
+
+I'm planning to list files in the .agent directory to identify what to read next, following instructions to prefer ripgrep but use ls here for directory listing.
+exec
+/bin/zsh -lc ls in /Users/ivankhokhlov/code/mlx-ui succeeded in 58ms:
+AGENTS.md
+Makefile
+README.md
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Planning agent file checks**
+
+I need to verify if the `.agent` file exists, creating it if missing, and ensure required files like AGENTS.md and the hidden `.agent` are read to get the full agent list.
+exec
+/bin/zsh -lc 'ls -a' in /Users/ivankhokhlov/code/mlx-ui succeeded in 88ms:
+.
+..
+.DS_Store
+.agent
+.git
+.gitignore
+.pytest_cache
+.python-version
+.ruff_cache
+.venv
+AGENTS.md
+Makefile
+README.md
+docs
+mlx_ui
+poetry.lock
+pyproject.toml
+scripts
+tests
+
+thinking
+**Starting to read AGENTS.md**
+exec
+/bin/zsh -lc 'cat AGENTS.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 108ms:
+# AGENTS.md
+
+This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
+Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
+
+## Source of truth
+- `.agent/PROJECT.md` — high-level constraints and commands
+- `docs/spec.md` — product requirements
+- `.agent/queue.md` — backlog (Judge marks tasks done)
+
+## How to run
+- Tests: `make test`
+- Lint: `make lint`
+- Format: `make fmt`
+- Run server: `make run`
+
+If Makefile does not exist yet, create it during bootstrap.
+
+## Safety / security rules
+- Never touch anything outside the repo root.
+
+thinking
+**Reading project overview**
+
+I'm opening the .agent/PROJECT.md file to understand the project context and specifics before proceeding.
+exec
+/bin/zsh -lc 'cat .agent/PROJECT.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 96ms:
+# PROJECT (single source of truth for the harness)
+
+PROJECT_NAME: "whisper-webui-mlx"
+REPO_KIND: "new repo"
+
+## Brief (1–2 paragraphs)
+Build a **local macOS app for Apple Silicon (M1+)** that exposes a **Web UI on localhost** to manage **offline transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX). https://github.com/JosefAlbers/whisper-turbo-mlx
+
+Turn the current console workflow (e.g. `wtm ... --any_lang=True`) into a tool that is easy to deploy on another M1+ Mac with **one command**, supports **batch uploads**, a **strictly sequential** processing queue (no parallelism), **job history + downloads**, optional **Telegram delivery of TXT results**, and (in the final phase) **live recording + chunked transcription**.
+
+## Primary stack
+Python 3.11+
+- Backend/Web: FastAPI + Uvicorn
+- Templates/UI: Jinja2 + minimal vanilla JS (no external CDNs; must work offline)
+- Storage: SQLite (jobs metadata) + local filesystem (uploads/results/logs)
+- Worker: a single sequential worker consuming a persistent queue
+- Transcription: subprocess call to `wtm` with explicit language selection
+
+## Commands (choose defaults if unknown)
+TEST_CMD: "make test"
+
+thinking
+**Listing relevant docs for review**
+exec
+/bin/zsh -lc 'cat docs/spec.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 95ms:
+# Spec — whisper-webui-mlx
+
+## Goal
+Create a **local-only** tool for **macOS Apple Silicon (M1+)** that provides a **Web UI on localhost** to manage **local transcription** of audio/video files using the engine from `whisper-turbo-mlx` via its CLI `wtm` (MLX).
+
+The tool must be easy to deploy to another M1+ Mac (one command), and after the initial setup + model download it must work **fully offline**.
+
+## MVP: Batch file transcription via Web UI
+### UX
+- User opens Web UI (localhost).
+- User uploads **one or multiple files** (audio or video).
+- User selects the **language manually** (no auto-detect).
+- Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
+- UI has:
+  - Queue view: current job + pending jobs
+  - History view: completed jobs + access to results
+
+### Processing rules
+- One worker processes one job at a time (sequential).
+- Keep the ML model “warm” behavior in mind: avoid parallelism and avoid reinitialization churn.
+
+thinking
+**Noting missing docs**
+exec
+/bin/zsh -lc 'cat docs/dev.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 101ms:
+# Developer guide
+
+## Requirements (target)
+- macOS Apple Silicon (M1+)
+- Python 3.11+
+- Homebrew (for system deps like ffmpeg)
+
+## Quick start (eventual)
+```bash
+./scripts/setup_and_run.sh
+```
+
+## Manual dev loop
+```bash
+poetry install --with dev
+
+make test
+make run
+```
+
+
+thinking
+**Identifying missing documentation**
+
+Noted the need to create or locate a docs/tree.md file for relevant documentation.
+exec
+/bin/zsh -lc 'cat docs/tree.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 104ms:
+# Project tree (curated)
+
+This file is a human-maintained map of the repo. Update when structure changes.
+
+## Current (bootstrap)
+- `.agent/` — durable loop state + prompts
+- `data/` — runtime uploads/results/logs/jobs.db (created on demand)
+- `docs/` — spec + dev notes + this tree map
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`)
+- `mlx_ui/templates/` — Jinja2 templates
+- `scripts/` — loop scripts + setup/run scripts (to be implemented)
+- `tests/` — pytest suite
+- `Makefile` — dev commands
+- `pyproject.toml` — dependencies and tooling
+- `README.md` — repo overview
+
+thinking
+**Listing needed files**
+
+I'm identifying that .agent/queue.md, progress, state, judge_feedback, and BLOCKED are required next.
+exec
+/bin/zsh -lc 'cat .agent/queue.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 78ms:
+# Queue
+
+## Now
+
+## Next
+- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+
+## Later
+- [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+- [ ] WUI-021 — Results browsing + download (acceptance: history page shows per-job links to view/download TXT and other generated formats)
+- [ ] WUI-030 — One-command setup & run on M1+ macOS (acceptance: `./scripts/setup_and_run.sh` installs deps, downloads models, starts server, and opens browser)
+- [ ] WUI-040 — Telegram delivery (acceptance: when env vars are set, send TXT + message; failures do not break pipeline; secrets masked)
+- [ ] WUI-050 — Update check at startup (acceptance: if online, checks for updates with timeout; if offline, no errors and app works)
+- [ ] WUI-090 — Live mode skeleton (acceptance: UI has “Live” page stub + technical plan in docs; no implementation yet)
+
+## Done
+- [x] WUI-011 — Persistent job store (SQLite) (acceptance: jobs survive server restart; history page lists prior jobs)
+- [x] WUI-010 — Upload endpoint + local storage (acceptance: user can upload multiple files; files saved under `data/uploads/` and jobs are created)
+- [x] WUI-002 — Minimal WebUI shell (acceptance: localhost page renders with tabs: Queue + History, using server-side templates)
+- [x] WUI-001A — Fix pytest availability for `make test` (acceptance: `make test` succeeds in a clean env by ensuring pytest is installed or Makefile uses Poetry/venv)
+
+thinking
+**Checking progress file**
+exec
+/bin/zsh -lc 'cat .agent/progress.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 107ms:
+# Progress Log (append-only)
+
+- 2026-01-21T09:49:08 — INIT — Harness files created. Next: run the 3-phase loop.
+- 2026-01-21T10:33:08Z — PLANNER — CODEX_ITERATION=1 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:37:23Z — WORKER — CODEX_ITERATION=1 — WUI-001 — tests: failed (pytest missing); lint: not run
+- 2026-01-21T10:39:53Z — JUDGE — CODEX_ITERATION=1 — NEEDS_WORK — make test failed (pytest missing in venv); tests: failed (make test)
+- 2026-01-21T10:42:24Z — PLANNER — CODEX_ITERATION=2 — selected WUI-001A (Fix pytest availability for `make test`). Queue updated (format fix for WUI-001A).
+- 2026-01-21T10:49:11Z — WORKER — CODEX_ITERATION=2 — WUI-001A — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:52:47Z — JUDGE — CODEX_ITERATION=2 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T10:56:28Z — PLANNER — CODEX_ITERATION=3 — selected WUI-001 (Bootstrap repo skeleton). Queue unchanged.
+- 2026-01-21T10:58:25Z — WORKER — CODEX_ITERATION=3 — WUI-001 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:01:51Z — JUDGE — CODEX_ITERATION=3 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:05:17Z — PLANNER — CODEX_ITERATION=4 — selected WUI-002 (Minimal WebUI shell). Queue unchanged.
+- 2026-01-21T11:11:48Z — WORKER — CODEX_ITERATION=4 — WUI-002 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:16:13Z — JUDGE — CODEX_ITERATION=4 — PASS — acceptance met; tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:23:27Z — PLANNER — CODEX_ITERATION=5 — selected WUI-010 (Upload endpoint + local storage). Queue updated (moved WUI-010 to Now).
+- 2026-01-21T11:33:16Z — WORKER — CODEX_ITERATION=5 — WUI-010 — tests: passed (make test); lint: passed (make lint)
+- 2026-01-21T11:37:21Z — JUDGE — CODEX_ITERATION=5 — PASS — acceptance met; tests: passed (make test); lint: not rerun (worker reported pass)
+- 2026-01-21T11:41:40Z — PLANNER — CODEX_ITERATION=6 — selected WUI-011 (Persistent job store (SQLite)). Queue updated (moved WUI-011 to Now).
+- 2026-01-21T11:48:06Z — WORKER — CODEX_ITERATION=6 — WUI-011 — tests: passed (make test); lint: passed (make lint)
+
+thinking
+**Noting missing state file**
+exec
+/bin/zsh -lc 'cat .agent/state.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 95ms:
+last_task_id: WUI-011
+last_verdict: PASS
+consecutive_failures: 0
+
+thinking
+**Noting missing judge feedback file**
+exec
+/bin/zsh -lc 'cat .agent/judge_feedback.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 91ms:
+PASS
+
+Notes:
+- `make test` passes (rerun).
+- `make lint` not rerun; worker reported pass.
+- Acceptance criteria met for WUI-011.
+
+thinking
+**Checking for BLOCKED.md file**
+exec
+/bin/zsh -lc 'ls .agent' in /Users/ivankhokhlov/code/mlx-ui succeeded in 89ms:
+BLOCKED.md
+PROJECT.md
+judge.md
+judge_feedback.md
+last_judge.txt
+last_planner.txt
+last_worker.txt
+logs
+plan.md
+planner.md
+progress.md
+queue.md
+state.md
+worker.md
+worker_report.md
+exec
+/bin/zsh -lc 'cat .agent/BLOCKED.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 94ms:
+# BLOCKED (resolved)
+
+- Resolved: WUI-001 no longer blocked; tests and lint now pass.
+- Previous issue: `make test` failed because pytest was missing in the environment.
+- Previous error: `/Users/ivankhokhlov/code/mlx-ui/.venv/bin/python: No module named pytest`
+
+thinking
+**Checking for STOP or DONE file**
+exec
+/bin/zsh -lc 'ls .agent/STOP .agent/DONE' in /Users/ivankhokhlov/code/mlx-ui exited 1 in 81ms:
+ls: .agent/DONE: No such file or directory
+ls: .agent/STOP: No such file or directory
+
+
+thinking
+**Selecting next task and updating queue**
+
+I'm selecting the first unchecked item from Next (WUI-012) and will move it to the top of Now to keep the queue consistent. I'll update .agent/queue.md, .agent/plan.md with detailed steps, and the progress log accordingly, but likely won't modify .agent/state.md since it's reserved for Judge feedback.
+thinking
+**Deciding file update methods**
+
+I've settled on using apply_patch for single-file edits like the queue and progress updates, and direct overwrite (cat) for fully rewriting .agent/plan.md for simplicity. I'll append progress logs carefully with plain ASCII to maintain correctness.
+exec
+/bin/zsh -lc 'cat .agent/plan.md' in /Users/ivankhokhlov/code/mlx-ui succeeded in 87ms:
+# Plan
+
+Task: WUI-011 — Persistent job store (SQLite)
+Acceptance: jobs survive server restart; history page lists prior jobs
+
+Assumptions:
+- Use a single SQLite DB file under `data/` (for example `data/jobs.db`) with a lightweight table for jobs.
+- The existing Queue/History view can read from the same persisted store for now (no new UI fields required).
+
+Implementation steps:
+- Add a small SQLite-backed job store (schema + CRUD helpers) and initialize it on startup.
+- Replace in-memory `app.state.jobs` reads with DB queries ordered by creation time.
+- Update the upload handler to insert job rows into SQLite after writing files to disk.
+- Ensure the root page renders persisted jobs for both Queue and History views.
+- Update tests to use a temporary DB path and verify jobs persist across a simulated app restart.
+- Update `docs/tree.md` if new modules or data paths are added.
+- Record test/lint results in `.agent/worker_report.md`.
+
+Files likely to touch:
+- `mlx_ui/app.py`
+
+thinking
+**Updating WUI-012 status and progress log**
+
+I'm planning to move WUI-012 from Next to Now in the queue file and append a timestamped entry with the CODEX_ITERATION env var (if set) to the progress log. Next, I'll verify the iteration value via environment before applying the patch.
+exec
+/bin/zsh -lc 'echo ${CODEX_ITERATION:-}' in /Users/ivankhokhlov/code/mlx-ui succeeded in 90ms:
+7
+
+thinking
+**Preparing to add timestamp and update progress**
+
+I'm gathering the exact UTC date command to append timestamps with consistent formatting, planning to update progress and queue files to reflect WUI-012’s status change in the planned steps. Next, I'll inspect the project structure under `mlx_ui` to tailor the plan with specific file changes.
+exec
+/bin/zsh -lc 'ls mlx_ui' in /Users/ivankhokhlov/code/mlx-ui succeeded in 92ms:
+__init__.py
+__pycache__
+app.py
+db.py
+templates
+
+thinking
+**Preparing focused exploration of app.py**
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/app.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+from datetime import datetime, timezone
+from pathlib import Path
+import shutil
+from uuid import uuid4
+
+from fastapi import FastAPI, File, Request, UploadFile
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+
+app = FastAPI(title="Whisper WebUI (MLX)")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
+app.state.uploads_dir = DEFAULT_UPLOADS_DIR
+app.state.db_path = DEFAULT_DB_PATH
+
+
+
+thinking
+**Planning worker loop implementation**
+
+I'm deciding to inspect the database and templates to understand the existing structure before planning a queue-processing worker, likely involving a loop or thread.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/db.py" in /Users/ivankhokhlov/code/mlx-ui succeeded in 101ms:
+from dataclasses import dataclass
+from pathlib import Path
+import sqlite3
+
+
+@dataclass
+class JobRecord:
+    id: str
+    filename: str
+    status: str
+    created_at: str
+    upload_path: str
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+
+thinking
+**Planning job status and worker workflow**
+
+The database needs new fields for job statuses and timestamps, supporting queued, running, done, and failed states for a single sequential worker. I'll implement a fake transcriber that updates status and writes stub results, aligning with WUI-012 and enabling tests without an ML model.
+exec
+/bin/zsh -lc "sed -n '1,200p' mlx_ui/templates/index.html" in /Users/ivankhokhlov/code/mlx-ui succeeded in 80ms:
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Whisper WebUI (MLX)</title>
+    <style>
+      :root {
+        --ink: #1d1b16;
+        --ink-muted: #5d5d5d;
+        --panel: #fff7ee;
+        --accent: #d46a3e;
+        --accent-strong: #8b3f1f;
+        --shadow: 0 24px 60px rgba(29, 27, 22, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+exec
+/bin/zsh -lc "sed -n '200,400p' mlx_ui/templates/index.html" in /Users/ivankhokhlov/code/mlx-ui succeeded in 78ms:
+
+      .job-name {
+        font-weight: 600;
+      }
+
+      .job-meta {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
+      .job-status {
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 0.72rem;
+        color: var(--accent-strong);
+        align-self: center;
+      }
+
+      .placeholder {
+        margin-top: 16px;
+exec
+/bin/zsh -lc "sed -n '400,800p' mlx_ui/templates/index.html" in /Users/ivankhokhlov/code/mlx-ui succeeded in 73ms:
+        }
+
+        tabs.forEach((tab) => {
+          tab.addEventListener("click", () => activate(tab.dataset.tab));
+        });
+      })();
+    </script>
+  </body>
+</html>
+
+
+thinking
+**Outlining sequential worker plan**
+
+I'm proposing a FastAPI background task or thread to process transcription jobs one at a time, updating job status and timestamps in the DB, writing stub results, and ensuring no parallel processing via a process lock. The plan will include a fake transcriber for tests, specify sequential queue handling, and mention updating the docs/tree if new modules or result directories are added.
+thinking
+**Patching queue and updating task status**
+
+I'm applying a patch to move the transcription task status to "Now" and updating the queue accordingly, including formatting fixes.
+file update
+M /Users/ivankhokhlov/code/mlx-ui/./.agent/queue.md
+@@ -3,5 +3,5 @@
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+apply_patch(auto_approved=true) exited 0 in 15ms:
+Success. Updated the following files:
+M .agent/queue.md
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+
+
+thinking
+**Drafting plan details for sequential worker**
+
+I'm outlining the plan to implement the sequential worker using a background thread in FastAPI startup, leveraging existing job status fields without adding new columns but mentioning the option to add migration logic if needed, and including result directory path handling and job status updates as part of the process.
+thinking
+**Detailing minimal sequential worker plan**
+
+The plan will propose adding simple DB job update functions and a background worker thread using a lock for single-run enforcement, a fake transcriber writing stub results to a designated path, sequential processing tests with mocked transcriber ensuring order without real ML models, optional UI status notes, and documentation updates including a worker report and test/lint verification commands.
+exec
+/bin/zsh -lc "cat <<'EOF' > .agent/plan.md
+# Plan
+
+Task: WUI-012 — Sequential worker + fake transcriber
+Acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model
+
+Assumptions:
+- A background loop can run in-process (thread or asyncio task) on app startup to poll queued jobs.
+- Fake transcriber can write a stub TXT result under "'`data/results/<job_id>/result.txt` without calling `wtm`.
+
+Implementation steps:
+- Add DB helpers to fetch the next queued job and update job status (queued/running/done/failed) atomically.
+- Implement a single worker loop that polls for queued jobs, marks one running, runs the fake transcriber, then marks done or failed.
+- Guard the worker with a single global lock or singleton to prevent concurrent execution.
+- Create a small fake transcriber module that writes a deterministic TXT result for each job.
+- Wire the worker startup into FastAPI startup so it begins processing uploads automatically.
+- Add tests that enqueue multiple jobs and assert they complete sequentially without parallel execution or real ML model calls.
+- Update `docs/tree.md` if new modules or data directories are added.
+- Record test/lint results in `.agent/worker_report.md`.
+
+Files likely to touch:
+- `mlx_ui/app.py`
+- `mlx_ui/db.py`
+- `mlx_ui/worker.py` (new)
+- `tests/test_worker.py` (new) or `tests/test_app.py`
+- `docs/tree.md`
+- `.agent/worker_report.md`
+
+Verification:
+- `make test`
+- `make lint`
+EOF' in /Users/ivankhokhlov/code/mlx-ui succeeded in 95ms:
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+
+thinking
+**Updating progress log with iteration**
+exec
+/bin/zsh -lc 'date -u +%Y-%m-%dT%H:%M:%SZ' in /Users/ivankhokhlov/code/mlx-ui succeeded in 66ms:
+2026-01-21T11:57:01Z
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+
+thinking
+**Appending progress log line**
+exec
+/bin/zsh -lc "printf '%s\\n' \"- 2026-01-21T11:57:01Z — PLANNER — CODEX_ITERATION=7 — selected WUI-012 (Sequential worker + fake transcriber). Queue updated (moved WUI-012 to Now).\" >> .agent/progress.md" in /Users/ivankhokhlov/code/mlx-ui succeeded in 90ms:
+
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+
+
+thinking
+**Producing concise final summary**
+
+Preparing a minimal, clear final summary stating the selected task, updated files, and next steps for the worker to implement and test according to the updated plan.
+thinking
+**Adjusting final summary to exclude test mentions**
+
+Preparing the final summary without referencing running tests and including a note about acceptance.
+codex
+Selected task: WUI-012 — Sequential worker + fake transcriber.
+
+Updated files: `.agent/queue.md`, `.agent/plan.md`, `.agent/progress.md`.
+
+Worker next: implement the sequential worker + fake transcriber per `.agent/plan.md`, add tests that avoid the real ML model, and run `make test` + `make lint`.
+file update:
+diff --git a/.agent/queue.md b/.agent/queue.md
+index 7e86d539f98ca3aff5f429846b1b49b0aaa6e696..cc73f368fd7f99c8a9c90d587d4037a311cb91ae
+--- a/.agent/queue.md
++++ b/.agent/queue.md
+@@ -1,9 +1,9 @@
+ # Queue
+ 
+ ## Now
++- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Next
+-- [ ] WUI-012 — Sequential worker + fake transcriber (acceptance: single worker processes jobs strictly one-at-a-time; tests do not require ML model)
+ 
+ ## Later
+ - [ ] WUI-020 — Integrate `wtm` CLI transcription (acceptance: for a job, system runs `wtm` with chosen language and produces at least `.txt` in `data/results/<job_id>/`)
+
+tokens used
+21,744
