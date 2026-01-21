@@ -8,7 +8,9 @@ from mlx_ui.db import list_jobs
 
 def _configure_app(tmp_path: Path) -> None:
     app.state.uploads_dir = tmp_path / "uploads"
+    app.state.results_dir = tmp_path / "results"
     app.state.db_path = tmp_path / "jobs.db"
+    app.state.worker_enabled = False
 
 
 def test_root_ok(tmp_path: Path) -> None:

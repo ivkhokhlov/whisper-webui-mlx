@@ -6,10 +6,10 @@ This file is a human-maintained map of the repo. Update when structure changes.
 - `.agent/` — durable loop state + prompts
 - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
 - `docs/` — spec + dev notes + this tree map
-- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`)
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`)
 - `mlx_ui/templates/` — Jinja2 templates
 - `scripts/` — loop scripts + setup/run scripts (to be implemented)
-- `tests/` — pytest suite
+- `tests/` — pytest suite (`test_app.py`, `test_worker.py`)
 - `Makefile` — dev commands
 - `pyproject.toml` — dependencies and tooling
 - `README.md` — repo overview
