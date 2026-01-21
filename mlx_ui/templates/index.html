@@ -356,10 +356,24 @@
           >
             <h2>History</h2>
             <p>Completed jobs will appear here with download links.</p>
-            <div class="placeholder">
-              <div class="placeholder-row">No completed jobs yet.</div>
-              <div class="placeholder-row">Check back after a run.</div>
-            </div>
+            {% if jobs %}
+              <div class="job-list" aria-live="polite">
+                {% for job in jobs %}
+                  <div class="job-row">
+                    <div>
+                      <div class="job-name">{{ job.filename }}</div>
+                      <div class="job-meta">Added {{ job.created_at }}</div>
+                    </div>
+                    <div class="job-status">{{ job.status }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="placeholder">
+                <div class="placeholder-row">No completed jobs yet.</div>
+                <div class="placeholder-row">Check back after a run.</div>
+              </div>
+            {% endif %}
           </section>
         </div>
       </section>

@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import shutil
@@ -8,25 +7,28 @@ from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+
 app = FastAPI(title="Whisper WebUI (MLX)")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
+DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
 app.state.uploads_dir = DEFAULT_UPLOADS_DIR
-app.state.jobs = []
+app.state.db_path = DEFAULT_DB_PATH
 
 
-@dataclass
-class JobRecord:
-    id: str
-    filename: str
-    status: str
-    created_at: str
-    upload_path: str
+@app.on_event("startup")
+def startup() -> None:
+    init_db(get_db_path())
 
 
 def get_job_store() -> list[JobRecord]:
-    return app.state.jobs
+    return list_jobs(get_db_path())
+
+
+def get_db_path() -> Path:
+    return Path(app.state.db_path)
 
 
 def get_uploads_dir() -> Path:
@@ -65,8 +67,8 @@ def read_root(request: Request):
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(request: Request, files: list[UploadFile] = File(...)):
-    jobs = get_job_store()
     uploads_dir = ensure_uploads_dir()
+    db_path = get_db_path()
 
     for upload in files:
         if not upload.filename:
@@ -81,7 +83,9 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...)):
                 shutil.copyfileobj(upload.file, outfile)
         finally:
             await upload.close()
-        jobs.append(new_job_record(job_id, safe_name, destination))
+        insert_job(db_path, new_job_record(job_id, safe_name, destination))
+
+    jobs = list_jobs(db_path)
 
     return templates.TemplateResponse(
         request,
