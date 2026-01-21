@@ -5,7 +5,7 @@ from pathlib import Path
 import threading
 
 from mlx_ui.db import claim_next_job, update_job_status
-from mlx_ui.transcriber import FakeTranscriber, Transcriber
+from mlx_ui.transcriber import Transcriber, WtmTranscriber
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class Worker:
         self.db_path = Path(db_path)
         self.results_dir = Path(results_dir)
         self.poll_interval = poll_interval
-        self.transcriber = transcriber or FakeTranscriber()
+        self.transcriber = transcriber or WtmTranscriber()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
