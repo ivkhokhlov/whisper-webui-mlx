@@ -26,6 +26,17 @@ def test_root_ok(tmp_path: Path) -> None:
     assert "History" in response.text
 
 
+def test_live_page_ok(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.get("/live")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Live mode" in response.text
+    assert "Coming soon" in response.text
+
+
 def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     files = [

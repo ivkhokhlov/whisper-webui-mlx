@@ -29,6 +29,13 @@ Set environment variables before starting the app:
 
 Failures are logged and do not break the job pipeline. Tokens are masked in logs.
 
+## Live mode plan (stub)
+- Capture microphone + browser tab audio in the browser (getUserMedia + getDisplayMedia).
+- Mix streams client-side, encode, chunk into ~10s segments.
+- POST chunks to a server session endpoint with selected language.
+- Server writes chunks to disk, enqueues sequential transcription jobs via the worker.
+- UI streams partial transcript updates and saves final text to results.
+
 ## Notes
 - The app must bind only to `127.0.0.1`.
 - Keep network usage optional and best-effort (Telegram, update check).

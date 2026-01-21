@@ -105,6 +105,7 @@
         font-weight: 600;
         color: var(--ink);
         cursor: pointer;
+        text-decoration: none;
       }
 
       .tab.is-active {
@@ -359,6 +360,7 @@
           >
             History
           </button>
+          <a class="tab" href="/live">Live</a>
         </div>
 
         <div class="panels">
@@ -486,6 +488,11 @@
           panels.forEach((panel) => {
             panel.classList.toggle("is-active", panel.dataset.panel === tabName);
           });
+        }
+
+        const initialTab = new URLSearchParams(window.location.search).get("tab");
+        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
+          activate(initialTab);
         }
 
         tabs.forEach((tab) => {
