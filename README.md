@@ -2,6 +2,12 @@
 
 This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
 
+## One-command setup (macOS M1+)
+```bash
+./scripts/setup_and_run.sh
+```
+Notes: Homebrew is required; first run needs network access to install deps and download the model.
+
 ## Quick start (app)
 Run the minimal FastAPI app on localhost:
 ```bash
