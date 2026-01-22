@@ -122,26 +122,44 @@ def _serialize_job(job: JobRecord) -> dict[str, str | None]:
     return asdict(job)
 
 
-def _worker_state(jobs: list[JobRecord]) -> dict[str, str | None]:
+def _queue_groups(jobs: list[JobRecord]) -> tuple[JobRecord | None, list[JobRecord]]:
+    running_job = next((job for job in jobs if job.status == "running"), None)
+    queued_jobs = [job for job in jobs if job.status == "queued"]
+    return running_job, queued_jobs
+
+
+def _worker_state(jobs: list[JobRecord]) -> dict[str, object]:
+    queued_count = sum(1 for job in jobs if job.status == "queued")
     running_job = next((job for job in jobs if job.status == "running"), None)
     if running_job:
         return {
             "status": "Running",
             "job_id": running_job.id,
             "filename": running_job.filename,
+            "started_at": running_job.started_at,
+            "queue_length": queued_count,
         }
-    return {"status": "Idle", "job_id": None, "filename": None}
+    return {
+        "status": "Idle",
+        "job_id": None,
+        "filename": None,
+        "started_at": None,
+        "queue_length": queued_count,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
     jobs = get_job_store()
     queue_jobs, history_jobs = _split_jobs(jobs)
+    running_job, queued_jobs = _queue_groups(queue_jobs)
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "queue_jobs": queue_jobs,
+            "running_job": running_job,
+            "queued_jobs": queued_jobs,
+            "queued_count": len(queued_jobs),
             "history_jobs": history_jobs,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
@@ -179,12 +197,15 @@ async def upload_files(
 
     jobs = list_jobs(db_path)
     queue_jobs, history_jobs = _split_jobs(jobs)
+    running_job, queued_jobs = _queue_groups(queue_jobs)
 
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "queue_jobs": queue_jobs,
+            "running_job": running_job,
+            "queued_jobs": queued_jobs,
+            "queued_count": len(queued_jobs),
             "history_jobs": history_jobs,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
@@ -196,8 +217,12 @@ async def upload_files(
 def api_state() -> dict[str, object]:
     jobs = get_job_store()
     queue_jobs, history_jobs = _split_jobs(jobs)
+    running_job, queued_jobs = _queue_groups(queue_jobs)
     return {
         "queue": [_serialize_job(job) for job in queue_jobs],
+        "queue_running": _serialize_job(running_job) if running_job else None,
+        "queue_pending": [_serialize_job(job) for job in queued_jobs],
+        "queue_counts": {"running": 1 if running_job else 0, "queued": len(queued_jobs)},
         "history": [_serialize_job(job) for job in history_jobs],
         "results_by_job": build_results_index(history_jobs),
         "worker": _worker_state(jobs),

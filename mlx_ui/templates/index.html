@@ -82,6 +82,12 @@
         margin: 6px 0;
       }
 
+      .status-meta {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+        margin: 0;
+      }
+
       .tabs {
         margin-top: 32px;
       }
@@ -188,6 +194,50 @@
         color: var(--ink-muted);
       }
 
+      .queue-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .queue-summary {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .queue-count {
+        font-size: 0.82rem;
+        color: var(--ink-muted);
+        background: #fff;
+        border: 1px solid #f1e2d2;
+        border-radius: 999px;
+        padding: 4px 10px;
+        white-space: nowrap;
+      }
+
+      .queue-section {
+        margin-top: 18px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .queue-section-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .queue-section-title {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--accent-strong);
+      }
+
       .job-list {
         margin-top: 16px;
         display: grid;
@@ -202,6 +252,31 @@
         border-radius: 12px;
         background: #fff;
         border: 1px solid #f4e6d8;
+        align-items: flex-start;
+      }
+
+      .job-row.is-running {
+        border-color: var(--accent);
+        background: #fff0e1;
+        box-shadow: 0 16px 30px rgba(212, 106, 62, 0.18);
+      }
+
+      .job-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: #fff6ea;
+        border: 1px solid #f1cbb8;
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+        color: var(--accent-strong);
+        flex-shrink: 0;
+      }
+
+      .job-body {
+        flex: 1;
+        min-width: 0;
       }
 
       .job-name {
@@ -213,12 +288,25 @@
         color: var(--ink-muted);
       }
 
+      .job-queue {
+        margin-top: 6px;
+        font-size: 0.78rem;
+        color: var(--accent-strong);
+        font-weight: 600;
+      }
+
       .job-status {
         text-transform: uppercase;
         letter-spacing: 0.1em;
         font-size: 0.72rem;
         color: var(--accent-strong);
         align-self: center;
+      }
+
+      .job-elapsed {
+        font-size: 0.75rem;
+        color: var(--ink-muted);
+        font-weight: 600;
       }
 
       .job-actions {
@@ -558,6 +646,11 @@
           align-items: stretch;
         }
 
+        .queue-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
         .job-row {
           flex-direction: column;
           align-items: flex-start;
@@ -611,6 +704,7 @@
               Sequential queue, one job at a time.
             {% endif %}
           </p>
+          <p class="status-meta" id="worker-queue">Queue length: {{ worker.queue_length }}</p>
         </div>
       </header>
 
@@ -649,8 +743,17 @@
             aria-labelledby="tab-queue"
             data-panel="queue"
           >
-            <h2>Queue</h2>
-            <p>Upload files to start a sequential transcription run.</p>
+            <div class="queue-header">
+              <div>
+                <h2>Queue</h2>
+                <p>Upload files to start a sequential transcription run.</p>
+              </div>
+              <div class="queue-summary">
+                <div class="queue-count" data-queue-count>
+                  {{ queued_count }} {{ "file" if queued_count == 1 else "files" }} queued
+                </div>
+              </div>
+            </div>
             <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
               <label class="upload-label" for="file-input">Select audio or video files</label>
               <input
@@ -667,19 +770,63 @@
                 <span class="hint">Files stay local in data/uploads.</span>
               </div>
             </form>
-            <div class="job-list" aria-live="polite" id="queue-list">
-              {% for job in queue_jobs %}
-                <div class="job-row">
-                  <div>
-                    <div class="job-name">{{ job.filename }}</div>
-                    <div class="job-meta">Added {{ job.created_at }}</div>
-                    {% if job.started_at %}
-                      <div class="job-meta">Started {{ job.started_at }}</div>
-                    {% endif %}
+            <div class="queue-section">
+              <div class="queue-section-header">
+                <div class="queue-section-title">Now running</div>
+              </div>
+              <div class="job-list" aria-live="polite" id="running-list">
+                {% if running_job %}
+                  <div class="job-row is-running">
+                    <div class="job-icon" aria-hidden="true">⏳</div>
+                    <div class="job-body">
+                      <div class="job-name">{{ running_job.filename }}</div>
+                      <div class="job-meta" data-iso="{{ running_job.created_at }}" data-label="Added">
+                        Added {{ running_job.created_at }}
+                      </div>
+                      {% if running_job.started_at %}
+                        <div class="job-meta" data-iso="{{ running_job.started_at }}" data-label="Started">
+                          Started {{ running_job.started_at }}
+                        </div>
+                      {% endif %}
+                    </div>
+                    <div class="job-actions">
+                      <div class="job-status">{{ running_job.status }}</div>
+                      {% if running_job.started_at %}
+                        <div class="job-elapsed" data-started-at="{{ running_job.started_at }}"></div>
+                      {% endif %}
+                    </div>
                   </div>
-                  <div class="job-actions">
-                    <div class="job-status">{{ job.status }}</div>
-                    {% if job.status == "queued" %}
+                {% endif %}
+              </div>
+              <div class="placeholder" id="running-placeholder"{% if running_job %} style="display: none;"{% endif %}>
+                <div class="placeholder-row">No job running right now.</div>
+              </div>
+            </div>
+            <div class="queue-section">
+              <div class="queue-section-header">
+                <div class="queue-section-title">Next in queue</div>
+                <div class="queue-count" data-queue-count>
+                  {{ queued_count }} {{ "file" if queued_count == 1 else "files" }} queued
+                </div>
+              </div>
+              <div class="job-list" aria-live="polite" id="queue-list">
+                {% set offset = 1 if running_job else 0 %}
+                {% for job in queued_jobs %}
+                  <div class="job-row">
+                    <div class="job-body">
+                      <div class="job-name">{{ job.filename }}</div>
+                      <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
+                        Added {{ job.created_at }}
+                      </div>
+                      {% if job.started_at %}
+                        <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
+                          Started {{ job.started_at }}
+                        </div>
+                      {% endif %}
+                      <div class="job-queue">You are #{{ loop.index + offset }} in line</div>
+                    </div>
+                    <div class="job-actions">
+                      <div class="job-status">{{ job.status }}</div>
                       <button
                         class="job-bin"
                         type="button"
@@ -692,14 +839,14 @@
                         </svg>
                         <span class="sr-only">Remove</span>
                       </button>
-                    {% endif %}
+                    </div>
                   </div>
-                </div>
-              {% endfor %}
-            </div>
-            <div class="placeholder" id="queue-placeholder"{% if queue_jobs %} style="display: none;"{% endif %}>
-              <div class="placeholder-row">No jobs queued yet.</div>
-              <div class="placeholder-row">Waiting for uploads.</div>
+                {% endfor %}
+              </div>
+              <div class="placeholder" id="queue-placeholder"{% if queued_jobs %} style="display: none;"{% endif %}>
+                <div class="placeholder-row">No jobs queued yet.</div>
+                <div class="placeholder-row">Waiting for uploads.</div>
+              </div>
             </div>
           </section>
 
@@ -715,14 +862,20 @@
             <div class="job-list" aria-live="polite" id="history-list">
               {% for job in history_jobs %}
                 <div class="job-row">
-                  <div>
+                  <div class="job-body">
                     <div class="job-name">{{ job.filename }}</div>
-                    <div class="job-meta">Added {{ job.created_at }}</div>
+                    <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
+                      Added {{ job.created_at }}
+                    </div>
                     {% if job.started_at %}
-                      <div class="job-meta">Started {{ job.started_at }}</div>
+                      <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
+                        Started {{ job.started_at }}
+                      </div>
                     {% endif %}
                     {% if job.completed_at %}
-                      <div class="job-meta">Completed {{ job.completed_at }}</div>
+                      <div class="job-meta" data-iso="{{ job.completed_at }}" data-label="Completed">
+                        Completed {{ job.completed_at }}
+                      </div>
                     {% endif %}
                     {% if job.status == "failed" and job.error_message %}
                       <div class="job-error">{{ job.error_message }}</div>
@@ -871,12 +1024,16 @@
           activate(tabName);
         });
 
+        const runningList = document.getElementById("running-list");
         const queueList = document.getElementById("queue-list");
         const historyList = document.getElementById("history-list");
+        const runningPlaceholder = document.getElementById("running-placeholder");
         const queuePlaceholder = document.getElementById("queue-placeholder");
         const historyPlaceholder = document.getElementById("history-placeholder");
         const workerStatus = document.getElementById("worker-status");
         const workerDetail = document.getElementById("worker-detail");
+        const workerQueue = document.getElementById("worker-queue");
+        const queueCountEls = document.querySelectorAll("[data-queue-count]");
         const toastStack = document.getElementById("toast-stack");
         const notifiedJobIds = new Set();
         let notificationsSeeded = false;
@@ -895,6 +1052,10 @@
             <path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"></path>
           </svg>
         `;
+        const relativeFormatter =
+          typeof Intl !== "undefined" && Intl.RelativeTimeFormat
+            ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" })
+            : null;
 
         function escapeHtml(value) {
           return String(value)
@@ -903,6 +1064,119 @@
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#39;");
+        }
+
+        function formatRelative(date) {
+          if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return "";
+          }
+          const diffMs = date.getTime() - Date.now();
+          const absMs = Math.abs(diffMs);
+          if (absMs < 45000) {
+            return "just now";
+          }
+          const units = [
+            ["year", 31536000000],
+            ["month", 2592000000],
+            ["day", 86400000],
+            ["hour", 3600000],
+            ["minute", 60000],
+          ];
+          for (const [unit, unitMs] of units) {
+            if (absMs >= unitMs) {
+              const value = Math.round(diffMs / unitMs);
+              if (relativeFormatter) {
+                return relativeFormatter.format(value, unit);
+              }
+              const rounded = Math.abs(value);
+              return `${rounded} ${unit}${rounded === 1 ? "" : "s"} ${
+                value < 0 ? "ago" : "from now"
+              }`;
+            }
+          }
+          const seconds = Math.round(diffMs / 1000);
+          if (relativeFormatter) {
+            return relativeFormatter.format(seconds, "second");
+          }
+          const absSeconds = Math.abs(seconds);
+          return `${absSeconds} sec ${seconds < 0 ? "ago" : "from now"}`;
+        }
+
+        function formatTimestamp(isoString) {
+          if (!isoString) {
+            return { absolute: "", relative: "" };
+          }
+          const date = new Date(isoString);
+          if (Number.isNaN(date.getTime())) {
+            return { absolute: isoString, relative: "" };
+          }
+          let absolute = "";
+          try {
+            absolute = date.toLocaleString([], {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch (error) {
+            absolute = date.toLocaleString();
+          }
+          return { absolute, relative: formatRelative(date) };
+        }
+
+        function formatDuration(ms) {
+          const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          const seconds = totalSeconds % 60;
+          const paddedMinutes = String(minutes).padStart(2, "0");
+          const paddedSeconds = String(seconds).padStart(2, "0");
+          if (hours > 0) {
+            return `${String(hours).padStart(2, "0")}:${paddedMinutes}:${paddedSeconds}`;
+          }
+          return `${paddedMinutes}:${paddedSeconds}`;
+        }
+
+        function formatElapsed(isoString) {
+          if (!isoString) {
+            return "";
+          }
+          const startedAt = new Date(isoString);
+          if (Number.isNaN(startedAt.getTime())) {
+            return "";
+          }
+          return formatDuration(Date.now() - startedAt.getTime());
+        }
+
+        function hydrateTimestamps(root) {
+          const scope = root || document;
+          scope.querySelectorAll("[data-iso][data-label]").forEach((element) => {
+            const isoString = element.getAttribute("data-iso");
+            const label = element.getAttribute("data-label") || "";
+            const { absolute, relative } = formatTimestamp(isoString);
+            if (!absolute) {
+              return;
+            }
+            const relativeText = relative ? ` · ${relative}` : "";
+            element.textContent = `${label} ${absolute}${relativeText}`;
+          });
+        }
+
+        function hydrateElapsed(root) {
+          const scope = root || document;
+          scope.querySelectorAll("[data-started-at]").forEach((element) => {
+            const isoString = element.getAttribute("data-started-at");
+            const elapsed = formatElapsed(isoString);
+            element.textContent = elapsed ? `Running ${elapsed}` : "";
+          });
+        }
+
+        function updateQueueCount(count) {
+          const label = count === 1 ? "file" : "files";
+          queueCountEls.forEach((element) => {
+            element.textContent = `${count} ${label} queued`;
+          });
         }
 
         function buildResults(jobId, results) {
@@ -940,23 +1214,33 @@
           return `<ul class="result-list">${items}</ul>`;
         }
 
-        function buildMetaLines(job) {
-          const lines = [`Added ${escapeHtml(job.created_at)}`];
-          if (job.started_at) {
-            lines.push(`Started ${escapeHtml(job.started_at)}`);
+        function buildMetaLine(label, isoString) {
+          if (!isoString) {
+            return "";
           }
-          if (job.completed_at) {
-            lines.push(`Completed ${escapeHtml(job.completed_at)}`);
-          }
-          return lines
-            .map((line) => `<div class="job-meta">${line}</div>`)
-            .join("");
+          return `
+            <div class="job-meta" data-iso="${escapeHtml(isoString)}" data-label="${escapeHtml(
+              label
+            )}"></div>
+          `;
         }
 
-        function buildActions(job, isHistory) {
+        function buildMetaLines(job) {
+          const lines = [buildMetaLine("Added", job.created_at)];
+          if (job.started_at) {
+            lines.push(buildMetaLine("Started", job.started_at));
+          }
+          if (job.completed_at) {
+            lines.push(buildMetaLine("Completed", job.completed_at));
+          }
+          return lines.join("");
+        }
+
+        function buildActions(job, isHistory, extra) {
           const status = `<div class="job-status">${escapeHtml(job.status)}</div>`;
+          const extraBlock = extra || "";
           if (isHistory) {
-            return `<div class="job-actions">${status}</div>`;
+            return `<div class="job-actions">${status}${extraBlock}</div>`;
           }
           const canDelete = job.status === "queued";
           const binButton = canDelete
@@ -975,7 +1259,55 @@
               </button>
             `
             : "";
-          return `<div class="job-actions">${status}${binButton}</div>`;
+          return `<div class="job-actions">${status}${extraBlock}${binButton}</div>`;
+        }
+
+        function buildQueueLine(position) {
+          if (!position) {
+            return "";
+          }
+          return `<div class="job-queue">You are #${position} in line</div>`;
+        }
+
+        function buildJobRow(job, options) {
+          const opts = options || {};
+          const isHistory = Boolean(opts.isHistory);
+          const isRunning = Boolean(opts.isRunning);
+          const queuePosition = opts.queuePosition || 0;
+          const icon = isRunning ? '<div class="job-icon" aria-hidden="true">⏳</div>' : "";
+          const metaLines = buildMetaLines(job);
+          const queueLine = buildQueueLine(queuePosition);
+          const errorBlock =
+            isHistory && job.status === "failed" && job.error_message
+              ? `<div class="job-error">${escapeHtml(job.error_message)}</div>`
+              : "";
+          const results =
+            isHistory
+              ? `
+                <div class="results">
+                  <div class="result-label">Results</div>
+                  ${buildResults(job.id, (opts.resultsByJob || {})[job.id] || [])}
+                </div>
+              `
+              : "";
+          const elapsed =
+            isRunning && job.started_at
+              ? `<div class="job-elapsed" data-started-at="${escapeHtml(job.started_at)}"></div>`
+              : "";
+          const actions = buildActions(job, isHistory, elapsed);
+          return `
+            <div class="job-row${isRunning ? " is-running" : ""}">
+              ${icon}
+              <div class="job-body">
+                <div class="job-name">${escapeHtml(job.filename)}</div>
+                ${metaLines}
+                ${queueLine}
+                ${errorBlock}
+                ${results}
+              </div>
+              ${actions}
+            </div>
+          `;
         }
 
         function buildToast(job, resultsByJob, opts) {
@@ -1180,7 +1512,44 @@
           );
         }
 
-        function renderJobs(listEl, placeholderEl, jobs, resultsByJob, isHistory) {
+        function renderRunning(listEl, placeholderEl, job) {
+          if (!listEl || !placeholderEl) {
+            return;
+          }
+          if (!job) {
+            listEl.innerHTML = "";
+            placeholderEl.style.display = "grid";
+            return;
+          }
+          placeholderEl.style.display = "none";
+          listEl.innerHTML = buildJobRow(job, { isRunning: true });
+          hydrateTimestamps(listEl);
+          hydrateElapsed(listEl);
+        }
+
+        function renderQueue(listEl, placeholderEl, jobs, runningJob) {
+          if (!listEl || !placeholderEl) {
+            return;
+          }
+          if (!jobs || jobs.length === 0) {
+            listEl.innerHTML = "";
+            placeholderEl.style.display = "grid";
+            return;
+          }
+          placeholderEl.style.display = "none";
+          const offset = runningJob ? 1 : 0;
+          listEl.innerHTML = jobs
+            .map((job, index) =>
+              buildJobRow(job, {
+                queuePosition: index + 1 + offset,
+                isHistory: false,
+              })
+            )
+            .join("");
+          hydrateTimestamps(listEl);
+        }
+
+        function renderHistory(listEl, placeholderEl, jobs, resultsByJob) {
           if (!listEl || !placeholderEl) {
             return;
           }
@@ -1191,35 +1560,9 @@
           }
           placeholderEl.style.display = "none";
           listEl.innerHTML = jobs
-            .map((job) => {
-              const metaLines = buildMetaLines(job);
-              const actions = buildActions(job, isHistory);
-              const errorBlock =
-                isHistory && job.status === "failed" && job.error_message
-                  ? `<div class="job-error">${escapeHtml(job.error_message)}</div>`
-                  : "";
-              const results =
-                isHistory
-                  ? `
-                    <div class="results">
-                      <div class="result-label">Results</div>
-                      ${buildResults(job.id, resultsByJob[job.id] || [])}
-                    </div>
-                  `
-                  : "";
-              return `
-                <div class="job-row">
-                  <div>
-                    <div class="job-name">${escapeHtml(job.filename)}</div>
-                    ${metaLines}
-                    ${errorBlock}
-                    ${results}
-                  </div>
-                  ${actions}
-                </div>
-              `;
-            })
+            .map((job) => buildJobRow(job, { isHistory: true, resultsByJob }))
             .join("");
+          hydrateTimestamps(listEl);
         }
 
         async function refreshState() {
@@ -1230,21 +1573,33 @@
             }
             const payload = await response.json();
             const resultsByJob = payload.results_by_job || {};
-            renderJobs(queueList, queuePlaceholder, payload.queue || [], resultsByJob, false);
-            renderJobs(
-              historyList,
-              historyPlaceholder,
-              payload.history || [],
-              resultsByJob,
-              true
-            );
+            const queue = payload.queue || [];
+            const runningJob =
+              payload.queue_running ||
+              queue.find((job) => job.status === "running") ||
+              null;
+            const queuedJobs =
+              payload.queue_pending || queue.filter((job) => job.status === "queued");
+            renderRunning(runningList, runningPlaceholder, runningJob);
+            renderQueue(queueList, queuePlaceholder, queuedJobs, runningJob);
+            renderHistory(historyList, historyPlaceholder, payload.history || [], resultsByJob);
             handleNotifications(payload.history || [], resultsByJob);
+            updateQueueCount(queuedJobs.length);
             if (payload.worker && workerStatus && workerDetail) {
               workerStatus.textContent = payload.worker.status || "Idle";
               if (payload.worker.status === "Running" && payload.worker.filename) {
-                workerDetail.textContent = `Running ${payload.worker.filename}`;
+                const elapsed = formatElapsed(payload.worker.started_at);
+                const suffix = elapsed ? ` · ${elapsed}` : "";
+                workerDetail.textContent = `Running ${payload.worker.filename}${suffix}`;
               } else {
                 workerDetail.textContent = "Sequential queue, one job at a time.";
+              }
+              if (workerQueue) {
+                const length =
+                  typeof payload.worker.queue_length === "number"
+                    ? payload.worker.queue_length
+                    : queuedJobs.length;
+                workerQueue.textContent = `Queue length: ${length}`;
               }
             }
           } catch (error) {
@@ -1290,6 +1645,9 @@
             }
           });
         }
+
+        hydrateTimestamps(document);
+        hydrateElapsed(document);
 
         setInterval(refreshState, 2500);
         refreshState();
