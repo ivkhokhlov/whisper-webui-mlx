@@ -5,7 +5,7 @@ This file is a human-maintained map of the repo. Update when structure changes.
 ## Current
 - `data/` — runtime uploads/results/logs/jobs.db (created on demand)
 - `docs/` — spec + dev notes + this tree map
-- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`)
+- `mlx_ui/` — FastAPI app package (`app.py`, `db.py`, `worker.py`, `transcriber.py`, `telegram.py`, `update_check.py`, `uploads.py`)
 - `mlx_ui/logging_config.py` — logging setup (file + console)
 - `mlx_ui/templates/` — Jinja2 templates (`index.html`, `live.html`)
 - `scripts/` — setup/run script (`setup_and_run.sh`)

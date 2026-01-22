@@ -5,13 +5,14 @@ import shutil
 import threading
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.db import JobRecord, delete_queued_job, get_job, init_db, insert_job, list_jobs
 from mlx_ui.logging_config import configure_logging
 from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
+from mlx_ui.uploads import cleanup_upload_path
 from mlx_ui.worker import start_worker
 
 app = FastAPI(title="Whisper WebUI (MLX)")
@@ -33,7 +34,7 @@ def startup() -> None:
     configure_logging(BASE_DIR)
     init_db(get_db_path())
     if getattr(app.state, "worker_enabled", True):
-        start_worker(get_db_path(), get_results_dir())
+        start_worker(get_db_path(), get_uploads_dir(), get_results_dir())
     if (
         getattr(app.state, "update_check_enabled", True)
         and not is_update_check_disabled()
@@ -221,3 +222,25 @@ def download_result(job_id: str, filename: str):
         raise HTTPException(status_code=404)
 
     return FileResponse(file_path)
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job_from_queue(job_id: str) -> dict[str, bool]:
+    if not is_safe_path_component(job_id):
+        raise HTTPException(status_code=404)
+    db_path = get_db_path()
+    job = get_job(db_path, job_id)
+    if job is None:
+        raise HTTPException(status_code=404)
+    if job.status != "queued":
+        raise HTTPException(
+            status_code=409,
+            detail="Only queued jobs can be removed.",
+        )
+    if not delete_queued_job(db_path, job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Job is no longer queued.",
+        )
+    cleanup_upload_path(job.upload_path, get_uploads_dir(), job.id)
+    return {"ok": True}

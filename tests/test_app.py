@@ -71,6 +71,36 @@ def test_upload_without_language(tmp_path: Path) -> None:
     assert response.status_code == 200
 
 
+def test_delete_queued_job_removes_upload(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-123"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="queued",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="any",
+    )
+    insert_job(db_path, job)
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert list_jobs(db_path) == []
+    assert not upload_path.exists()
+    assert not uploads_dir.exists()
+
+
 def test_jobs_persist_across_restart(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     files = [("files", ("alpha.txt", b"one", "text/plain"))]
