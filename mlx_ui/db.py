@@ -119,6 +119,43 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
     return [JobRecord(**dict(row)) for row in rows]
 
 
+def get_job(db_path: Path, job_id: str) -> JobRecord | None:
+    with _connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                filename,
+                status,
+                created_at,
+                upload_path,
+                language,
+                started_at,
+                completed_at,
+                error_message
+            FROM jobs
+            WHERE id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return JobRecord(**dict(row))
+
+
+def delete_queued_job(db_path: Path, job_id: str) -> bool:
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM jobs
+            WHERE id = ? AND status = 'queued'
+            """,
+            (job_id,),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
 def update_job_status(
     db_path: Path,
     job_id: str,

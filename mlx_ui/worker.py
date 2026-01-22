@@ -8,6 +8,7 @@ import threading
 from mlx_ui.db import claim_next_job, update_job_status
 from mlx_ui.telegram import maybe_send_telegram
 from mlx_ui.transcriber import Transcriber, WtmTranscriber
+from mlx_ui.uploads import cleanup_upload_path
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,13 @@ class Worker:
     def __init__(
         self,
         db_path: Path,
+        uploads_dir: Path,
         results_dir: Path,
         poll_interval: float = 0.5,
         transcriber: Transcriber | None = None,
     ) -> None:
         self.db_path = Path(db_path)
+        self.uploads_dir = Path(uploads_dir)
         self.results_dir = Path(results_dir)
         self.poll_interval = poll_interval
         self.transcriber = transcriber or WtmTranscriber()
@@ -71,18 +74,20 @@ class Worker:
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
+            cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         try:
             maybe_send_telegram(job, result_path)
         except Exception:
             logger.exception("Worker failed to deliver Telegram message for job %s", job.id)
         update_job_status(self.db_path, job.id, "done", completed_at=_now_utc())
-        _cleanup_upload(job)
+        cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
         return True
 
 
 def start_worker(
     db_path: Path,
+    uploads_dir: Path,
     results_dir: Path,
     poll_interval: float = 0.5,
     transcriber: Transcriber | None = None,
@@ -93,6 +98,7 @@ def start_worker(
             return _worker_instance
         _worker_instance = Worker(
             db_path=db_path,
+            uploads_dir=uploads_dir,
             results_dir=results_dir,
             poll_interval=poll_interval,
             transcriber=transcriber,
@@ -118,25 +124,3 @@ def _truncate_error(message: str, limit: int = 4000) -> str:
     if len(message) <= limit:
         return message
     return message[: limit - 1] + "…"
-
-
-def _cleanup_upload(job: JobRecord) -> None:
-    upload_path = Path(job.upload_path)
-    if not upload_path.exists():
-        return
-    try:
-        if upload_path.is_file() or upload_path.is_symlink():
-            upload_path.unlink()
-        else:
-            logger.warning("Upload path is not a file for job %s", job.id)
-            return
-    except Exception:
-        logger.exception("Failed to remove upload for job %s", job.id)
-        return
-    parent = upload_path.parent
-    try:
-        parent.rmdir()
-    except OSError:
-        return
-    except Exception:
-        logger.exception("Failed to remove upload directory for job %s", job.id)

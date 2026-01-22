@@ -85,6 +85,7 @@ def test_worker_processes_jobs_sequentially(tmp_path: Path) -> None:
     transcriber = RecordingTranscriber()
     start_worker(
         db_path,
+        uploads_dir,
         results_dir,
         poll_interval=0.01,
         transcriber=transcriber,
@@ -127,7 +128,12 @@ def test_worker_records_failure_metadata(tmp_path: Path) -> None:
     )
     insert_job(db_path, job)
 
-    worker = Worker(db_path=db_path, results_dir=results_dir, transcriber=FailingTranscriber())
+    worker = Worker(
+        db_path=db_path,
+        uploads_dir=uploads_dir,
+        results_dir=results_dir,
+        transcriber=FailingTranscriber(),
+    )
     processed = worker.run_once()
 
     assert processed is True
@@ -138,3 +144,4 @@ def test_worker_records_failure_metadata(tmp_path: Path) -> None:
     assert failed_job.started_at is not None
     assert failed_job.completed_at is not None
     assert failed_job.error_message is not None
+    assert not Path(job.upload_path).exists()

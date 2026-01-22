@@ -221,6 +221,61 @@
         align-self: center;
       }
 
+      .job-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+        min-width: 92px;
+      }
+
+      .job-bin {
+        appearance: none;
+        border: 1px solid #f1cbb8;
+        background: #fff3ea;
+        color: #9f4b2a;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+      }
+
+      .job-bin:hover {
+        background: #fbe3d6;
+      }
+
+      .job-bin:focus-visible {
+        outline: 2px solid var(--accent-strong);
+        outline-offset: 2px;
+      }
+
+      .job-bin:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .job-bin-icon {
+        width: 16px;
+        height: 16px;
+        display: block;
+        fill: currentColor;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
       .job-error {
         margin-top: 8px;
         padding: 8px 10px;
@@ -333,6 +388,13 @@
           align-items: flex-start;
         }
 
+        .job-actions {
+          flex-direction: row;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+        }
+
         .status-card {
           width: 100%;
         }
@@ -421,7 +483,23 @@
                       <div class="job-meta">Started {{ job.started_at }}</div>
                     {% endif %}
                   </div>
-                  <div class="job-status">{{ job.status }}</div>
+                  <div class="job-actions">
+                    <div class="job-status">{{ job.status }}</div>
+                    {% if job.status == "queued" %}
+                      <button
+                        class="job-bin"
+                        type="button"
+                        data-job-id="{{ job.id }}"
+                        aria-label="Remove from queue"
+                        title="Remove from queue"
+                      >
+                        <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
+                        </svg>
+                        <span class="sr-only">Remove</span>
+                      </button>
+                    {% endif %}
+                  </div>
                 </div>
               {% endfor %}
             </div>
@@ -485,7 +563,9 @@
                       {% endif %}
                     </div>
                   </div>
-                  <div class="job-status">{{ job.status }}</div>
+                  <div class="job-actions">
+                    <div class="job-status">{{ job.status }}</div>
+                  </div>
                 </div>
               {% endfor %}
             </div>
@@ -591,6 +671,31 @@
             .join("");
         }
 
+        function buildActions(job, isHistory) {
+          const status = `<div class="job-status">${escapeHtml(job.status)}</div>`;
+          if (isHistory) {
+            return `<div class="job-actions">${status}</div>`;
+          }
+          const canDelete = job.status === "queued";
+          const binButton = canDelete
+            ? `
+              <button
+                class="job-bin"
+                type="button"
+                data-job-id="${escapeHtml(job.id)}"
+                aria-label="Remove from queue"
+                title="Remove from queue"
+              >
+                <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
+                </svg>
+                <span class="sr-only">Remove</span>
+              </button>
+            `
+            : "";
+          return `<div class="job-actions">${status}${binButton}</div>`;
+        }
+
         function renderJobs(listEl, placeholderEl, jobs, resultsByJob, isHistory) {
           if (!listEl || !placeholderEl) {
             return;
@@ -604,6 +709,7 @@
           listEl.innerHTML = jobs
             .map((job) => {
               const metaLines = buildMetaLines(job);
+              const actions = buildActions(job, isHistory);
               const errorBlock =
                 isHistory && job.status === "failed" && job.error_message
                   ? `<div class="job-error">${escapeHtml(job.error_message)}</div>`
@@ -625,7 +731,7 @@
                     ${errorBlock}
                     ${results}
                   </div>
-                  <div class="job-status">${escapeHtml(job.status)}</div>
+                  ${actions}
                 </div>
               `;
             })
@@ -659,6 +765,45 @@
           } catch (error) {
             console.warn("Failed to refresh state", error);
           }
+        }
+
+        async function deleteQueuedJob(jobId) {
+          const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
+            method: "DELETE",
+          });
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || "Failed to remove job.");
+          }
+        }
+
+        if (queueList) {
+          queueList.addEventListener("click", async (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) {
+              return;
+            }
+            const button = target.closest(".job-bin");
+            if (!button) {
+              return;
+            }
+            const jobId = button.getAttribute("data-job-id");
+            if (!jobId) {
+              return;
+            }
+            if (!window.confirm("Remove this job from the queue?")) {
+              return;
+            }
+            button.setAttribute("disabled", "disabled");
+            try {
+              await deleteQueuedJob(jobId);
+            } catch (error) {
+              console.warn("Failed to remove queued job", error);
+              alert("Failed to remove queued job.");
+            } finally {
+              await refreshState();
+            }
+          });
         }
 
         setInterval(refreshState, 2500);
