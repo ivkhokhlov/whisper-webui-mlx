@@ -1,12 +1,11 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 import shutil
 import threading
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -26,7 +25,7 @@ app.state.results_dir = DEFAULT_RESULTS_DIR
 app.state.db_path = DEFAULT_DB_PATH
 app.state.worker_enabled = True
 app.state.update_check_enabled = True
-LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z]{2,3})?$")
+DEFAULT_LANGUAGE = "any"
 
 
 @app.on_event("startup")
@@ -96,7 +95,6 @@ def new_job_record(
     job_id: str,
     filename: str,
     upload_path: Path,
-    language: str,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -104,20 +102,8 @@ def new_job_record(
         status="queued",
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         upload_path=str(upload_path),
-        language=language,
+        language=DEFAULT_LANGUAGE,
     )
-
-
-def validate_language(raw_value: str) -> str:
-    language = raw_value.strip()
-    if not language:
-        raise HTTPException(status_code=400, detail="Language is required.")
-    if not LANGUAGE_PATTERN.match(language):
-        raise HTTPException(
-            status_code=400,
-            detail="Language must match a short code like en or pt-BR.",
-        )
-    return language
 
 
 def _split_jobs(jobs: list[JobRecord]) -> tuple[list[JobRecord], list[JobRecord]]:
@@ -165,12 +151,10 @@ def read_live(request: Request):
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(
     request: Request,
-    language: str = Form(...),
     files: list[UploadFile] = File(...),
 ):
     uploads_dir = ensure_uploads_dir()
     db_path = get_db_path()
-    language_value = validate_language(language)
 
     for upload in files:
         if not upload.filename:
@@ -185,7 +169,7 @@ async def upload_files(
                 shutil.copyfileobj(upload.file, outfile)
         finally:
             await upload.close()
-        insert_job(db_path, new_job_record(job_id, safe_name, destination, language_value))
+        insert_job(db_path, new_job_record(job_id, safe_name, destination))
 
     jobs = list_jobs(db_path)
     queue_jobs, history_jobs = _split_jobs(jobs)

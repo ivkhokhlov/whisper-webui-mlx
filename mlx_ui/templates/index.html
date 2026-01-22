@@ -406,28 +406,6 @@
                 required
                 accept="audio/*,video/*"
               >
-              <label class="upload-label" for="language-input">Language code (manual)</label>
-              <input
-                id="language-input"
-                class="upload-select"
-                name="language"
-                list="language-options"
-                placeholder="e.g. en, es, fr, pt-BR"
-                required
-                pattern="[a-z]{2,3}(-[A-Za-z]{2,3})?"
-                title="Use a short language code like en or pt-BR"
-              >
-              <datalist id="language-options">
-                <option value="en"></option>
-                <option value="es"></option>
-                <option value="fr"></option>
-                <option value="de"></option>
-                <option value="it"></option>
-                <option value="pt-BR"></option>
-                <option value="ja"></option>
-                <option value="ko"></option>
-                <option value="zh"></option>
-              </datalist>
               <div class="upload-actions">
                 <button class="cta" type="submit">Queue uploads</button>
                 <span class="hint">Files stay local in data/uploads.</span>
@@ -439,7 +417,6 @@
                   <div>
                     <div class="job-name">{{ job.filename }}</div>
                     <div class="job-meta">Added {{ job.created_at }}</div>
-                    <div class="job-meta">Language {{ job.language }}</div>
                     {% if job.started_at %}
                       <div class="job-meta">Started {{ job.started_at }}</div>
                     {% endif %}
@@ -469,7 +446,6 @@
                   <div>
                     <div class="job-name">{{ job.filename }}</div>
                     <div class="job-meta">Added {{ job.created_at }}</div>
-                    <div class="job-meta">Language {{ job.language }}</div>
                     {% if job.started_at %}
                       <div class="job-meta">Started {{ job.started_at }}</div>
                     {% endif %}
@@ -604,9 +580,6 @@
 
         function buildMetaLines(job) {
           const lines = [`Added ${escapeHtml(job.created_at)}`];
-          if (job.language) {
-            lines.push(`Language ${escapeHtml(job.language)}`);
-          }
           if (job.started_at) {
             lines.push(`Started ${escapeHtml(job.started_at)}`);
           }
