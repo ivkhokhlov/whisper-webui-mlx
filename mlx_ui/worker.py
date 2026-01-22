@@ -77,6 +77,7 @@ class Worker:
         except Exception:
             logger.exception("Worker failed to deliver Telegram message for job %s", job.id)
         update_job_status(self.db_path, job.id, "done", completed_at=_now_utc())
+        _cleanup_upload(job)
         return True
 
 
@@ -117,3 +118,25 @@ def _truncate_error(message: str, limit: int = 4000) -> str:
     if len(message) <= limit:
         return message
     return message[: limit - 1] + "…"
+
+
+def _cleanup_upload(job: JobRecord) -> None:
+    upload_path = Path(job.upload_path)
+    if not upload_path.exists():
+        return
+    try:
+        if upload_path.is_file() or upload_path.is_symlink():
+            upload_path.unlink()
+        else:
+            logger.warning("Upload path is not a file for job %s", job.id)
+            return
+    except Exception:
+        logger.exception("Failed to remove upload for job %s", job.id)
+        return
+    parent = upload_path.parent
+    try:
+        parent.rmdir()
+    except OSError:
+        return
+    except Exception:
+        logger.exception("Failed to remove upload directory for job %s", job.id)
