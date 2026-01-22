@@ -616,26 +616,28 @@
 
       <section class="tabs" aria-label="Main sections">
         <div class="tablist" role="tablist">
-          <button
+          <a
             class="tab is-active"
             role="tab"
             aria-selected="true"
             aria-controls="panel-queue"
             id="tab-queue"
             data-tab="queue"
+            href="/?tab=queue"
           >
             Queue
-          </button>
-          <button
+          </a>
+          <a
             class="tab"
             role="tab"
             aria-selected="false"
             aria-controls="panel-history"
             id="tab-history"
             data-tab="history"
+            href="/?tab=history"
           >
             History
-          </button>
+          </a>
           <a class="tab" href="/live">Live</a>
         </div>
 
@@ -779,13 +781,33 @@
 
     <script>
       (function () {
-        const tabs = document.querySelectorAll("[data-tab]");
+        const tabs = Array.from(document.querySelectorAll("[data-tab]"));
         const panels = document.querySelectorAll("[data-panel]");
         if (!tabs.length) {
           return;
         }
+        const tabNames = new Set(tabs.map((tab) => tab.dataset.tab));
+        const TAB_STORAGE_KEY = "mlx-ui:last-tab";
 
-        function activate(tabName) {
+        function updateUrl(tabName, replace) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("tab", tabName);
+          if (!replace && url.toString() === window.location.href) {
+            return;
+          }
+          const state = { tab: tabName };
+          if (replace) {
+            history.replaceState(state, "", url);
+          } else {
+            history.pushState(state, "", url);
+          }
+        }
+
+        function activate(tabName, options = {}) {
+          const { updateHistory = false, replaceHistory = false } = options;
+          if (!tabNames.has(tabName)) {
+            return;
+          }
           tabs.forEach((tab) => {
             const isActive = tab.dataset.tab === tabName;
             tab.classList.toggle("is-active", isActive);
@@ -795,15 +817,58 @@
           panels.forEach((panel) => {
             panel.classList.toggle("is-active", panel.dataset.panel === tabName);
           });
+
+          try {
+            localStorage.setItem(TAB_STORAGE_KEY, tabName);
+          } catch (error) {
+            // localStorage may be disabled; UI should still work.
+          }
+
+          if (updateHistory) {
+            updateUrl(tabName, replaceHistory);
+          }
         }
 
-        const initialTab = new URLSearchParams(window.location.search).get("tab");
-        if (initialTab && document.querySelector(`[data-tab="${initialTab}"]`)) {
-          activate(initialTab);
+        function tabFromUrl() {
+          const initialTab = new URLSearchParams(window.location.search).get("tab");
+          return tabNames.has(initialTab) ? initialTab : null;
         }
+
+        let storedTab = null;
+        try {
+          const candidate = localStorage.getItem(TAB_STORAGE_KEY);
+          storedTab = tabNames.has(candidate) ? candidate : null;
+        } catch (error) {
+          storedTab = null;
+        }
+
+        const initialFromUrl = tabFromUrl();
+        const initialTab = initialFromUrl || storedTab || "queue";
+        activate(initialTab, {
+          updateHistory: !initialFromUrl,
+          replaceHistory: true
+        });
 
         tabs.forEach((tab) => {
-          tab.addEventListener("click", () => activate(tab.dataset.tab));
+          tab.addEventListener("click", (event) => {
+            if (
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            activate(tab.dataset.tab, { updateHistory: true });
+          });
+        });
+
+        window.addEventListener("popstate", () => {
+          const tabName = tabFromUrl() || "queue";
+          activate(tabName);
         });
 
         const queueList = document.getElementById("queue-list");
