@@ -54,6 +54,12 @@
         font-size: clamp(2rem, 3vw, 3rem);
       }
 
+      h2 {
+        margin: 0;
+        font-size: clamp(1.5rem, 2.4vw, 2rem);
+        letter-spacing: -0.01em;
+      }
+
       p {
         margin: 0;
         color: var(--ink-muted);
@@ -142,6 +148,11 @@
         display: block;
       }
 
+      .panel > p {
+        margin-top: 6px;
+        margin-bottom: 18px;
+      }
+
       .upload-card {
         margin-top: 18px;
         padding: 16px;
@@ -200,12 +211,18 @@
         align-items: flex-start;
         gap: 16px;
         flex-wrap: wrap;
+        margin-bottom: 6px;
       }
 
       .queue-summary {
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+
+      .queue-header p {
+        margin-top: 6px;
+        font-size: 0.98rem;
       }
 
       .queue-count {
@@ -218,37 +235,18 @@
         white-space: nowrap;
       }
 
-      .queue-section {
-        margin-top: 18px;
-        display: grid;
-        gap: 10px;
-      }
-
-      .queue-section-header {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .queue-section-title {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.16em;
-        color: var(--accent-strong);
-      }
-
       .job-list {
         margin-top: 16px;
         display: grid;
         gap: 10px;
       }
 
+
       .job-row {
         display: flex;
         justify-content: space-between;
         gap: 16px;
-        padding: 12px 14px;
+        padding: 14px 16px;
         border-radius: 12px;
         background: #fff;
         border: 1px solid #f4e6d8;
@@ -281,11 +279,13 @@
 
       .job-name {
         font-weight: 600;
+        font-size: 1.02rem;
       }
 
       .job-meta {
         font-size: 0.85rem;
         color: var(--ink-muted);
+        margin-top: 2px;
       }
 
       .job-queue {
@@ -313,7 +313,7 @@
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 8px;
+        gap: 6px;
         min-width: 92px;
       }
 
@@ -770,63 +770,38 @@
                 <span class="hint">Files stay local in data/uploads.</span>
               </div>
             </form>
-            <div class="queue-section">
-              <div class="queue-section-header">
-                <div class="queue-section-title">Now running</div>
-              </div>
-              <div class="job-list" aria-live="polite" id="running-list">
-                {% if running_job %}
-                  <div class="job-row is-running">
-                    <div class="job-icon" aria-hidden="true">⏳</div>
-                    <div class="job-body">
-                      <div class="job-name">{{ running_job.filename }}</div>
-                      <div class="job-meta" data-iso="{{ running_job.created_at }}" data-label="Added">
-                        Added {{ running_job.created_at }}
-                      </div>
-                      {% if running_job.started_at %}
-                        <div class="job-meta" data-iso="{{ running_job.started_at }}" data-label="Started">
-                          Started {{ running_job.started_at }}
-                        </div>
-                      {% endif %}
-                    </div>
-                    <div class="job-actions">
-                      <div class="job-status">{{ running_job.status }}</div>
-                      {% if running_job.started_at %}
-                        <div class="job-elapsed" data-started-at="{{ running_job.started_at }}"></div>
-                      {% endif %}
-                    </div>
-                  </div>
+            <div class="job-list" aria-live="polite" id="queue-list">
+              {% set offset = 1 if queue_jobs | selectattr("status", "equalto", "running") | list | length > 0 else 0 %}
+              {% set queue_index = namespace(value=0) %}
+              {% for job in queue_jobs %}
+                {% set is_running = job.status == "running" %}
+                {% if job.status == "queued" %}
+                  {% set queue_index.value = queue_index.value + 1 %}
                 {% endif %}
-              </div>
-              <div class="placeholder" id="running-placeholder"{% if running_job %} style="display: none;"{% endif %}>
-                <div class="placeholder-row">No job running right now.</div>
-              </div>
-            </div>
-            <div class="queue-section">
-              <div class="queue-section-header">
-                <div class="queue-section-title">Next in queue</div>
-                <div class="queue-count" data-queue-count>
-                  {{ queued_count }} {{ "file" if queued_count == 1 else "files" }} queued
-                </div>
-              </div>
-              <div class="job-list" aria-live="polite" id="queue-list">
-                {% set offset = 1 if running_job else 0 %}
-                {% for job in queued_jobs %}
-                  <div class="job-row">
-                    <div class="job-body">
-                      <div class="job-name">{{ job.filename }}</div>
-                      <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
-                        Added {{ job.created_at }}
-                      </div>
-                      {% if job.started_at %}
-                        <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
-                          Started {{ job.started_at }}
-                        </div>
-                      {% endif %}
-                      <div class="job-queue">You are #{{ loop.index + offset }} in line</div>
+                <div class="job-row{% if is_running %} is-running{% endif %}">
+                  {% if is_running %}
+                    <div class="job-icon" aria-hidden="true">⏳</div>
+                  {% endif %}
+                  <div class="job-body">
+                    <div class="job-name">{{ job.filename }}</div>
+                    <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
+                      Added {{ job.created_at }}
                     </div>
-                    <div class="job-actions">
-                      <div class="job-status">{{ job.status }}</div>
+                    {% if job.started_at %}
+                      <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
+                        Started {{ job.started_at }}
+                      </div>
+                    {% endif %}
+                    {% if job.status == "queued" %}
+                      <div class="job-queue">You are #{{ queue_index.value + offset }} in line</div>
+                    {% endif %}
+                  </div>
+                  <div class="job-actions">
+                    <div class="job-status">{{ job.status }}</div>
+                    {% if is_running and job.started_at %}
+                      <div class="job-elapsed" data-started-at="{{ job.started_at }}"></div>
+                    {% endif %}
+                    {% if job.status == "queued" %}
                       <button
                         class="job-bin"
                         type="button"
@@ -839,14 +814,14 @@
                         </svg>
                         <span class="sr-only">Remove</span>
                       </button>
-                    </div>
+                    {% endif %}
                   </div>
-                {% endfor %}
-              </div>
-              <div class="placeholder" id="queue-placeholder"{% if queued_jobs %} style="display: none;"{% endif %}>
-                <div class="placeholder-row">No jobs queued yet.</div>
-                <div class="placeholder-row">Waiting for uploads.</div>
-              </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="placeholder" id="queue-placeholder"{% if queue_jobs %} style="display: none;"{% endif %}>
+              <div class="placeholder-row">No jobs queued yet.</div>
+              <div class="placeholder-row">Waiting for uploads.</div>
             </div>
           </section>
 
@@ -1024,10 +999,8 @@
           activate(tabName);
         });
 
-        const runningList = document.getElementById("running-list");
         const queueList = document.getElementById("queue-list");
         const historyList = document.getElementById("history-list");
-        const runningPlaceholder = document.getElementById("running-placeholder");
         const queuePlaceholder = document.getElementById("queue-placeholder");
         const historyPlaceholder = document.getElementById("history-placeholder");
         const workerStatus = document.getElementById("worker-status");
@@ -1512,22 +1485,7 @@
           );
         }
 
-        function renderRunning(listEl, placeholderEl, job) {
-          if (!listEl || !placeholderEl) {
-            return;
-          }
-          if (!job) {
-            listEl.innerHTML = "";
-            placeholderEl.style.display = "grid";
-            return;
-          }
-          placeholderEl.style.display = "none";
-          listEl.innerHTML = buildJobRow(job, { isRunning: true });
-          hydrateTimestamps(listEl);
-          hydrateElapsed(listEl);
-        }
-
-        function renderQueue(listEl, placeholderEl, jobs, runningJob) {
+        function renderQueue(listEl, placeholderEl, jobs) {
           if (!listEl || !placeholderEl) {
             return;
           }
@@ -1537,16 +1495,27 @@
             return;
           }
           placeholderEl.style.display = "none";
-          const offset = runningJob ? 1 : 0;
-          listEl.innerHTML = jobs
-            .map((job, index) =>
+          const hasRunning = jobs.some((job) => job.status === "running");
+          let queuedIndex = 0;
+          const rendered = [];
+          for (const job of jobs) {
+            const isRunning = job.status === "running";
+            let queuePosition = 0;
+            if (job.status === "queued") {
+              queuedIndex += 1;
+              queuePosition = queuedIndex + (hasRunning ? 1 : 0);
+            }
+            rendered.push(
               buildJobRow(job, {
-                queuePosition: index + 1 + offset,
+                queuePosition,
                 isHistory: false,
+                isRunning,
               })
-            )
-            .join("");
+            );
+          }
+          listEl.innerHTML = rendered.join("");
           hydrateTimestamps(listEl);
+          hydrateElapsed(listEl);
         }
 
         function renderHistory(listEl, placeholderEl, jobs, resultsByJob) {
@@ -1574,17 +1543,10 @@
             const payload = await response.json();
             const resultsByJob = payload.results_by_job || {};
             const queue = payload.queue || [];
-            const runningJob =
-              payload.queue_running ||
-              queue.find((job) => job.status === "running") ||
-              null;
-            const queuedJobs =
-              payload.queue_pending || queue.filter((job) => job.status === "queued");
-            renderRunning(runningList, runningPlaceholder, runningJob);
-            renderQueue(queueList, queuePlaceholder, queuedJobs, runningJob);
+            renderQueue(queueList, queuePlaceholder, queue);
             renderHistory(historyList, historyPlaceholder, payload.history || [], resultsByJob);
             handleNotifications(payload.history || [], resultsByJob);
-            updateQueueCount(queuedJobs.length);
+            updateQueueCount(queue.filter((job) => job.status === "queued").length);
             if (payload.worker && workerStatus && workerDetail) {
               workerStatus.textContent = payload.worker.status || "Idle";
               if (payload.worker.status === "Running" && payload.worker.filename) {

@@ -152,14 +152,13 @@ def _worker_state(jobs: list[JobRecord]) -> dict[str, object]:
 def read_root(request: Request):
     jobs = get_job_store()
     queue_jobs, history_jobs = _split_jobs(jobs)
-    running_job, queued_jobs = _queue_groups(queue_jobs)
+    queued_count = sum(1 for job in queue_jobs if job.status == "queued")
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "running_job": running_job,
-            "queued_jobs": queued_jobs,
-            "queued_count": len(queued_jobs),
+            "queue_jobs": queue_jobs,
+            "queued_count": queued_count,
             "history_jobs": history_jobs,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
@@ -197,15 +196,14 @@ async def upload_files(
 
     jobs = list_jobs(db_path)
     queue_jobs, history_jobs = _split_jobs(jobs)
-    running_job, queued_jobs = _queue_groups(queue_jobs)
+    queued_count = sum(1 for job in queue_jobs if job.status == "queued")
 
     return templates.TemplateResponse(
         request,
         "index.html",
         {
-            "running_job": running_job,
-            "queued_jobs": queued_jobs,
-            "queued_count": len(queued_jobs),
+            "queue_jobs": queue_jobs,
+            "queued_count": queued_count,
             "history_jobs": history_jobs,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
