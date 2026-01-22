@@ -36,6 +36,7 @@ def _make_job(tmp_path: Path) -> tuple[JobRecord, Path]:
         status="done",
         created_at="2024-01-01T00:00:00Z",
         upload_path=str(upload_path),
+        language="en",
     )
     result_path = tmp_path / "results" / job.id
     result_path.mkdir(parents=True, exist_ok=True)

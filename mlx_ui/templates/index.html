@@ -155,6 +155,11 @@
         width: 100%;
       }
 
+      .upload-select {
+        display: block;
+        width: 100%;
+      }
+
       .upload-actions {
         display: flex;
         flex-wrap: wrap;
@@ -214,6 +219,17 @@
         font-size: 0.72rem;
         color: var(--accent-strong);
         align-self: center;
+      }
+
+      .job-error {
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: #fff1f1;
+        border: 1px solid #f4d2d2;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        color: #8b2f2f;
+        white-space: pre-wrap;
       }
 
       .results {
@@ -333,8 +349,14 @@
         </div>
         <div class="status-card" aria-live="polite">
           <div class="status-label">Worker</div>
-          <div class="status">Idle</div>
-          <p>Sequential queue, one job at a time.</p>
+          <div class="status" id="worker-status">{{ worker.status }}</div>
+          <p id="worker-detail">
+            {% if worker.status == "Running" and worker.filename %}
+              Running {{ worker.filename }}
+            {% else %}
+              Sequential queue, one job at a time.
+            {% endif %}
+          </p>
         </div>
       </header>
 
@@ -384,29 +406,52 @@
                 required
                 accept="audio/*,video/*"
               >
+              <label class="upload-label" for="language-input">Language code (manual)</label>
+              <input
+                id="language-input"
+                class="upload-select"
+                name="language"
+                list="language-options"
+                placeholder="e.g. en, es, fr, pt-BR"
+                required
+                pattern="[a-z]{2,3}(-[A-Za-z]{2,3})?"
+                title="Use a short language code like en or pt-BR"
+              >
+              <datalist id="language-options">
+                <option value="en"></option>
+                <option value="es"></option>
+                <option value="fr"></option>
+                <option value="de"></option>
+                <option value="it"></option>
+                <option value="pt-BR"></option>
+                <option value="ja"></option>
+                <option value="ko"></option>
+                <option value="zh"></option>
+              </datalist>
               <div class="upload-actions">
                 <button class="cta" type="submit">Queue uploads</button>
                 <span class="hint">Files stay local in data/uploads.</span>
               </div>
             </form>
-            {% if jobs %}
-              <div class="job-list" aria-live="polite">
-                {% for job in jobs %}
-                  <div class="job-row">
-                    <div>
-                      <div class="job-name">{{ job.filename }}</div>
-                      <div class="job-meta">Queued {{ job.created_at }}</div>
-                    </div>
-                    <div class="job-status">{{ job.status }}</div>
+            <div class="job-list" aria-live="polite" id="queue-list">
+              {% for job in queue_jobs %}
+                <div class="job-row">
+                  <div>
+                    <div class="job-name">{{ job.filename }}</div>
+                    <div class="job-meta">Added {{ job.created_at }}</div>
+                    <div class="job-meta">Language {{ job.language }}</div>
+                    {% if job.started_at %}
+                      <div class="job-meta">Started {{ job.started_at }}</div>
+                    {% endif %}
                   </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <div class="placeholder">
-                <div class="placeholder-row">No jobs queued yet.</div>
-                <div class="placeholder-row">Waiting for uploads.</div>
-              </div>
-            {% endif %}
+                  <div class="job-status">{{ job.status }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="placeholder" id="queue-placeholder"{% if queue_jobs %} style="display: none;"{% endif %}>
+              <div class="placeholder-row">No jobs queued yet.</div>
+              <div class="placeholder-row">Waiting for uploads.</div>
+            </div>
           </section>
 
           <section
@@ -418,53 +463,60 @@
           >
             <h2>History</h2>
             <p>Completed jobs will appear here with download links.</p>
-            {% if jobs %}
-              <div class="job-list" aria-live="polite">
-                {% for job in jobs %}
-                  <div class="job-row">
-                    <div>
-                      <div class="job-name">{{ job.filename }}</div>
-                      <div class="job-meta">Added {{ job.created_at }}</div>
-                      <div class="results">
-                        <div class="result-label">Results</div>
-                        {% set results = results_by_job.get(job.id, []) %}
-                        {% if results %}
-                          <ul class="result-list">
-                            {% for result in results %}
-                              <li class="result-item">
-                                <a
-                                  class="result-link{% if result.endswith('.txt') %} is-text{% endif %}"
-                                  href="/results/{{ job.id }}/{{ result }}"
-                                  target="_blank"
-                                  rel="noopener"
-                                >
-                                  {{ result }}
-                                </a>
-                                <a
-                                  class="result-action"
-                                  href="/results/{{ job.id }}/{{ result }}"
-                                  download="{{ result }}"
-                                >
-                                  Download
-                                </a>
-                              </li>
-                            {% endfor %}
-                          </ul>
-                        {% else %}
-                          <div class="result-empty">No results yet.</div>
-                        {% endif %}
-                      </div>
+            <div class="job-list" aria-live="polite" id="history-list">
+              {% for job in history_jobs %}
+                <div class="job-row">
+                  <div>
+                    <div class="job-name">{{ job.filename }}</div>
+                    <div class="job-meta">Added {{ job.created_at }}</div>
+                    <div class="job-meta">Language {{ job.language }}</div>
+                    {% if job.started_at %}
+                      <div class="job-meta">Started {{ job.started_at }}</div>
+                    {% endif %}
+                    {% if job.completed_at %}
+                      <div class="job-meta">Completed {{ job.completed_at }}</div>
+                    {% endif %}
+                    {% if job.status == "failed" and job.error_message %}
+                      <div class="job-error">{{ job.error_message }}</div>
+                    {% endif %}
+                    <div class="results">
+                      <div class="result-label">Results</div>
+                      {% set results = results_by_job.get(job.id, []) %}
+                      {% if results %}
+                        <ul class="result-list">
+                          {% for result in results %}
+                            <li class="result-item">
+                              <a
+                                class="result-link{% if result.endswith('.txt') %} is-text{% endif %}"
+                                href="/results/{{ job.id }}/{{ result }}"
+                                target="_blank"
+                                rel="noopener"
+                              >
+                                {{ result }}
+                              </a>
+                              <a
+                                class="result-action"
+                                href="/results/{{ job.id }}/{{ result }}"
+                                download="{{ result }}"
+                              >
+                                Download
+                              </a>
+                            </li>
+                          {% endfor %}
+                        </ul>
+                      {% else %}
+                        <div class="result-empty">No results yet.</div>
+                      {% endif %}
                     </div>
-                    <div class="job-status">{{ job.status }}</div>
                   </div>
-                {% endfor %}
-              </div>
-            {% else %}
-              <div class="placeholder">
-                <div class="placeholder-row">No completed jobs yet.</div>
-                <div class="placeholder-row">Check back after a run.</div>
-              </div>
-            {% endif %}
+                  <div class="job-status">{{ job.status }}</div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="placeholder" id="history-placeholder"{% if history_jobs %} style="display: none;"{% endif %}>
+              <div class="placeholder-row">No completed jobs yet.</div>
+              <div class="placeholder-row">Check back after a run.</div>
+            </div>
           </section>
         </div>
       </section>
@@ -498,6 +550,146 @@
         tabs.forEach((tab) => {
           tab.addEventListener("click", () => activate(tab.dataset.tab));
         });
+
+        const queueList = document.getElementById("queue-list");
+        const historyList = document.getElementById("history-list");
+        const queuePlaceholder = document.getElementById("queue-placeholder");
+        const historyPlaceholder = document.getElementById("history-placeholder");
+        const workerStatus = document.getElementById("worker-status");
+        const workerDetail = document.getElementById("worker-detail");
+
+        function escapeHtml(value) {
+          return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        function buildResults(jobId, results) {
+          if (!results || results.length === 0) {
+            return '<div class="result-empty">No results yet.</div>';
+          }
+          const encodedJobId = encodeURIComponent(jobId);
+          const items = results
+            .map((result) => {
+              const encodedResult = encodeURIComponent(result);
+              const safeResult = escapeHtml(result);
+              const isText = result.endsWith(".txt");
+              const textClass = isText ? " is-text" : "";
+              return `
+                <li class="result-item">
+                  <a
+                    class="result-link${textClass}"
+                    href="/results/${encodedJobId}/${encodedResult}"
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    ${safeResult}
+                  </a>
+                  <a
+                    class="result-action"
+                    href="/results/${encodedJobId}/${encodedResult}"
+                    download="${safeResult}"
+                  >
+                    Download
+                  </a>
+                </li>
+              `;
+            })
+            .join("");
+          return `<ul class="result-list">${items}</ul>`;
+        }
+
+        function buildMetaLines(job) {
+          const lines = [`Added ${escapeHtml(job.created_at)}`];
+          if (job.language) {
+            lines.push(`Language ${escapeHtml(job.language)}`);
+          }
+          if (job.started_at) {
+            lines.push(`Started ${escapeHtml(job.started_at)}`);
+          }
+          if (job.completed_at) {
+            lines.push(`Completed ${escapeHtml(job.completed_at)}`);
+          }
+          return lines
+            .map((line) => `<div class="job-meta">${line}</div>`)
+            .join("");
+        }
+
+        function renderJobs(listEl, placeholderEl, jobs, resultsByJob, isHistory) {
+          if (!listEl || !placeholderEl) {
+            return;
+          }
+          if (!jobs || jobs.length === 0) {
+            listEl.innerHTML = "";
+            placeholderEl.style.display = "grid";
+            return;
+          }
+          placeholderEl.style.display = "none";
+          listEl.innerHTML = jobs
+            .map((job) => {
+              const metaLines = buildMetaLines(job);
+              const errorBlock =
+                isHistory && job.status === "failed" && job.error_message
+                  ? `<div class="job-error">${escapeHtml(job.error_message)}</div>`
+                  : "";
+              const results =
+                isHistory
+                  ? `
+                    <div class="results">
+                      <div class="result-label">Results</div>
+                      ${buildResults(job.id, resultsByJob[job.id] || [])}
+                    </div>
+                  `
+                  : "";
+              return `
+                <div class="job-row">
+                  <div>
+                    <div class="job-name">${escapeHtml(job.filename)}</div>
+                    ${metaLines}
+                    ${errorBlock}
+                    ${results}
+                  </div>
+                  <div class="job-status">${escapeHtml(job.status)}</div>
+                </div>
+              `;
+            })
+            .join("");
+        }
+
+        async function refreshState() {
+          try {
+            const response = await fetch("/api/state", { cache: "no-store" });
+            if (!response.ok) {
+              return;
+            }
+            const payload = await response.json();
+            const resultsByJob = payload.results_by_job || {};
+            renderJobs(queueList, queuePlaceholder, payload.queue || [], resultsByJob, false);
+            renderJobs(
+              historyList,
+              historyPlaceholder,
+              payload.history || [],
+              resultsByJob,
+              true
+            );
+            if (payload.worker && workerStatus && workerDetail) {
+              workerStatus.textContent = payload.worker.status || "Idle";
+              if (payload.worker.status === "Running" && payload.worker.filename) {
+                workerDetail.textContent = `Running ${payload.worker.filename}`;
+              } else {
+                workerDetail.textContent = "Sequential queue, one job at a time.";
+              }
+            }
+          } catch (error) {
+            console.warn("Failed to refresh state", error);
+          }
+        }
+
+        setInterval(refreshState, 2500);
+        refreshState();
       })();
     </script>
   </body>

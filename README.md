@@ -20,7 +20,7 @@ results from a queue + history view.
 
 ## Quick start
 ```bash
-./scripts/setup_and_run.sh
+./run.sh
 ```
 Then open http://127.0.0.1:8000.
 
@@ -42,6 +42,8 @@ make fmt
 - `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
 - `TELEGRAM_BOT_TOKEN` - optional, for Telegram delivery
 - `TELEGRAM_CHAT_ID` - optional, for Telegram delivery
+- `LOG_LEVEL` - logging verbosity (default: `INFO`)
+- `LOG_DIR` - log directory (default: `data/logs`)
 - `DISABLE_UPDATE_CHECK=1` - skip startup update check
 - `UPDATE_CHECK_URL` - override update check URL
 - `SKIP_MODEL_DOWNLOAD=1` - skip model download in `scripts/setup_and_run.sh`
@@ -50,6 +52,7 @@ make fmt
 - `data/uploads/` - uploaded files
 - `data/results/` - transcription outputs by job ID
 - `data/jobs.db` - SQLite job metadata
+- `data/logs/` - log files for debugging
 
 ## Notes
 - The server binds to `127.0.0.1` only.
