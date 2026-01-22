@@ -393,7 +393,7 @@
       .job-queue {
         margin-top: 6px;
         font-size: 0.78rem;
-        color: var(--accent-strong);
+        color: var(--ink-muted);
         font-weight: 600;
       }
 
@@ -918,7 +918,11 @@
                       </div>
                     {% endif %}
                     {% if job.status == "queued" %}
-                      <div class="job-queue">You are #{{ queue_index.value + offset }} in line</div>
+                      {% set queue_position = queue_index.value + offset %}
+                      {% set items_ahead = queue_position - 1 %}
+                      <div class="job-queue">
+                        {{ items_ahead }} {{ "item" if items_ahead == 1 else "items" }} ahead
+                      </div>
                     {% endif %}
                   </div>
                   <div class="job-actions">
@@ -1565,7 +1569,9 @@
           if (!position) {
             return "";
           }
-          return `<div class="job-queue">You are #${position} in line</div>`;
+          const itemsAhead = Math.max(position - 1, 0);
+          const label = itemsAhead === 1 ? "item" : "items";
+          return `<div class="job-queue">${itemsAhead} ${label} ahead</div>`;
         }
 
         function buildJobRow(job, options) {
