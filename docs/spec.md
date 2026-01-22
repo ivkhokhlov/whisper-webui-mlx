@@ -9,7 +9,7 @@ The tool must be easy to deploy to another M1+ Mac (one command), and after the 
 ### UX
 - User opens Web UI (localhost).
 - User uploads **one or multiple files** (audio or video).
-- User selects the **language manually** (no auto-detect).
+- UI does not ask for language; transcription runs with `wtm --any_lang=True`.
 - Files are placed into a **queue** and processed **strictly sequentially** (no parallel jobs).
 - UI has:
   - Queue view: current job + pending jobs
