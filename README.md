@@ -14,15 +14,17 @@ results from a queue + history view.
 
 ## Requirements
 - macOS Apple Silicon (arm64)
-- Python 3.12.3+
-- Homebrew (for `ffmpeg`)
-- `whisper-turbo-mlx` CLI (`wtm`)
+- Internet access on first run (for Homebrew, Python, deps, model)
 
 ## Quick start
 ```bash
 ./run.sh
 ```
 Then open http://127.0.0.1:8000.
+
+The launcher will install (if missing): Xcode Command Line Tools, Homebrew,
+Python 3.12, ffmpeg, Python deps, and whisper-turbo-mlx. The first run also
+downloads model weights (can take a while).
 
 ## Manual dev loop
 ```bash

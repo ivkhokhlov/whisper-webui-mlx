@@ -2,15 +2,15 @@
 
 ## Requirements (target)
 - macOS Apple Silicon (M1+)
-- Python 3.12.3+
-- Homebrew (for system deps like ffmpeg)
+- Internet access on first run (to install Homebrew/Python deps and download model)
 
 ## Quick start (eventual)
 ```bash
 ./scripts/setup_and_run.sh
 ```
 Notes:
-- Requires Homebrew (for ffmpeg) and Python 3.12.3+. The script manages a local `.venv` and installs deps with pip.
+- The script installs Xcode Command Line Tools, Homebrew, Python 3.12, and ffmpeg if missing.
+- The script manages a local `.venv` and installs deps with pip.
 - First run needs network access to install `whisper-turbo-mlx` and download the default model.
 - Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
 - Set `WTM_QUICK=1` to enable `wtm --quick=True` (default: `false`).
