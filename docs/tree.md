@@ -13,4 +13,6 @@ This file is a human-maintained map of the repo. Update when structure changes.
 - `tests/` — pytest suite (`test_app.py`, `test_db_migration.py`, `test_transcriber.py`, `test_worker.py`, `test_telegram.py`, `test_update_check.py`)
 - `Makefile` — dev commands
 - `pyproject.toml` — dependencies and tooling
+- `requirements.txt` — pip dependencies (runtime)
+- `requirements-dev.txt` — pip dependencies (dev/test)
 - `README.md` — repo overview

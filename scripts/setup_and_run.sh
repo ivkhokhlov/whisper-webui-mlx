@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+VENV_DIR="$ROOT_DIR/.venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
+VENV_PIP="$VENV_DIR/bin/pip"
 STEP_COUNT=0
 
 log() {
@@ -86,14 +89,6 @@ ensure_python() {
   fail "python3.12 not found after install. Ensure Homebrew is on PATH."
 }
 
-ensure_poetry() {
-  if command -v poetry >/dev/null 2>&1; then
-    return 0
-  fi
-  log "Poetry not found. Installing via Homebrew..."
-  brew install poetry
-}
-
 ensure_ffmpeg() {
   if command -v ffmpeg >/dev/null 2>&1; then
     return 0
@@ -111,15 +106,24 @@ ensure_git() {
 
 ensure_python_deps() {
   local python_bin="$1"
-  export POETRY_VIRTUALENVS_IN_PROJECT=true
-  log "Configuring Poetry environment..."
-  poetry env use "$python_bin" >/dev/null
+  if [[ ! -f "$ROOT_DIR/requirements.txt" ]]; then
+    fail "requirements.txt not found in repo root."
+  fi
+  if [[ ! -d "$VENV_DIR" ]]; then
+    log "Creating virtual environment at $VENV_DIR..."
+    "$python_bin" -m venv "$VENV_DIR"
+  fi
+  if [[ ! -x "$VENV_PYTHON" ]]; then
+    fail "Virtual environment missing python at $VENV_PYTHON"
+  fi
+  export PATH="$VENV_DIR/bin:$PATH"
   log "Installing Python dependencies..."
-  poetry install
+  "$VENV_PIP" install --upgrade pip
+  "$VENV_PIP" install -r "$ROOT_DIR/requirements.txt"
 }
 
 ensure_wtm() {
-  if poetry run python - <<'PY'
+  if "$VENV_PYTHON" - <<'PY'
 import importlib.util
 raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
 PY
@@ -128,7 +132,7 @@ PY
   fi
 
   log "Installing whisper-turbo-mlx (wtm)..."
-  poetry run pip install --upgrade \
+  "$VENV_PIP" install --upgrade \
     "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
 }
 
@@ -139,7 +143,7 @@ download_model() {
   fi
   check_disk_space
   log "Downloading model weights (openai/whisper-large-v3-turbo)..."
-  if ! poetry run python - <<'PY'
+  if ! "$VENV_PYTHON" - <<'PY'
 from huggingface_hub import hf_hub_download, snapshot_download
 
 snapshot_download(
@@ -220,7 +224,6 @@ ensure_brew
 step "Selecting Python"
 PYTHON_BIN="$(ensure_python)"
 step "Installing dependencies"
-ensure_poetry
 ensure_ffmpeg
 ensure_python_deps "$PYTHON_BIN"
 step "Installing whisper-turbo-mlx"

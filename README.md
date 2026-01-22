@@ -15,7 +15,7 @@ results from a queue + history view.
 ## Requirements
 - macOS Apple Silicon (arm64)
 - Python 3.12.3+
-- Homebrew (for `ffmpeg` and `poetry`)
+- Homebrew (for `ffmpeg`)
 - `whisper-turbo-mlx` CLI (`wtm`)
 
 ## Quick start
@@ -26,7 +26,7 @@ Then open http://127.0.0.1:8000.
 
 ## Manual dev loop
 ```bash
-poetry install --with dev
+make dev-deps
 make run
 ```
 
@@ -38,8 +38,8 @@ make fmt
 ```
 
 ## Configuration
-- `WTM_LANGUAGE` - transcription language (default: `en`)
 - `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
+- `WTM_QUICK` - set to `1`/`true` to enable quick mode (default: `false`)
 - `TELEGRAM_BOT_TOKEN` - optional, for Telegram delivery
 - `TELEGRAM_CHAT_ID` - optional, for Telegram delivery
 - `LOG_LEVEL` - logging verbosity (default: `INFO`)
