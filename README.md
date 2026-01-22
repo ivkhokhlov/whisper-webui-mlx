@@ -1,43 +1,57 @@
-# whisper-webui-mlx (agent harness bootstrap)
+# mlx-ui
 
-This repo currently contains the **3-phase Codex harness** (Planner → Worker → Judge) to build a local macOS (M1+) WebUI around `whisper-turbo-mlx` / `wtm`.
+Local-only Web UI for running whisper-turbo-mlx on macOS Apple Silicon. Upload
+audio or video files, process them sequentially with `wtm`, and download the
+results from a queue + history view.
 
-## One-command setup (macOS M1+)
+## Features
+- Localhost-only FastAPI UI for batch uploads
+- Sequential worker (one job at a time)
+- Results saved under `data/results/<job_id>/` (at least `.txt`)
+- SQLite job tracking in `data/jobs.db`
+- Optional Telegram delivery of `.txt` results (best-effort)
+- Startup update check (best-effort, can be disabled)
+
+## Requirements
+- macOS Apple Silicon (arm64)
+- Python 3.12.3+
+- Homebrew (for `ffmpeg` and `poetry`)
+- `whisper-turbo-mlx` CLI (`wtm`)
+
+## Quick start
 ```bash
 ./scripts/setup_and_run.sh
 ```
-Notes: Homebrew is required; first run needs network access to install deps and download the model.
+Then open http://127.0.0.1:8000.
 
-## Quick start (app)
-Run the minimal FastAPI app on localhost:
+## Manual dev loop
 ```bash
+poetry install --with dev
 make run
 ```
 
-## Tests and lint
+Other useful commands:
 ```bash
 make test
 make lint
 make fmt
 ```
 
-## Quick start (agent loop)
-```bash
-bash scripts/codex_loop_3phase.sh 50
-```
+## Configuration
+- `WTM_LANGUAGE` - transcription language (default: `en`)
+- `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
+- `TELEGRAM_BOT_TOKEN` - optional, for Telegram delivery
+- `TELEGRAM_CHAT_ID` - optional, for Telegram delivery
+- `DISABLE_UPDATE_CHECK=1` - skip startup update check
+- `UPDATE_CHECK_URL` - override update check URL
+- `SKIP_MODEL_DOWNLOAD=1` - skip model download in `scripts/setup_and_run.sh`
 
-Watch progress:
-```bash
-bash scripts/status.sh
-```
+## Data locations
+- `data/uploads/` - uploaded files
+- `data/results/` - transcription outputs by job ID
+- `data/jobs.db` - SQLite job metadata
 
-Stop the loop:
-```bash
-touch .agent/STOP
-```
-
-## Specs
-See:
-- `docs/spec.md`
-- `.agent/PROJECT.md`
-- `.agent/queue.md`
+## Notes
+- The server binds to `127.0.0.1` only.
+- After initial setup and model download, the app works offline.
+- Telegram delivery and update checks are best-effort and never block the queue.

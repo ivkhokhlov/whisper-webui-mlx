@@ -2,7 +2,7 @@
 
 ## Requirements (target)
 - macOS Apple Silicon (M1+)
-- Python 3.11+
+- Python 3.12.3+
 - Homebrew (for system deps like ffmpeg)
 
 ## Quick start (eventual)
@@ -10,7 +10,7 @@
 ./scripts/setup_and_run.sh
 ```
 Notes:
-- Requires Homebrew (for ffmpeg), Python 3.11+, and Poetry (the script installs missing deps via Homebrew).
+- Requires Homebrew (for ffmpeg), Python 3.12.3+, and Poetry (the script installs missing deps via Homebrew).
 - First run needs network access to install `whisper-turbo-mlx` and download the default model.
 - Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
 
@@ -21,6 +21,17 @@ poetry install --with dev
 make test
 make run
 ```
+
+## Troubleshooting `wtm` (transcription)
+If you see `Could not consume arg: --language`, a different `wtm` binary is being used
+instead of `whisper-turbo-mlx`.
+
+Fixes:
+- Install `whisper-turbo-mlx` into the Poetry env:
+  `poetry run pip install --upgrade "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"`
+- Run the app via `make run` (or `poetry run uvicorn ...`) so the venv `wtm` is used.
+- Or set `WTM_PATH` to the correct binary:
+  `export WTM_PATH="$(poetry run which wtm)"`
 
 ## Telegram delivery (optional)
 Set environment variables before starting the app:

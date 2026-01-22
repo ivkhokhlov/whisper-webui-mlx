@@ -35,14 +35,16 @@ ensure_brew() {
 python_is_compatible() {
   "$1" - <<'PY'
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+raise SystemExit(0 if sys.version_info >= (3, 12, 3) else 1)
 PY
 }
 
 select_python() {
-  if command -v python3.11 >/dev/null 2>&1; then
-    echo "python3.11"
-    return 0
+  if command -v python3.12 >/dev/null 2>&1; then
+    if python_is_compatible python3.12; then
+      echo "python3.12"
+      return 0
+    fi
   fi
   if command -v python3 >/dev/null 2>&1; then
     if python_is_compatible python3; then
@@ -61,14 +63,14 @@ ensure_python() {
     return 0
   fi
 
-  log "Python 3.11+ not found. Installing python@3.11 via Homebrew..."
-  brew install python@3.11
+  log "Python 3.12.3+ not found. Installing python@3.12 via Homebrew..."
+  brew install python@3.12
   hash -r
-  if command -v python3.11 >/dev/null 2>&1; then
-    echo "python3.11"
+  if command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12"
     return 0
   fi
-  fail "python3.11 not found after install. Ensure Homebrew is on PATH."
+  fail "python3.12 not found after install. Ensure Homebrew is on PATH."
 }
 
 ensure_poetry() {

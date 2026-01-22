@@ -1,7 +1,5 @@
 # AGENTS.md
 
-This repo is developed using an autonomous loop (Planner → Worker → Judge) driven by `codex exec`.
-Because each run starts with limited context, **durable state MUST be stored in `.agent/`**.
 
 ## Source of truth
 - `.agent/PROJECT.md` — high-level constraints and commands
