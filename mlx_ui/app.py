@@ -109,7 +109,12 @@ def new_job_record(
 def _split_jobs(jobs: list[JobRecord]) -> tuple[list[JobRecord], list[JobRecord]]:
     queue_jobs = [job for job in jobs if job.status in {"queued", "running"}]
     history_jobs = [job for job in jobs if job.status in {"done", "failed"}]
+    history_jobs.sort(key=_history_sort_key, reverse=True)
     return queue_jobs, history_jobs
+
+
+def _history_sort_key(job: JobRecord) -> str:
+    return job.completed_at or job.created_at
 
 
 def _serialize_job(job: JobRecord) -> dict[str, str | None]:
