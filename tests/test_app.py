@@ -45,7 +45,7 @@ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
     ]
 
     with TestClient(app) as client:
-        response = client.post("/upload", files=files)
+        response = client.post("/upload", data={"language": "en"}, files=files)
 
     assert response.status_code == 200
     jobs = list_jobs(Path(app.state.db_path))
@@ -58,6 +58,17 @@ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
         assert job_path.parent.name == job.id
         assert job_path.is_relative_to(uploads_dir)
         assert job.status == "queued"
+        assert job.language == "en"
+
+
+def test_upload_requires_language(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    files = [("files", ("alpha.txt", b"one", "text/plain"))]
+
+    with TestClient(app) as client:
+        response = client.post("/upload", files=files)
+
+    assert response.status_code == 422
 
 
 def test_jobs_persist_across_restart(tmp_path: Path) -> None:
@@ -65,7 +76,7 @@ def test_jobs_persist_across_restart(tmp_path: Path) -> None:
     files = [("files", ("alpha.txt", b"one", "text/plain"))]
 
     with TestClient(app) as client:
-        response = client.post("/upload", files=files)
+        response = client.post("/upload", data={"language": "en"}, files=files)
 
     assert response.status_code == 200
     with TestClient(app) as client:
@@ -94,6 +105,7 @@ def test_history_lists_results_and_download_endpoint(tmp_path: Path) -> None:
         status="done",
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         upload_path=str(upload_path),
+        language="en",
     )
     insert_job(db_path, job)
 

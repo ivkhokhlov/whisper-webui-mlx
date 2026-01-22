@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 import threading
 
@@ -61,15 +62,21 @@ class Worker:
             return False
         try:
             result_path = self.transcriber.transcribe(job, self.results_dir)
-        except Exception:
+        except Exception as exc:
             logger.exception("Worker failed to transcribe job %s", job.id)
-            update_job_status(self.db_path, job.id, "failed")
+            update_job_status(
+                self.db_path,
+                job.id,
+                "failed",
+                completed_at=_now_utc(),
+                error_message=_truncate_error(str(exc) or exc.__class__.__name__),
+            )
             return True
         try:
             maybe_send_telegram(job, result_path)
         except Exception:
             logger.exception("Worker failed to deliver Telegram message for job %s", job.id)
-        update_job_status(self.db_path, job.id, "done")
+        update_job_status(self.db_path, job.id, "done", completed_at=_now_utc())
         return True
 
 
@@ -100,3 +107,13 @@ def stop_worker(timeout: float | None = None) -> None:
             return
         _worker_instance.stop(timeout=timeout)
         _worker_instance = None
+
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _truncate_error(message: str, limit: int = 4000) -> str:
+    if len(message) <= limit:
+        return message
+    return message[: limit - 1] + "…"

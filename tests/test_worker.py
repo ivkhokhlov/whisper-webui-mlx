@@ -4,7 +4,7 @@ import threading
 import time
 
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
-from mlx_ui.worker import start_worker, stop_worker
+from mlx_ui.worker import Worker, start_worker, stop_worker
 
 
 class RecordingTranscriber:
@@ -45,6 +45,7 @@ def _make_job(job_id: str, filename: str, created_at: str, uploads_dir: Path) ->
         status="queued",
         created_at=created_at,
         upload_path=str(upload_path),
+        language="en",
     )
 
 
@@ -99,4 +100,39 @@ def test_worker_processes_jobs_sequentially(tmp_path: Path) -> None:
         result_path = results_dir / job.id / "result.txt"
         assert result_path.is_file()
         assert job.status == "done"
+        assert job.started_at is not None
+        assert job.completed_at is not None
+        assert job.error_message is None
         assert job.filename in result_path.read_text(encoding="utf-8")
+
+
+def test_worker_records_failure_metadata(tmp_path: Path) -> None:
+    class FailingTranscriber:
+        def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+            raise RuntimeError("boom")
+
+    db_path = tmp_path / "jobs.db"
+    uploads_dir = tmp_path / "uploads"
+    results_dir = tmp_path / "results"
+    init_db(db_path)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    job = _make_job(
+        "job1",
+        "alpha.txt",
+        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        uploads_dir,
+    )
+    insert_job(db_path, job)
+
+    worker = Worker(db_path=db_path, results_dir=results_dir, transcriber=FailingTranscriber())
+    processed = worker.run_once()
+
+    assert processed is True
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    failed_job = jobs[0]
+    assert failed_job.status == "failed"
+    assert failed_job.started_at is not None
+    assert failed_job.completed_at is not None
+    assert failed_job.error_message is not None

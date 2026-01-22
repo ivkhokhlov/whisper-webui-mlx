@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+STEP_COUNT=0
 
 log() {
   printf '%s\n' "==> $*"
@@ -17,12 +18,23 @@ fail() {
   exit 1
 }
 
+step() {
+  STEP_COUNT=$((STEP_COUNT + 1))
+  log "Step ${STEP_COUNT}: $*"
+}
+
 require_macos_arm64() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     fail "This script supports macOS only."
   fi
   if [[ "$(uname -m)" != "arm64" ]]; then
     fail "Apple Silicon (arm64) is required."
+  fi
+}
+
+ensure_xcode_cli_tools() {
+  if ! xcode-select -p >/dev/null 2>&1; then
+    fail "Xcode Command Line Tools are required. Run: xcode-select --install"
   fi
 }
 
@@ -59,6 +71,7 @@ ensure_python() {
   local python_bin
   python_bin="$(select_python || true)"
   if [[ -n "$python_bin" ]]; then
+    log "Using Python: $python_bin ($("$python_bin" --version 2>&1))"
     echo "$python_bin"
     return 0
   fi
@@ -124,6 +137,7 @@ download_model() {
     warn "Skipping model download because SKIP_MODEL_DOWNLOAD=1."
     return 0
   fi
+  check_disk_space
   log "Downloading model weights (openai/whisper-large-v3-turbo)..."
   if ! poetry run python - <<'PY'
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -139,6 +153,15 @@ hf_hub_download(
 PY
   then
     fail "Model download failed. Check your network and rerun."
+  fi
+}
+
+check_disk_space() {
+  local required_kb=8000000
+  local available_kb
+  available_kb=$(df -Pk "$ROOT_DIR" | awk 'NR==2 {print $4}')
+  if [[ -n "$available_kb" && "$available_kb" -lt "$required_kb" ]]; then
+    warn "Low disk space: less than 8GB available. Model download may fail."
   fi
 }
 
@@ -180,21 +203,35 @@ start_server() {
     warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
   fi
 
+  log "Ready! URL: http://127.0.0.1:8000"
+  log "Results: $ROOT_DIR/data/results"
+  log "Logs: $ROOT_DIR/data/logs"
+  log "Stop the server with Ctrl+C."
+
   wait "$server_pid"
 }
 
+step "Checking platform compatibility"
 require_macos_arm64
-ensure_brew
+ensure_xcode_cli_tools
 ensure_git
+step "Checking Homebrew"
+ensure_brew
+step "Selecting Python"
 PYTHON_BIN="$(ensure_python)"
+step "Installing dependencies"
 ensure_poetry
 ensure_ffmpeg
 ensure_python_deps "$PYTHON_BIN"
+step "Installing whisper-turbo-mlx"
 ensure_wtm
+step "Downloading model weights (if needed)"
 download_model
+step "Preparing local data directories"
 prepare_data_dirs
 
 server_pid=""
 trap 'if [[ -n "${server_pid}" ]]; then kill "${server_pid}" 2>/dev/null || true; fi' EXIT
 
+step "Launching Web UI"
 start_server

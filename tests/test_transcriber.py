@@ -17,6 +17,7 @@ def _make_job(tmp_path: Path) -> JobRecord:
         status="queued",
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat(timespec="seconds"),
         upload_path=str(upload_path),
+        language="fr",
     )
 
 
