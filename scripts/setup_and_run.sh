@@ -37,13 +37,39 @@ require_macos_arm64() {
 
 ensure_xcode_cli_tools() {
   if ! xcode-select -p >/dev/null 2>&1; then
-    fail "Xcode Command Line Tools are required. Run: xcode-select --install"
+    log "Xcode Command Line Tools not found. Launching installer..."
+    xcode-select --install >/dev/null 2>&1 || true
+    fail "Xcode Command Line Tools are required. Finish the installer, then re-run."
   fi
 }
 
+load_brew_shellenv() {
+  if [[ -x "/opt/homebrew/bin/brew" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+    return 0
+  fi
+  if [[ -x "/usr/local/bin/brew" ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+    return 0
+  fi
+  return 1
+}
+
 ensure_brew() {
+  if command -v brew >/dev/null 2>&1; then
+    return 0
+  fi
+  load_brew_shellenv && return 0
+
+  log "Homebrew not found. Installing..."
+  if ! command -v curl >/dev/null 2>&1; then
+    fail "curl is required to install Homebrew. Install curl and re-run."
+  fi
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || \
+    fail "Homebrew install failed."
+  load_brew_shellenv || true
   if ! command -v brew >/dev/null 2>&1; then
-    fail "Homebrew is required. Install it from https://brew.sh/ and re-run."
+    fail "Homebrew not found after install. Ensure brew is on PATH."
   fi
 }
 
