@@ -6,7 +6,7 @@ import threading
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import JobRecord, delete_queued_job, get_job, init_db, insert_job, list_jobs
@@ -194,21 +194,7 @@ async def upload_files(
             await upload.close()
         insert_job(db_path, new_job_record(job_id, safe_name, destination))
 
-    jobs = list_jobs(db_path)
-    queue_jobs, history_jobs = _split_jobs(jobs)
-    queued_count = sum(1 for job in queue_jobs if job.status == "queued")
-
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "queue_jobs": queue_jobs,
-            "queued_count": queued_count,
-            "history_jobs": history_jobs,
-            "results_by_job": build_results_index(history_jobs),
-            "worker": _worker_state(jobs),
-        },
-    )
+    return RedirectResponse(url="/?tab=queue", status_code=303)
 
 
 @app.get("/api/state")

@@ -704,7 +704,6 @@
               Sequential queue, one job at a time.
             {% endif %}
           </p>
-          <p class="status-meta" id="worker-queue">Queue length: {{ worker.queue_length }}</p>
         </div>
       </header>
 
@@ -1005,7 +1004,6 @@
         const historyPlaceholder = document.getElementById("history-placeholder");
         const workerStatus = document.getElementById("worker-status");
         const workerDetail = document.getElementById("worker-detail");
-        const workerQueue = document.getElementById("worker-queue");
         const queueCountEls = document.querySelectorAll("[data-queue-count]");
         const toastStack = document.getElementById("toast-stack");
         const notifiedJobIds = new Set();
@@ -1555,13 +1553,6 @@
                 workerDetail.textContent = `Running ${payload.worker.filename}${suffix}`;
               } else {
                 workerDetail.textContent = "Sequential queue, one job at a time.";
-              }
-              if (workerQueue) {
-                const length =
-                  typeof payload.worker.queue_length === "number"
-                    ? payload.worker.queue_length
-                    : queuedJobs.length;
-                workerQueue.textContent = `Queue length: ${length}`;
               }
             }
           } catch (error) {
