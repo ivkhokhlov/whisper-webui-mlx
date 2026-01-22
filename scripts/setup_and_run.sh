@@ -74,12 +74,12 @@ ensure_python() {
   local python_bin
   python_bin="$(select_python || true)"
   if [[ -n "$python_bin" ]]; then
-    log "Using Python: $python_bin ($("$python_bin" --version 2>&1))"
+    printf '%s\n' "==> Using Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
     echo "$python_bin"
     return 0
   fi
 
-  log "Python 3.12.3+ not found. Installing python@3.12 via Homebrew..."
+  printf '%s\n' "==> Python 3.12.3+ not found. Installing python@3.12 via Homebrew..." >&2
   brew install python@3.12
   hash -r
   if command -v python3.12 >/dev/null 2>&1; then
