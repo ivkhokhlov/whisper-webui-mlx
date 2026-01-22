@@ -168,13 +168,109 @@
       }
 
       .upload-input {
-        display: block;
-        width: 100%;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
       }
 
       .upload-select {
         display: block;
         width: 100%;
+      }
+
+      .dropzone {
+        border: 2px dashed #f0c7b1;
+        border-radius: 14px;
+        padding: 18px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 245, 238, 0.9));
+        display: grid;
+        gap: 6px;
+        cursor: pointer;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .dropzone:focus-visible {
+        outline: 2px solid var(--accent-strong);
+        outline-offset: 2px;
+      }
+
+      .dropzone.is-active {
+        border-color: var(--accent);
+        background: #fff0e1;
+        box-shadow: 0 14px 28px rgba(212, 106, 62, 0.18);
+      }
+
+      .dropzone.has-files {
+        border-color: #e8b090;
+      }
+
+      .dropzone-title {
+        font-weight: 600;
+        font-size: 1rem;
+      }
+
+      .dropzone-subtitle {
+        font-size: 0.9rem;
+        color: var(--ink-muted);
+      }
+
+      .file-summary {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
+      .file-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+      }
+
+      .file-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: #fff8f2;
+        border: 1px solid #f1e2d2;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+
+      .file-meta {
+        display: grid;
+        gap: 2px;
+      }
+
+      .file-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .file-size {
+        font-size: 0.82rem;
+        color: var(--ink-muted);
+      }
+
+      .file-remove {
+        appearance: none;
+        border: 1px solid #f0c7b1;
+        background: #fff;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        color: var(--accent-strong);
+      }
+
+      .file-remove:hover {
+        background: #fbe3d6;
       }
 
       .upload-actions {
@@ -198,6 +294,12 @@
 
       .cta:hover {
         background: var(--accent-strong);
+      }
+
+      .cta:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        background: #d9c1b6;
       }
 
       .hint {
@@ -651,6 +753,15 @@
           align-items: flex-start;
         }
 
+        .file-item {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .file-remove {
+          align-self: flex-start;
+        }
+
         .job-row {
           flex-direction: column;
           align-items: flex-start;
@@ -764,8 +875,23 @@
                 required
                 accept="audio/*,video/*"
               >
+              <label
+                class="dropzone"
+                id="dropzone"
+                tabindex="0"
+                role="button"
+                for="file-input"
+                aria-describedby="dropzone-hint"
+              >
+                <div class="dropzone-title">Drag & drop files here</div>
+                <div class="dropzone-subtitle" id="dropzone-hint">
+                  or click to browse audio/video files
+                </div>
+              </label>
+              <div class="file-summary" id="file-summary" aria-live="polite">No files selected yet.</div>
+              <div class="file-list" id="file-list" aria-live="polite"></div>
               <div class="upload-actions">
-                <button class="cta" type="submit">Queue uploads</button>
+                <button class="cta" id="upload-submit" type="submit">Queue uploads</button>
                 <span class="hint">Files stay local in data/uploads.</span>
               </div>
             </form>
@@ -1006,6 +1132,12 @@
         const workerDetail = document.getElementById("worker-detail");
         const queueCountEls = document.querySelectorAll("[data-queue-count]");
         const toastStack = document.getElementById("toast-stack");
+        const uploadForm = document.querySelector(".upload-card");
+        const fileInput = document.getElementById("file-input");
+        const dropzone = document.getElementById("dropzone");
+        const fileList = document.getElementById("file-list");
+        const fileSummary = document.getElementById("file-summary");
+        const uploadSubmit = document.getElementById("upload-submit");
         const notifiedJobIds = new Set();
         let notificationsSeeded = false;
         const ICON_CHECK = `
@@ -1035,6 +1167,129 @@
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#39;");
+        }
+
+        const pendingFiles = [];
+        let syncingInput = false;
+        let dragDepth = 0;
+
+        function formatBytes(bytes) {
+          if (!Number.isFinite(bytes) || bytes <= 0) {
+            return "0 B";
+          }
+          const units = ["B", "KB", "MB", "GB", "TB"];
+          let value = bytes;
+          let unitIndex = 0;
+          while (value >= 1024 && unitIndex < units.length - 1) {
+            value /= 1024;
+            unitIndex += 1;
+          }
+          const precision = value >= 10 || unitIndex === 0 ? 0 : 1;
+          return `${value.toFixed(precision)} ${units[unitIndex]}`;
+        }
+
+        function buildFileKey(file) {
+          return `${file.name}::${file.size}::${file.lastModified}`;
+        }
+
+        function syncInputFiles(files) {
+          if (!fileInput) {
+            return;
+          }
+          if (typeof DataTransfer === "undefined") {
+            return;
+          }
+          const transfer = new DataTransfer();
+          files.forEach((file) => transfer.items.add(file));
+          syncingInput = true;
+          fileInput.files = transfer.files;
+          syncingInput = false;
+        }
+
+        function renderFileList() {
+          if (!fileList || !fileSummary || !uploadSubmit || !dropzone) {
+            return;
+          }
+          fileList.innerHTML = "";
+          if (pendingFiles.length === 0) {
+            fileSummary.textContent = "No files selected yet.";
+            uploadSubmit.disabled = true;
+            dropzone.classList.remove("has-files");
+            return;
+          }
+          const totalBytes = pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+          const label = pendingFiles.length === 1 ? "file" : "files";
+          fileSummary.textContent = `${pendingFiles.length} ${label} ready · ${formatBytes(totalBytes)}`;
+          uploadSubmit.disabled = false;
+          dropzone.classList.add("has-files");
+
+          const fragment = document.createDocumentFragment();
+          pendingFiles.forEach((file, index) => {
+            const item = document.createElement("div");
+            item.className = "file-item";
+
+            const meta = document.createElement("div");
+            meta.className = "file-meta";
+
+            const name = document.createElement("div");
+            name.className = "file-name";
+            name.textContent = file.name || "Untitled file";
+
+            const size = document.createElement("div");
+            size.className = "file-size";
+            size.textContent = formatBytes(file.size || 0);
+
+            meta.appendChild(name);
+            meta.appendChild(size);
+
+            const remove = document.createElement("button");
+            remove.className = "file-remove";
+            remove.type = "button";
+            remove.dataset.removeIndex = String(index);
+            remove.setAttribute("aria-label", `Remove ${file.name || "file"}`);
+            remove.textContent = "Remove";
+
+            item.appendChild(meta);
+            item.appendChild(remove);
+            fragment.appendChild(item);
+          });
+          fileList.appendChild(fragment);
+        }
+
+        function setPendingFiles(nextFiles) {
+          pendingFiles.splice(0, pendingFiles.length, ...nextFiles);
+          syncInputFiles(pendingFiles);
+          renderFileList();
+        }
+
+        function mergeFiles(existing, incoming) {
+          const merged = [...existing];
+          const seen = new Set(existing.map(buildFileKey));
+          incoming.forEach((file) => {
+            const key = buildFileKey(file);
+            if (!seen.has(key)) {
+              merged.push(file);
+              seen.add(key);
+            }
+          });
+          return merged;
+        }
+
+        function isFileDrag(event) {
+          if (!event.dataTransfer) {
+            return false;
+          }
+          const types = Array.from(event.dataTransfer.types || []);
+          if (types.includes("Files") || types.includes("public.file-url")) {
+            return true;
+          }
+          if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+            return true;
+          }
+          if (event.dataTransfer.items && event.dataTransfer.items.length > 0) {
+            return true;
+          }
+          return false;
         }
 
         function formatRelative(date) {
@@ -1147,6 +1402,79 @@
           const label = count === 1 ? "file" : "files";
           queueCountEls.forEach((element) => {
             element.textContent = `${count} ${label} queued`;
+          });
+        }
+
+        if (uploadForm && fileInput && dropzone && fileList && fileSummary && uploadSubmit) {
+          renderFileList();
+
+          fileInput.addEventListener("change", () => {
+            if (syncingInput) {
+              return;
+            }
+            const nextFiles = Array.from(fileInput.files || []);
+            setPendingFiles(nextFiles);
+          });
+
+          dropzone.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              fileInput.click();
+            }
+          });
+
+          dropzone.addEventListener("dragenter", (event) => {
+            if (!isFileDrag(event)) {
+              return;
+            }
+            event.preventDefault();
+            dragDepth += 1;
+            dropzone.classList.add("is-active");
+          });
+
+          dropzone.addEventListener("dragover", (event) => {
+            if (!isFileDrag(event)) {
+              return;
+            }
+            event.preventDefault();
+          });
+
+          dropzone.addEventListener("dragleave", (event) => {
+            if (!isFileDrag(event)) {
+              return;
+            }
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) {
+              dropzone.classList.remove("is-active");
+            }
+          });
+
+          dropzone.addEventListener("drop", (event) => {
+            if (!isFileDrag(event)) {
+              return;
+            }
+            event.preventDefault();
+            dragDepth = 0;
+            dropzone.classList.remove("is-active");
+            const droppedFiles = Array.from(event.dataTransfer.files || []);
+            if (droppedFiles.length === 0) {
+              return;
+            }
+            setPendingFiles(mergeFiles(pendingFiles, droppedFiles));
+          });
+
+          fileList.addEventListener("click", (event) => {
+            const target = event.target.closest("[data-remove-index]");
+            if (!target) {
+              return;
+            }
+            const index = Number(target.dataset.removeIndex);
+            if (Number.isNaN(index)) {
+              return;
+            }
+            const nextFiles = pendingFiles.slice();
+            nextFiles.splice(index, 1);
+            setPendingFiles(nextFiles);
           });
         }
 
