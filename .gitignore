@@ -24,3 +24,6 @@ dist/
 .DS_Store
 Thumbs.db
 mel_filters.npz
+data/
+logs/
+*.log
