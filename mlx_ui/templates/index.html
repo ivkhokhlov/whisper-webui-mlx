@@ -363,6 +363,181 @@
         color: var(--ink-muted);
       }
 
+      .toast-stack {
+        position: fixed;
+        top: max(20px, env(safe-area-inset-top));
+        right: max(20px, env(safe-area-inset-right));
+        display: grid;
+        gap: 10px;
+        z-index: 1000;
+        pointer-events: none;
+      }
+
+      .toast {
+        --toast-bg: var(--panel);
+        --toast-border: #f1e2d2;
+        --toast-accent: var(--accent);
+        --toast-muted: var(--ink-muted);
+
+        min-width: min(320px, calc(100vw - 40px));
+        max-width: 380px;
+        padding: 10px 10px 8px;
+        border-radius: 14px;
+        border: 1px solid var(--toast-border);
+        background: var(--toast-bg);
+        box-shadow: var(--shadow);
+        pointer-events: auto;
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity 200ms ease, transform 200ms ease;
+        display: grid;
+        grid-template-columns: 20px 1fr auto;
+        grid-template-areas:
+          "icon header close"
+          "body body body"
+          "progress progress progress";
+        column-gap: 10px;
+        row-gap: 4px;
+        align-items: start;
+      }
+
+      .toast.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .toast.is-done {
+        --toast-border: #cfe6d6;
+        --toast-accent: #2f7d32;
+      }
+
+      .toast.is-failed {
+        --toast-border: #f4d2d2;
+        --toast-accent: #b3261e;
+      }
+
+      .toast__icon {
+        grid-area: icon;
+        width: 20px;
+        height: 20px;
+        margin-top: 1px;
+        color: var(--toast-accent);
+      }
+
+      .toast__header {
+        grid-area: header;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .toast__title {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-weight: 700;
+        color: var(--toast-accent);
+        min-width: 0;
+      }
+
+      .toast__meta {
+        font-size: 0.72rem;
+        color: var(--toast-muted);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .toast__body {
+        grid-area: body;
+        font-size: 0.88rem;
+        font-weight: 600;
+        color: var(--ink);
+        min-width: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .toast__dismiss {
+        grid-area: close;
+        appearance: none;
+        border: 1px solid rgba(29, 27, 22, 0.12);
+        background: rgba(255, 255, 255, 0.65);
+        color: var(--ink-muted);
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        justify-self: end;
+      }
+
+      .toast__dismiss:hover {
+        border-color: var(--toast-accent);
+        color: var(--toast-accent);
+      }
+
+      .toast__dismiss:focus-visible {
+        outline: 2px solid var(--toast-accent);
+        outline-offset: 2px;
+      }
+
+      .toast__progress {
+        grid-area: progress;
+        height: 2px;
+        background: rgba(29, 27, 22, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .toast__progressBar {
+        height: 100%;
+        width: 100%;
+        background: var(--toast-accent);
+        transform-origin: left;
+        animation: toastCountdown linear var(--toast-duration, 8000ms) forwards;
+      }
+
+      .toast.is-paused .toast__progressBar {
+        animation-play-state: paused;
+      }
+
+      .toast.is-clickable {
+        cursor: pointer;
+      }
+
+      .toast.is-clickable:hover {
+        border-color: var(--toast-accent);
+      }
+
+      .toast.is-clickable:focus-within {
+        outline: 2px solid var(--toast-accent);
+        outline-offset: 2px;
+      }
+
+      @keyframes toastCountdown {
+        from {
+          transform: scaleX(1);
+        }
+        to {
+          transform: scaleX(0);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .toast {
+          transition: none;
+          transform: none;
+        }
+
+        .toast__progressBar {
+          animation: none;
+        }
+      }
+
       @media (max-width: 720px) {
         main {
           padding: 32px 18px 48px;
@@ -397,6 +572,23 @@
 
         .status-card {
           width: 100%;
+        }
+
+        .toast-stack {
+          top: auto;
+          right: max(16px, env(safe-area-inset-right));
+          left: max(16px, env(safe-area-inset-left));
+          bottom: max(16px, env(safe-area-inset-bottom));
+        }
+
+        .toast {
+          min-width: auto;
+          max-width: none;
+          grid-template-columns: 20px 1fr auto;
+          grid-template-areas:
+            "icon header close"
+            "body body body"
+            "progress progress progress";
         }
       }
     </style>
@@ -577,6 +769,13 @@
         </div>
       </section>
     </main>
+    <div
+      class="toast-stack"
+      id="toast-stack"
+      aria-live="polite"
+      aria-atomic="false"
+      aria-relevant="additions"
+    ></div>
 
     <script>
       (function () {
@@ -613,6 +812,24 @@
         const historyPlaceholder = document.getElementById("history-placeholder");
         const workerStatus = document.getElementById("worker-status");
         const workerDetail = document.getElementById("worker-detail");
+        const toastStack = document.getElementById("toast-stack");
+        const notifiedJobIds = new Set();
+        let notificationsSeeded = false;
+        const ICON_CHECK = `
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M9.2 16.6 4.9 12.3l1.4-1.4 2.9 2.9 8.6-8.6 1.4 1.4z"></path>
+          </svg>
+        `;
+        const ICON_ERROR = `
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M12 2 1 21h22L12 2zm1 15h-2v-2h2v2zm0-4h-2V9h2v4z"></path>
+          </svg>
+        `;
+        const ICON_X = `
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3z"></path>
+          </svg>
+        `;
 
         function escapeHtml(value) {
           return String(value)
@@ -696,6 +913,208 @@
           return `<div class="job-actions">${status}${binButton}</div>`;
         }
 
+        function buildToast(job, resultsByJob, opts) {
+          if (!toastStack) {
+            return;
+          }
+          const options = opts || {};
+          const isFailed = job.status === "failed";
+          const duration = options.duration || (isFailed ? 14000 : 9000);
+
+          const toast = document.createElement("div");
+          toast.className = `toast ${isFailed ? "is-failed" : "is-done"}`;
+          toast.style.setProperty("--toast-duration", `${duration}ms`);
+          toast.setAttribute("role", isFailed ? "alert" : "status");
+          toast.setAttribute("aria-atomic", "true");
+          if (options.clickable) {
+            toast.classList.add("is-clickable");
+            toast.setAttribute("tabindex", "0");
+          }
+
+          const icon = document.createElement("div");
+          icon.className = "toast__icon";
+          icon.innerHTML = isFailed ? ICON_ERROR : ICON_CHECK;
+
+          const header = document.createElement("div");
+          header.className = "toast__header";
+
+          const title = document.createElement("div");
+          title.className = "toast__title";
+          title.textContent =
+            options.title ||
+            (isFailed ? "Transcription failed" : "Transcription complete");
+
+          const meta = document.createElement("div");
+          meta.className = "toast__meta";
+          if (job.completed_at && options.showTime !== false) {
+            try {
+              meta.textContent = new Date(job.completed_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              });
+            } catch (error) {
+              meta.textContent = "";
+            }
+          }
+
+          header.appendChild(title);
+          if (meta.textContent) {
+            header.appendChild(meta);
+          }
+
+          const body = document.createElement("div");
+          body.className = "toast__body";
+          const bodyText = options.body || job.filename || "Unknown file";
+          body.textContent = bodyText;
+          body.title = bodyText;
+
+          const dismiss = document.createElement("button");
+          dismiss.className = "toast__dismiss";
+          dismiss.type = "button";
+          dismiss.setAttribute("aria-label", "Dismiss notification");
+          dismiss.innerHTML = ICON_X;
+
+          const progress = document.createElement("div");
+          progress.className = "toast__progress";
+          const bar = document.createElement("div");
+          bar.className = "toast__progressBar";
+          progress.appendChild(bar);
+
+          const toastLimit = 4;
+          while (toastStack.children.length >= toastLimit) {
+            toastStack.removeChild(toastStack.firstElementChild);
+          }
+
+          toast.appendChild(icon);
+          toast.appendChild(header);
+          toast.appendChild(dismiss);
+          toast.appendChild(body);
+          toast.appendChild(progress);
+          toastStack.appendChild(toast);
+          requestAnimationFrame(() => {
+            toast.classList.add("is-visible");
+          });
+
+          let timeoutId = null;
+          let remaining = duration;
+          let startedAt = performance.now();
+
+          function cleanup() {
+            window.removeEventListener("keydown", onKeyDown);
+          }
+
+          function dismissToast() {
+            window.clearTimeout(timeoutId);
+            timeoutId = null;
+            toast.classList.remove("is-visible");
+            cleanup();
+            window.setTimeout(() => toast.remove(), 200);
+          }
+
+          function schedule(ms) {
+            window.clearTimeout(timeoutId);
+            startedAt = performance.now();
+            timeoutId = window.setTimeout(dismissToast, ms);
+          }
+
+          function pause() {
+            if (!timeoutId) {
+              return;
+            }
+            const elapsed = performance.now() - startedAt;
+            remaining = Math.max(0, remaining - elapsed);
+            window.clearTimeout(timeoutId);
+            timeoutId = null;
+            toast.classList.add("is-paused");
+          }
+
+          function resume() {
+            if (timeoutId) {
+              return;
+            }
+            toast.classList.remove("is-paused");
+            if (remaining <= 0) {
+              dismissToast();
+              return;
+            }
+            schedule(remaining);
+          }
+
+          function onKeyDown(event) {
+            if (event.key === "Escape") {
+              if (toastStack && toastStack.lastElementChild === toast) {
+                dismissToast();
+              }
+            }
+          }
+
+          dismiss.addEventListener("click", (event) => {
+            event.stopPropagation();
+            dismissToast();
+          });
+          toast.addEventListener("mouseenter", pause);
+          toast.addEventListener("mouseleave", resume);
+          toast.addEventListener("focusin", pause);
+          toast.addEventListener("focusout", resume);
+          window.addEventListener("keydown", onKeyDown);
+
+          toast.addEventListener("click", () => {
+            if (!options.clickable) {
+              return;
+            }
+            window.location.href = options.link || "/?tab=history";
+          });
+
+          toast.addEventListener("keydown", (event) => {
+            if (!options.clickable) {
+              return;
+            }
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              window.location.href = options.link || "/?tab=history";
+            }
+          });
+
+          schedule(remaining);
+        }
+
+        function handleNotifications(history, resultsByJob) {
+          const completed = (history || []).filter(
+            (job) => job.status === "done" || job.status === "failed"
+          );
+          if (!notificationsSeeded) {
+            completed.forEach((job) => notifiedJobIds.add(job.id));
+            notificationsSeeded = true;
+            return;
+          }
+          completed.forEach((job) => {
+            if (!notifiedJobIds.has(job.id)) {
+              notifiedJobIds.add(job.id);
+              buildToast(job, resultsByJob, { clickable: true });
+            }
+          });
+        }
+
+        function notifySystem(titleText, bodyText, kind) {
+          const isError = kind === "error";
+          buildToast(
+            {
+              id: `system-${Date.now()}`,
+              status: isError ? "failed" : "done",
+              filename: bodyText,
+              completed_at: new Date().toISOString(),
+            },
+            {},
+            {
+              title: titleText,
+              body: bodyText,
+              duration: isError ? 14000 : 8000,
+              showTime: false,
+              clickable: false,
+            }
+          );
+        }
+
         function renderJobs(listEl, placeholderEl, jobs, resultsByJob, isHistory) {
           if (!listEl || !placeholderEl) {
             return;
@@ -754,6 +1173,7 @@
               resultsByJob,
               true
             );
+            handleNotifications(payload.history || [], resultsByJob);
             if (payload.worker && workerStatus && workerDetail) {
               workerStatus.textContent = payload.worker.status || "Idle";
               if (payload.worker.status === "Running" && payload.worker.filename) {
@@ -799,7 +1219,7 @@
               await deleteQueuedJob(jobId);
             } catch (error) {
               console.warn("Failed to remove queued job", error);
-              alert("Failed to remove queued job.");
+              notifySystem("Action failed", "Failed to remove queued job.", "error");
             } finally {
               await refreshState();
             }
