@@ -104,6 +104,8 @@ def test_worker_processes_jobs_sequentially(tmp_path: Path) -> None:
         assert job.completed_at is not None
         assert job.error_message is None
         assert job.filename in result_path.read_text(encoding="utf-8")
+    assert not Path(job1.upload_path).exists()
+    assert not Path(job2.upload_path).exists()
 
 
 def test_worker_records_failure_metadata(tmp_path: Path) -> None:
