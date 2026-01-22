@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
-from mlx_ui.db import init_db
+from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs, recover_running_jobs
 
 
 def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
@@ -39,3 +40,30 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         row = connection.execute("SELECT language FROM jobs WHERE id = 'job-1'").fetchone()
         assert row is not None
         assert row[0] == "en"
+
+
+def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobs.db"
+    init_db(db_path)
+
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    job = JobRecord(
+        id="job-1",
+        filename="alpha.wav",
+        status="running",
+        created_at=started_at,
+        upload_path="x",
+        language="en",
+        started_at=started_at,
+    )
+    insert_job(db_path, job)
+
+    recovered = recover_running_jobs(db_path)
+
+    assert recovered == 1
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    recovered_job = jobs[0]
+    assert recovered_job.status == "failed"
+    assert recovered_job.completed_at is not None
+    assert recovered_job.error_message == "Recovered after crash"

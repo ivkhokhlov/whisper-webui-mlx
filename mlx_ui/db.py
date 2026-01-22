@@ -186,12 +186,48 @@ def update_job_status(
         connection.commit()
 
 
+def recover_running_jobs(
+    db_path: Path,
+    *,
+    error_message: str = "Recovered after crash",
+) -> int:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    completed_at = _now_utc()
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'failed',
+                completed_at = ?,
+                error_message = CASE
+                    WHEN error_message IS NULL OR error_message = '' THEN ?
+                    ELSE error_message
+                END
+            WHERE status = 'running'
+            """,
+            (completed_at, error_message),
+        )
+        connection.commit()
+    return cursor.rowcount
+
+
 def claim_next_job(db_path: Path) -> JobRecord | None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("BEGIN IMMEDIATE")
+        running = connection.execute(
+            """
+            SELECT id
+            FROM jobs
+            WHERE status = 'running'
+            LIMIT 1
+            """
+        ).fetchone()
+        if running is not None:
+            connection.execute("COMMIT")
+            return None
         row = connection.execute(
             """
             SELECT

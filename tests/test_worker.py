@@ -3,7 +3,7 @@ from pathlib import Path
 import threading
 import time
 
-from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
+from mlx_ui.db import JobRecord, claim_next_job, init_db, insert_job, list_jobs
 from mlx_ui.worker import Worker, start_worker, stop_worker
 
 
@@ -145,3 +145,43 @@ def test_worker_records_failure_metadata(tmp_path: Path) -> None:
     assert failed_job.completed_at is not None
     assert failed_job.error_message is not None
     assert not Path(job.upload_path).exists()
+
+
+def test_claim_next_job_blocks_when_running_exists(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobs.db"
+    uploads_dir = tmp_path / "uploads"
+    init_db(db_path)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    running_job_base = _make_job(
+        "job-running",
+        "run.txt",
+        base_time.isoformat(timespec="seconds"),
+        uploads_dir,
+    )
+    running_job = JobRecord(
+        id=running_job_base.id,
+        filename=running_job_base.filename,
+        status="running",
+        created_at=running_job_base.created_at,
+        upload_path=running_job_base.upload_path,
+        language=running_job_base.language,
+        started_at=running_job_base.created_at,
+    )
+    queued_job = _make_job(
+        "job-queued",
+        "queued.txt",
+        (base_time + timedelta(seconds=1)).isoformat(timespec="seconds"),
+        uploads_dir,
+    )
+
+    insert_job(db_path, running_job)
+    insert_job(db_path, queued_job)
+
+    claimed = claim_next_job(db_path)
+
+    assert claimed is None
+    jobs = {job.id: job for job in list_jobs(db_path)}
+    assert jobs["job-running"].status == "running"
+    assert jobs["job-queued"].status == "queued"

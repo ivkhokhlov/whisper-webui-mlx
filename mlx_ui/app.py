@@ -1,5 +1,6 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 import shutil
 import threading
@@ -9,7 +10,15 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from mlx_ui.db import JobRecord, delete_queued_job, get_job, init_db, insert_job, list_jobs
+from mlx_ui.db import (
+    JobRecord,
+    delete_queued_job,
+    get_job,
+    init_db,
+    insert_job,
+    list_jobs,
+    recover_running_jobs,
+)
 from mlx_ui.logging_config import configure_logging
 from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
 from mlx_ui.uploads import cleanup_upload_path
@@ -27,12 +36,16 @@ app.state.db_path = DEFAULT_DB_PATH
 app.state.worker_enabled = True
 app.state.update_check_enabled = True
 DEFAULT_LANGUAGE = "any"
+logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
 def startup() -> None:
     configure_logging(BASE_DIR)
     init_db(get_db_path())
+    recovered = recover_running_jobs(get_db_path())
+    if recovered:
+        logger.warning("Recovered %s running job(s) after unclean shutdown.", recovered)
     if getattr(app.state, "worker_enabled", True):
         start_worker(get_db_path(), get_uploads_dir(), get_results_dir())
     if (
