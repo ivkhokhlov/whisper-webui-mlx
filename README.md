@@ -30,7 +30,8 @@ downloads model weights (can take a while).
 ## Docker quick start (CPU backend)
 Docker runs a CPU-only transcription backend (`openai-whisper`). This is slower
 than MLX but works on any Docker host. For best performance on Apple Silicon,
-use the native `./run.sh` flow.
+use the native `./run.sh` flow. The MLX/`wtm` backend is **not** available in
+Docker because it requires macOS + Metal.
 
 ```bash
 ./docker-run.sh
@@ -48,6 +49,8 @@ Example overrides:
 ```bash
 WHISPER_MODEL=base PORT=9000 ./docker-run.sh
 ```
+Note: `TRANSCRIBER_BACKEND=wtm` is not supported in Docker; use `whisper` or
+run natively with `./run.sh` for MLX.
 
 ## Manual dev loop
 ```bash
