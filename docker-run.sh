@@ -13,7 +13,7 @@ BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
 DATA_DIR="${DATA_DIR:-$ROOT_DIR/data}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
 DOCKER_PULL="${DOCKER_PULL:-}"
-TRANSCRIBER_BACKEND="${TRANSCRIBER_BACKEND:-wtm}"
+TRANSCRIBER_BACKEND="${TRANSCRIBER_BACKEND:-whisper}"
 WHISPER_MODEL="${WHISPER_MODEL:-large-v3-turbo}"
 WHISPER_DEVICE="${WHISPER_DEVICE:-cpu}"
 WHISPER_CACHE_DIR="${WHISPER_CACHE_DIR:-/app/data/.cache/whisper}"
@@ -33,6 +33,10 @@ fi
 
 if ! docker info >/dev/null 2>&1; then
   fail "Docker daemon not running. Start Docker Desktop and re-run."
+fi
+
+if [[ "$TRANSCRIBER_BACKEND" =~ ^(wtm|mlx|wtm-cli)$ ]]; then
+  fail "TRANSCRIBER_BACKEND=$TRANSCRIBER_BACKEND is not supported in Docker. Use ./run.sh on macOS or set TRANSCRIBER_BACKEND=whisper."
 fi
 
 mkdir -p "$DATA_DIR/uploads" "$DATA_DIR/results" "$DATA_DIR/logs" "$DATA_DIR/.cache/whisper"
