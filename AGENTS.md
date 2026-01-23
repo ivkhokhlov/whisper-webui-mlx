@@ -28,6 +28,7 @@
 
 ## Commit & Pull Request Guidelines
 - Commit history uses short, imperative summaries with gitflow-style prefixes (e.g., `feat:`, `fix:`, `chore:`, `docs:`). Keep the first line concise.
+- Before every commit, update `docs/business_description.md` to capture the current business logic and the customer-value context (features and user flow).
 - PRs should include a brief summary, testing notes, and screenshots for UI changes. Link related issues and call out any data or config changes.
 
 ## Configuration & Runtime Data
