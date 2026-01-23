@@ -156,3 +156,73 @@ def test_history_lists_results_and_download_endpoint(tmp_path: Path) -> None:
         download = client.get(f"/results/{job_id}/alpha.txt")
         assert download.status_code == 200
         assert download.text == "transcript"
+
+
+def test_preview_endpoint_returns_snippet(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-123"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="done",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="any",
+    )
+    insert_job(db_path, job)
+
+    results_dir = Path(app.state.results_dir) / job_id
+    results_dir.mkdir(parents=True, exist_ok=True)
+    content = "a" * 120
+    txt_path = results_dir / "alpha.txt"
+    txt_path.write_text(content, encoding="utf-8")
+    srt_path = results_dir / "alpha.srt"
+    srt_path.write_text("subtitles", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/jobs/{job_id}/preview?chars=60")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filename"] == "alpha.txt"
+    assert payload["snippet"] == "a" * 60
+    assert payload["truncated"] is True
+
+
+def test_preview_endpoint_handles_missing_results(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-456"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "beta.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="beta.txt",
+        status="done",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="any",
+    )
+    insert_job(db_path, job)
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/jobs/{job_id}/preview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filename"] is None
+    assert payload["snippet"] == ""
+    assert payload["truncated"] is False

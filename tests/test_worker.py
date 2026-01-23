@@ -25,7 +25,7 @@ class RecordingTranscriber:
 
         job_dir = Path(results_dir) / job.id
         job_dir.mkdir(parents=True, exist_ok=True)
-        result_path = job_dir / "result.txt"
+        result_path = job_dir / f"{Path(job.filename).stem}.txt"
         content = f"Fake transcript for {job.filename} ({job.id})\n"
         result_path.write_text(content, encoding="utf-8")
 
@@ -98,7 +98,7 @@ def test_worker_processes_jobs_sequentially(tmp_path: Path) -> None:
     assert transcriber.concurrent_detected is False
     assert transcriber.seen == [job1.id, job2.id]
     for job in jobs:
-        result_path = results_dir / job.id / "result.txt"
+        result_path = results_dir / job.id / f"{Path(job.filename).stem}.txt"
         assert result_path.is_file()
         assert job.status == "done"
         assert job.started_at is not None

@@ -27,7 +27,7 @@
 - Prefer tests that do not require the real ML model; mock `wtm` execution where possible.
 
 ## Commit & Pull Request Guidelines
-- Commit history uses short, imperative summaries (e.g., “Add…”, “Fix…”, “Update…”), sometimes with prefixes like `fix:` or `WUI-090:`. Keep the first line concise.
+- Commit history uses short, imperative summaries with gitflow-style prefixes (e.g., `feat:`, `fix:`, `chore:`, `docs:`). Keep the first line concise.
 - PRs should include a brief summary, testing notes, and screenshots for UI changes. Link related issues and call out any data or config changes.
 
 ## Configuration & Runtime Data

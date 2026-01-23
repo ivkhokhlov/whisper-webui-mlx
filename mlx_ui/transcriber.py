@@ -28,7 +28,7 @@ class FakeTranscriber:
         results_dir = Path(results_dir)
         job_dir = results_dir / job.id
         job_dir.mkdir(parents=True, exist_ok=True)
-        result_path = job_dir / "result.txt"
+        result_path = job_dir / _result_filename(job.filename)
         content = f"Fake transcript for {job.filename} ({job.id})\n"
         result_path.write_text(content, encoding="utf-8")
         return result_path
@@ -70,7 +70,7 @@ class WtmTranscriber:
             message = _format_wtm_error(exc)
             raise RuntimeError(message) from exc
         transcript = (result.stdout or "").strip()
-        result_path = job_dir / "result.txt"
+        result_path = job_dir / _result_filename(job.filename)
         result_path.write_text(
             transcript + ("\n" if transcript else ""),
             encoding="utf-8",
@@ -120,7 +120,7 @@ class WhisperTranscriber:
         except Exception as exc:  # pragma: no cover - passthrough for backend errors
             raise RuntimeError(f"whisper failed: {exc}") from exc
         transcript = (result.get("text") or "").strip()
-        result_path = job_dir / "result.txt"
+        result_path = job_dir / _result_filename(job.filename)
         result_path.write_text(
             transcript + ("\n" if transcript else ""),
             encoding="utf-8",
@@ -195,6 +195,13 @@ def _parse_bool_env(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def _result_filename(source_name: str) -> str:
+    base = Path(source_name).stem.strip()
+    if not base:
+        base = "transcript"
+    return f"{base}.txt"
 
 
 def resolve_transcriber() -> Transcriber:

@@ -5,7 +5,8 @@ mlx-ui is a local-only web application for fast, private transcription of audio 
 video files on macOS Apple Silicon. It wraps the whisper-turbo-mlx engine in an
 easy, localhost UI that lets users upload files in batches, process them
 sequentially, and download text results from a queue/history view. After initial
-setup and model download, it runs fully offline.
+setup and model download, it runs fully offline. Recent UI work focuses on a
+compact, scannable History view with details-on-demand and transcript previews.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -31,7 +32,11 @@ setup and model download, it runs fully offline.
 
 ## Key features
 - Batch uploads via browser; queued, one-at-a-time processing.
-- History view with download links for results (at least .txt).
+- Compact History view with status, filename, time, output labels, and one-click
+  primary actions (download or view log).
+- Details-on-demand panel for full timestamps, outputs list, and error logs.
+- Lazy-loaded transcript preview snippets to avoid loading full results for
+  every job.
 - Local data storage under data/ for easy retention and cleanup.
 - Optional Telegram delivery of results without blocking the queue.
 - (Planned/available) Live mode for recording and chunked transcription in the
@@ -42,12 +47,12 @@ setup and model download, it runs fully offline.
 - Speed and cost control: no per-minute API fees, no upload bottlenecks.
 - Operational simplicity: one-command setup and offline operation.
 - Reliability: sequential processing avoids model re-init churn and resource
-  spikes.
+  spikes, while compact history keeps large job lists responsive.
 
 ## Differentiators
 - Apple Silicon MLX acceleration (faster than CPU-only alternatives).
 - Local-only design with no external dependencies after setup.
-- Built-in queue/history flow for real transcription work, not just demos.
+- Built-in queue/history flow optimized for scanning and triage, not just demos.
 - Optional CPU-only Docker backend for broader compatibility.
 
 ## Constraints and scope

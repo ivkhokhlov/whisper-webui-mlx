@@ -6,7 +6,7 @@ import shutil
 import threading
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -99,6 +99,19 @@ def list_result_files(job_id: str) -> list[str]:
     if not job_dir.is_dir():
         return []
     return sorted(path.name for path in job_dir.iterdir() if path.is_file())
+
+
+def pick_preview_result(results: list[str]) -> str | None:
+    if not results:
+        return None
+    for result in results:
+        if result.lower().endswith(".txt"):
+            return result
+    for result in results:
+        lower = result.lower()
+        if lower.endswith((".srt", ".vtt", ".json")):
+            return result
+    return results[0]
 
 
 def build_results_index(jobs: list[JobRecord]) -> dict[str, list[str]]:
@@ -244,6 +257,44 @@ def download_result(job_id: str, filename: str):
         raise HTTPException(status_code=404)
 
     return FileResponse(file_path)
+
+
+@app.get("/api/jobs/{job_id}/preview")
+def job_preview(job_id: str, chars: int = Query(300, ge=50, le=2000)) -> dict[str, object]:
+    if not is_safe_path_component(job_id):
+        raise HTTPException(status_code=404)
+
+    results = list_result_files(job_id)
+    filename = pick_preview_result(results)
+    if not filename:
+        return {"job_id": job_id, "filename": None, "snippet": "", "truncated": False}
+
+    results_dir = get_results_dir()
+    job_dir = results_dir / job_id
+    results_dir_resolved = results_dir.resolve()
+    job_dir_resolved = job_dir.resolve()
+    file_path = (job_dir / filename).resolve()
+
+    if not job_dir_resolved.is_relative_to(results_dir_resolved):
+        raise HTTPException(status_code=404)
+
+    if not file_path.is_file() or not file_path.is_relative_to(job_dir_resolved):
+        raise HTTPException(status_code=404)
+
+    snippet, truncated = _read_preview(file_path, chars)
+    return {
+        "job_id": job_id,
+        "filename": filename,
+        "snippet": snippet,
+        "truncated": truncated,
+    }
+
+
+def _read_preview(file_path: Path, limit: int) -> tuple[str, bool]:
+    with file_path.open("r", encoding="utf-8", errors="replace") as handle:
+        data = handle.read(limit + 1)
+    truncated = len(data) > limit
+    return data[:limit], truncated
 
 
 @app.delete("/api/jobs/{job_id}")

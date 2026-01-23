@@ -43,7 +43,7 @@ def test_wtm_transcriber_runs_and_returns_txt(tmp_path: Path, monkeypatch) -> No
     assert "--any_lang=True" in captured["cmd"]
     assert "--quick=False" in captured["cmd"]
     assert str(Path(job.upload_path)) in captured["cmd"]
-    assert (results_dir / job.id / "result.txt").is_file()
+    assert (results_dir / job.id / "sample.txt").is_file()
 
 
 def test_wtm_transcriber_respects_quick_env(tmp_path: Path, monkeypatch) -> None:
