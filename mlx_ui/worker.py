@@ -7,7 +7,7 @@ import threading
 
 from mlx_ui.db import claim_next_job, update_job_status
 from mlx_ui.telegram import maybe_send_telegram
-from mlx_ui.transcriber import Transcriber, WtmTranscriber
+from mlx_ui.transcriber import Transcriber, resolve_transcriber
 from mlx_ui.uploads import cleanup_upload_path
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class Worker:
         self.uploads_dir = Path(uploads_dir)
         self.results_dir = Path(results_dir)
         self.poll_interval = poll_interval
-        self.transcriber = transcriber or WtmTranscriber()
+        self.transcriber = transcriber or resolve_transcriber()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 

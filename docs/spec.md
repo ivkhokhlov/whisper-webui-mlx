@@ -67,7 +67,7 @@ A new user on an M1+ Mac should be able to:
    - starts local Web UI
    - opens browser automatically
 
-Note: Docker may be optional, but the MLX transcription engine is macOS-specific; prioritize native setup.
+Note: Docker may be optional, but the MLX transcription engine is macOS-specific; prioritize native setup. If Docker is used, run a CPU-only backend such as `openai-whisper`.
 
 ## Out of scope for v1
 - Pause/cancel jobs in queue
