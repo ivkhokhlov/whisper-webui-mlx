@@ -22,6 +22,16 @@ make test
 make run
 ```
 
+## Docker (CPU backend)
+Docker uses the `openai-whisper` CPU backend (not MLX). Run:
+```bash
+./docker-run.sh
+```
+
+Notes:
+- The container binds to `127.0.0.1:8000` on the host by default.
+- Data and model cache persist under `./data`.
+
 ## Troubleshooting `wtm` (transcription)
 If you see `Could not consume arg: --any_lang` or a help screen listing string
 methods (capitalize, lower, etc.), a different `wtm` binary is being used instead

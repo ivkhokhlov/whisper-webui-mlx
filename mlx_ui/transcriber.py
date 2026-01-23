@@ -9,6 +9,14 @@ from mlx_ui.db import JobRecord
 
 logger = logging.getLogger(__name__)
 
+BACKEND_ENV = "TRANSCRIBER_BACKEND"
+DEFAULT_BACKEND = "wtm"
+WHISPER_MODEL_ENV = "WHISPER_MODEL"
+WHISPER_DEVICE_ENV = "WHISPER_DEVICE"
+WHISPER_FP16_ENV = "WHISPER_FP16"
+WHISPER_CACHE_DIR_ENV = "WHISPER_CACHE_DIR"
+DEFAULT_WHISPER_MODEL = "small"
+
 
 class Transcriber(Protocol):
     def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
@@ -63,8 +71,85 @@ class WtmTranscriber:
             raise RuntimeError(message) from exc
         transcript = (result.stdout or "").strip()
         result_path = job_dir / "result.txt"
-        result_path.write_text(transcript + ("\n" if transcript else ""), encoding="utf-8")
+        result_path.write_text(
+            transcript + ("\n" if transcript else ""),
+            encoding="utf-8",
+        )
         return result_path
+
+
+class WhisperTranscriber:
+    def __init__(
+        self,
+        model_name: str | None = None,
+        device: str | None = None,
+        fp16: bool | None = None,
+    ) -> None:
+        self.model_name = model_name or os.getenv(
+            WHISPER_MODEL_ENV,
+            DEFAULT_WHISPER_MODEL,
+        )
+        self.device = device or os.getenv(WHISPER_DEVICE_ENV, "cpu")
+        self.fp16 = fp16 if fp16 is not None else _parse_bool_env(
+            WHISPER_FP16_ENV,
+            False,
+        )
+        self.cache_dir = _resolve_whisper_cache_dir()
+        self._model = None
+        self._whisper = None
+
+    def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+        job_dir = results_dir / job.id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        source_path = Path(job.upload_path)
+        model = self._ensure_model()
+        fp16 = self.fp16 and not self.device.lower().startswith("cpu")
+        logger.info(
+            "Running whisper for job %s (model=%s, device=%s)",
+            job.id,
+            self.model_name,
+            self.device,
+        )
+        try:
+            result = model.transcribe(
+                str(source_path),
+                fp16=fp16,
+            )
+        except Exception as exc:  # pragma: no cover - passthrough for backend errors
+            raise RuntimeError(f"whisper failed: {exc}") from exc
+        transcript = (result.get("text") or "").strip()
+        result_path = job_dir / "result.txt"
+        result_path.write_text(
+            transcript + ("\n" if transcript else ""),
+            encoding="utf-8",
+        )
+        return result_path
+
+    def _ensure_model(self):
+        if self._model is not None:
+            return self._model
+        try:
+            import whisper  # type: ignore[import-not-found]
+        except Exception as exc:  # pragma: no cover - depends on optional dep
+            raise RuntimeError(
+                "Whisper backend selected but 'openai-whisper' is not installed. "
+                "Install requirements-docker.txt or set TRANSCRIBER_BACKEND=wtm."
+            ) from exc
+        self._whisper = whisper
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self._model = whisper.load_model(
+                self.model_name,
+                device=self.device,
+                download_root=str(self.cache_dir),
+            )
+        except Exception as exc:  # pragma: no cover - depends on backend download
+            raise RuntimeError(
+                f"Failed to load Whisper model '{self.model_name}': {exc}"
+            ) from exc
+        return self._model
 
 
 def _format_wtm_error(error: subprocess.CalledProcessError) -> str:
@@ -90,6 +175,16 @@ def _resolve_wtm_path(explicit: str | None) -> str:
     return "wtm"
 
 
+def _resolve_whisper_cache_dir() -> Path:
+    env_dir = os.getenv(WHISPER_CACHE_DIR_ENV)
+    if env_dir:
+        return Path(env_dir)
+    xdg_cache = os.getenv("XDG_CACHE_HOME")
+    if xdg_cache:
+        return Path(xdg_cache) / "whisper"
+    return Path.home() / ".cache" / "whisper"
+
+
 def _parse_bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -100,6 +195,20 @@ def _parse_bool_env(name: str, default: bool) -> bool:
     if normalized in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def resolve_transcriber() -> Transcriber:
+    backend = os.getenv(BACKEND_ENV, DEFAULT_BACKEND).strip().lower()
+    if backend in {"wtm", "mlx", "wtm-cli"}:
+        return WtmTranscriber()
+    if backend in {"whisper", "openai-whisper", "openai"}:
+        return WhisperTranscriber()
+    if backend in {"fake", "noop", "test"}:
+        return FakeTranscriber()
+    raise ValueError(
+        f"Unknown transcriber backend '{backend}'. "
+        "Use 'wtm', 'whisper', or 'fake'."
+    )
 
 
 def _tail_text(text: str | None, limit: int = 2000) -> str:
