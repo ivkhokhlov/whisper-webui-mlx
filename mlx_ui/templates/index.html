@@ -1378,10 +1378,6 @@
                 </div>
               {% endfor %}
             </div>
-            <div class="placeholder" id="queue-placeholder"{% if queue_jobs %} style="display: none;"{% endif %}>
-              <div class="placeholder-row">No jobs queued yet.</div>
-              <div class="placeholder-row">Waiting for uploads.</div>
-            </div>
           </section>
 
           <section
@@ -1691,7 +1687,6 @@
 
         const queueList = document.getElementById("queue-list");
         const historyList = document.getElementById("history-list");
-        const queuePlaceholder = document.getElementById("queue-placeholder");
         const historyPlaceholder = document.getElementById("history-placeholder");
         const workerStatus = document.getElementById("worker-status");
         const workerDetail = document.getElementById("worker-detail");
@@ -3149,15 +3144,19 @@
         }
 
         function renderQueue(listEl, placeholderEl, jobs) {
-          if (!listEl || !placeholderEl) {
+          if (!listEl) {
             return;
           }
           if (!jobs || jobs.length === 0) {
             listEl.innerHTML = "";
-            placeholderEl.style.display = "grid";
+            if (placeholderEl) {
+              placeholderEl.style.display = "none";
+            }
             return;
           }
-          placeholderEl.style.display = "none";
+          if (placeholderEl) {
+            placeholderEl.style.display = "none";
+          }
           const hasRunning = jobs.some((job) => job.status === "running");
           let queuedIndex = 0;
           const rendered = [];
@@ -3215,13 +3214,15 @@
             const payload = await response.json();
             const resultsByJob = payload.results_by_job || {};
             const queue = payload.queue || [];
-            renderQueue(queueList, queuePlaceholder, queue);
+            const workerState =
+              payload.worker && payload.worker.status ? payload.worker.status : "Idle";
+            renderQueue(queueList, null, queue);
             renderHistory(historyList, historyPlaceholder, payload.history || [], resultsByJob);
             handleNotifications(payload.history || [], resultsByJob);
             updateQueueCount(queue.filter((job) => job.status === "queued").length);
             if (payload.worker && workerStatus && workerDetail) {
-              workerStatus.textContent = payload.worker.status || "Idle";
-              if (payload.worker.status === "Running" && payload.worker.filename) {
+              workerStatus.textContent = workerState || "Idle";
+              if (workerState === "Running" && payload.worker.filename) {
                 const elapsed = formatElapsed(payload.worker.started_at);
                 const suffix = elapsed ? ` · ${elapsed}` : "";
                 workerDetail.textContent = `Running ${payload.worker.filename}${suffix}`;
