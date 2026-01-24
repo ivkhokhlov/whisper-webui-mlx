@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 import logging
 import mimetypes
 import os
@@ -24,9 +25,34 @@ class TelegramConfig:
 def read_telegram_config() -> TelegramConfig | None:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if token and chat_id:
+        return TelegramConfig(token=token, chat_id=chat_id)
+
+    token_file, chat_id_file = _read_telegram_settings_file()
+    if token_file and chat_id_file:
+        return TelegramConfig(token=token_file, chat_id=chat_id_file)
+    return None
+
+
+def _read_telegram_settings_file() -> tuple[str, str]:
+    settings_path = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+    if not settings_path.is_file():
+        return "", ""
+    try:
+        payload = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    token = payload.get("telegram_token")
+    chat_id = payload.get("telegram_chat_id")
+    if not isinstance(token, str) or not isinstance(chat_id, str):
+        return "", ""
+    token = token.strip()
+    chat_id = chat_id.strip()
     if not token or not chat_id:
-        return None
-    return TelegramConfig(token=token, chat_id=chat_id)
+        return "", ""
+    return token, chat_id
 
 
 def mask_secret(value: str, visible: int = 4) -> str:
@@ -55,32 +81,22 @@ def maybe_send_telegram(
         )
         return
 
-    errors: list[tuple[str, Exception]] = []
     try:
-        send_telegram_message(
+        send_telegram_document(
             config,
-            f"Transcription complete: {job.filename}",
+            result_path,
+            caption=f"Transcription complete: {job.filename}",
             timeout=timeout,
         )
     except Exception as exc:
-        errors.append(("message", exc))
-
-    try:
-        send_telegram_document(config, result_path, timeout=timeout)
-    except Exception as exc:
-        errors.append(("document", exc))
-
-    if errors:
         masked_token = mask_secret(config.token)
-        for kind, exc in errors:
-            logger.warning(
-                "Telegram %s delivery failed for job %s (chat_id=%s, token=%s): %s",
-                kind,
-                job.id,
-                config.chat_id,
-                masked_token,
-                _describe_telegram_error(exc, config),
-            )
+        logger.warning(
+            "Telegram delivery failed for job %s (chat_id=%s, token=%s): %s",
+            job.id,
+            config.chat_id,
+            masked_token,
+            _describe_telegram_error(exc, config),
+        )
 
 
 def send_telegram_message(

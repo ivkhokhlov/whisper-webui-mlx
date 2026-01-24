@@ -8,8 +8,8 @@ sequentially, and download text results from a queue/history view. Uploads
 support files or folders with a preflight summary (count, size, estimate) and
 basic filtering before queueing. After initial setup and model download, it runs
 fully offline. Recent UI work focuses on a compact, scannable History view with
-details-on-demand and transcript previews, plus a cleaner Queue empty state that
-leans on the dropzone and queued count instead of redundant waiting panels.
+details-on-demand and transcript previews, plus a dedicated Settings panel for
+default model selection, WTM quick mode, and Telegram delivery configuration.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -25,7 +25,8 @@ leans on the dropzone and queued count instead of redundant waiting panels.
 - Apple-Silicon-optimized MLX backend (wtm) for fast on-device processing.
 - Sequential job queue to keep the model warm and avoid parallel overhead.
 - Local storage of uploads, results, logs, and job metadata with SQLite.
-- Optional Telegram delivery of text results and best-effort update checks.
+- Optional Telegram delivery of text results and best-effort update checks,
+  configurable from the Settings tab.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -42,7 +43,10 @@ leans on the dropzone and queued count instead of redundant waiting panels.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
 - Local data storage under data/ for easy retention and cleanup.
-- Optional Telegram delivery of results without blocking the queue.
+- Settings panel for default model selection and WTM quick mode, persisted in
+  data/settings.json.
+- Optional Telegram delivery of results without blocking the queue, configured
+  via saved tokens or environment variables.
 - (Planned/available) Live mode for recording and chunked transcription in the
   browser.
 
