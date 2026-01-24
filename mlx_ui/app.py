@@ -20,6 +20,13 @@ from mlx_ui.db import (
     recover_running_jobs,
 )
 from mlx_ui.logging_config import configure_logging
+from mlx_ui.settings import (
+    build_settings_snapshot,
+    build_telegram_snapshot,
+    list_downloaded_models,
+    resolve_transcriber_with_settings,
+    update_settings_file,
+)
 from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
 from mlx_ui.uploads import cleanup_upload_path
 from mlx_ui.worker import start_worker
@@ -33,6 +40,7 @@ DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
 app.state.uploads_dir = DEFAULT_UPLOADS_DIR
 app.state.results_dir = DEFAULT_RESULTS_DIR
 app.state.db_path = DEFAULT_DB_PATH
+app.state.base_dir = BASE_DIR
 app.state.worker_enabled = True
 app.state.update_check_enabled = True
 DEFAULT_LANGUAGE = "any"
@@ -41,13 +49,20 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 def startup() -> None:
-    configure_logging(BASE_DIR)
+    base_dir = get_base_dir()
+    configure_logging(base_dir)
     init_db(get_db_path())
     recovered = recover_running_jobs(get_db_path())
     if recovered:
         logger.warning("Recovered %s running job(s) after unclean shutdown.", recovered)
     if getattr(app.state, "worker_enabled", True):
-        start_worker(get_db_path(), get_uploads_dir(), get_results_dir())
+        transcriber = resolve_transcriber_with_settings(base_dir=base_dir)
+        start_worker(
+            get_db_path(),
+            get_uploads_dir(),
+            get_results_dir(),
+            transcriber=transcriber,
+        )
     if (
         getattr(app.state, "update_check_enabled", True)
         and not is_update_check_disabled()
@@ -63,6 +78,10 @@ def startup() -> None:
 
 def get_job_store() -> list[JobRecord]:
     return list_jobs(get_db_path())
+
+
+def get_base_dir() -> Path:
+    return Path(getattr(app.state, "base_dir", BASE_DIR))
 
 
 def get_db_path() -> Path:
@@ -194,6 +213,11 @@ def read_root(request: Request):
     jobs = get_job_store()
     queue_jobs, history_jobs = _split_jobs(jobs)
     queued_count = sum(1 for job in queue_jobs if job.status == "queued")
+    base_dir = get_base_dir()
+    settings_snapshot = build_settings_snapshot(base_dir=base_dir)
+    telegram_snapshot = build_telegram_snapshot(base_dir=base_dir)
+    downloaded_models = list_downloaded_models()
+    settings_saved = request.query_params.get("saved") == "1"
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -203,6 +227,10 @@ def read_root(request: Request):
             "history_jobs": history_jobs,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
+            "settings_snapshot": settings_snapshot,
+            "telegram_snapshot": telegram_snapshot,
+            "downloaded_models": downloaded_models,
+            "settings_saved": settings_saved,
         },
     )
 
@@ -211,6 +239,39 @@ def read_root(request: Request):
 def read_live(request: Request):
     return templates.TemplateResponse(request, "live.html", {})
 
+
+@app.get("/settings")
+def read_settings_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/?tab=settings", status_code=302)
+
+
+@app.post("/settings")
+async def update_settings(request: Request) -> RedirectResponse:
+    form = await request.form()
+    updates: dict[str, object] = {}
+
+    updates["wtm_quick"] = "wtm_quick" in form
+
+    whisper_model = str(form.get("whisper_model", "")).strip()
+    if whisper_model:
+        updates["whisper_model"] = whisper_model
+
+    telegram_token = str(form.get("telegram_token", "")).strip()
+    if telegram_token:
+        updates["telegram_token"] = telegram_token
+    if "clear_telegram_token" in form:
+        updates["telegram_token"] = ""
+
+    telegram_chat_id = str(form.get("telegram_chat_id", "")).strip()
+    if telegram_chat_id:
+        updates["telegram_chat_id"] = telegram_chat_id
+    if "clear_telegram_chat_id" in form:
+        updates["telegram_chat_id"] = ""
+
+    if updates:
+        update_settings_file(get_base_dir(), updates)
+
+    return RedirectResponse(url="/?tab=settings&saved=1", status_code=303)
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(

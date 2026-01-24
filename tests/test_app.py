@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
 
 def _configure_app(tmp_path: Path) -> None:
+    app.state.base_dir = tmp_path
     app.state.uploads_dir = tmp_path / "uploads"
     app.state.results_dir = tmp_path / "results"
     app.state.db_path = tmp_path / "jobs.db"
@@ -35,6 +37,28 @@ def test_live_page_ok(tmp_path: Path) -> None:
     assert response.headers["content-type"].startswith("text/html")
     assert "Live mode" in response.text
     assert "Coming soon" in response.text
+
+
+def test_settings_update_persists(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    payload = {
+        "wtm_quick": "1",
+        "whisper_model": "base",
+        "telegram_token": "token-123",
+        "telegram_chat_id": "456",
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/settings", data=payload, allow_redirects=False)
+
+    assert response.status_code == 303
+    settings_path = tmp_path / "data" / "settings.json"
+    assert settings_path.exists()
+    stored = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert stored["wtm_quick"] is True
+    assert stored["whisper_model"] == "base"
+    assert stored["telegram_token"] == "token-123"
+    assert stored["telegram_chat_id"] == "456"
 
 
 def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:

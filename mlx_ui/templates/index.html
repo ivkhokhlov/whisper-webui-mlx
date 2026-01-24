@@ -131,6 +131,105 @@
         outline-offset: 2px;
       }
 
+      .tab-settings {
+        margin-left: auto;
+      }
+
+      .settings-header {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+
+      .settings-banner {
+        background: #e7f4ec;
+        border: 1px solid #c9e4d4;
+        color: #2f7d32;
+        padding: 10px 14px;
+        border-radius: 12px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .settings-form {
+        display: grid;
+        gap: 16px;
+      }
+
+      .settings-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .settings-card {
+        background: var(--panel);
+        border: 1px solid #f1e2d2;
+        border-radius: 16px;
+        padding: 18px 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .settings-card h3 {
+        margin: 0 0 12px;
+        font-size: 1.05rem;
+      }
+
+      .settings-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 14px;
+      }
+
+      .settings-label {
+        font-weight: 600;
+        color: var(--ink);
+      }
+
+      .settings-input {
+        border: 1px solid #e6d3c0;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+        font-family: inherit;
+        background: #fff;
+      }
+
+      .settings-input:focus {
+        outline: 2px solid var(--accent-strong);
+        outline-offset: 1px;
+      }
+
+      .settings-toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+
+      .settings-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+      }
+
+      .settings-hint {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+        margin: 2px 0 0;
+      }
+
+      .settings-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
       .panels {
         margin-top: 16px;
       }
@@ -1256,7 +1355,17 @@
           >
             History
           </a>
-          <a class="tab" href="/live">Live</a>
+          <a
+            class="tab tab-settings"
+            role="tab"
+            aria-selected="false"
+            aria-controls="panel-settings"
+            id="tab-settings"
+            data-tab="settings"
+            href="/?tab=settings"
+          >
+            Settings
+          </a>
         </div>
 
         <div class="panels">
@@ -1581,6 +1690,125 @@
               <div class="placeholder-row">No completed jobs yet.</div>
               <div class="placeholder-row">Check back after a run.</div>
             </div>
+          </section>
+
+          <section
+            class="panel"
+            role="tabpanel"
+            id="panel-settings"
+            aria-labelledby="tab-settings"
+            data-panel="settings"
+          >
+            <div class="settings-header">
+              <h2>Settings</h2>
+              <p>Default transcription settings and delivery preferences.</p>
+            </div>
+            {% if settings_saved %}
+              <div class="settings-banner">Settings saved.</div>
+            {% endif %}
+            <form class="settings-form" action="/settings" method="post">
+              <div class="settings-grid">
+                <div class="settings-card">
+                  <h3>Transcription defaults</h3>
+                  <div class="settings-field">
+                    <label class="settings-label" for="whisper-model">Default model</label>
+                    <input
+                      class="settings-input"
+                      id="whisper-model"
+                      name="whisper_model"
+                      type="text"
+                      list="downloaded-models"
+                      value="{{ settings_snapshot.settings.whisper_model }}"
+                    >
+                    <datalist id="downloaded-models">
+                      {% for model in downloaded_models %}
+                        <option value="{{ model }}"></option>
+                      {% endfor %}
+                    </datalist>
+                    <p class="settings-hint">
+                      Source: {{ settings_snapshot.sources.whisper_model }}.
+                      {% if downloaded_models %}
+                        Downloaded: {{ downloaded_models | join(", ") }}.
+                      {% else %}
+                        No downloaded models detected yet.
+                      {% endif %}
+                    </p>
+                    <p class="settings-hint">
+                      Applies to the Whisper backend; MLX uses its bundled model.
+                    </p>
+                  </div>
+                  <div class="settings-field">
+                    <label class="settings-toggle" for="wtm-quick">
+                      <input
+                        id="wtm-quick"
+                        type="checkbox"
+                        name="wtm_quick"
+                        value="1"
+                        {% if settings_snapshot.settings.wtm_quick %}checked{% endif %}
+                      >
+                      Quick mode (WTM)
+                    </label>
+                    <p class="settings-hint">
+                      Faster runs, lower accuracy. Source: {{ settings_snapshot.sources.wtm_quick }}.
+                    </p>
+                  </div>
+                  <p class="settings-hint">Changes apply after restarting the app/worker.</p>
+                </div>
+
+                <div class="settings-card">
+                  <h3>Telegram delivery</h3>
+                  <div class="settings-field">
+                    <label class="settings-label" for="telegram-token">Bot token</label>
+                    <input
+                      class="settings-input"
+                      id="telegram-token"
+                      name="telegram_token"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="123456:ABC..."
+                    >
+                    <p class="settings-hint">
+                      {% if telegram_snapshot.configured %}
+                        Current: {{ telegram_snapshot.token_masked }} ({{ telegram_snapshot.source }})
+                      {% else %}
+                        Not configured.
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input type="checkbox" name="clear_telegram_token" value="1">
+                      Clear saved token
+                    </label>
+                  </div>
+                  <div class="settings-field">
+                    <label class="settings-label" for="telegram-chat-id">Chat ID</label>
+                    <input
+                      class="settings-input"
+                      id="telegram-chat-id"
+                      name="telegram_chat_id"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="-1001234567890"
+                    >
+                    <p class="settings-hint">
+                      {% if telegram_snapshot.configured %}
+                        Current: {{ telegram_snapshot.chat_id_masked }} ({{ telegram_snapshot.source }})
+                      {% else %}
+                        Not configured.
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input type="checkbox" name="clear_telegram_chat_id" value="1">
+                      Clear saved chat ID
+                    </label>
+                  </div>
+                  <p class="settings-hint">Environment variables override saved values.</p>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="cta" type="submit">Save settings</button>
+                <span class="hint">Saved locally in data/settings.json</span>
+              </div>
+            </form>
           </section>
         </div>
       </section>
