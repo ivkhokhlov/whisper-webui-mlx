@@ -45,6 +45,7 @@ default model selection, WTM quick mode, and Telegram delivery configuration.
 - Local data storage under data/ for easy retention and cleanup.
 - Settings panel for default model selection and WTM quick mode, persisted in
   data/settings.json.
+- Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
 - (Planned/available) Live mode for recording and chunked transcription in the

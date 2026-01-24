@@ -26,6 +26,7 @@ from mlx_ui.settings import (
     list_downloaded_models,
     resolve_transcriber_with_settings,
     update_settings_file,
+    validate_settings_payload,
 )
 from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
 from mlx_ui.uploads import cleanup_upload_path
@@ -100,6 +101,20 @@ def ensure_uploads_dir() -> Path:
     uploads_dir = get_uploads_dir()
     uploads_dir.mkdir(parents=True, exist_ok=True)
     return uploads_dir
+
+
+def clear_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for entry in path.iterdir():
+        try:
+            if entry.is_dir():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            logger.warning("Failed to remove %s: %s", entry, exc)
 
 
 def is_safe_path_component(value: str) -> bool:
@@ -272,6 +287,35 @@ async def update_settings(request: Request) -> RedirectResponse:
         update_settings_file(get_base_dir(), updates)
 
     return RedirectResponse(url="/?tab=settings&saved=1", status_code=303)
+
+
+@app.get("/api/settings")
+def api_settings() -> dict[str, object]:
+    return build_settings_snapshot(base_dir=get_base_dir())
+
+
+@app.post("/api/settings")
+async def api_update_settings(request: Request) -> dict[str, object]:
+    payload = await request.json()
+    updates, errors = validate_settings_payload(payload)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    if updates:
+        update_settings_file(get_base_dir(), updates)
+    return build_settings_snapshot(base_dir=get_base_dir())
+
+
+@app.post("/api/settings/clear-uploads")
+def api_clear_uploads() -> dict[str, str]:
+    clear_directory(get_uploads_dir())
+    return {"status": "ok"}
+
+
+@app.post("/api/settings/clear-results")
+def api_clear_results() -> dict[str, str]:
+    clear_directory(get_results_dir())
+    return {"status": "ok"}
+
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(
