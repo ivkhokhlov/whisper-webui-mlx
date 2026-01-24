@@ -4,9 +4,11 @@
 mlx-ui is a local-only web application for fast, private transcription of audio and
 video files on macOS Apple Silicon. It wraps the whisper-turbo-mlx engine in an
 easy, localhost UI that lets users upload files in batches, process them
-sequentially, and download text results from a queue/history view. After initial
-setup and model download, it runs fully offline. Recent UI work focuses on a
-compact, scannable History view with details-on-demand and transcript previews.
+sequentially, and download text results from a queue/history view. Uploads
+support files or folders with a preflight summary (count, size, estimate) and
+basic filtering before queueing. After initial setup and model download, it runs
+fully offline. Recent UI work focuses on a compact, scannable History view with
+details-on-demand and transcript previews.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -31,7 +33,8 @@ compact, scannable History view with details-on-demand and transcript previews.
 - Anyone who prefers a simple UI over managing ML CLI workflows.
 
 ## Key features
-- Batch uploads via browser; queued, one-at-a-time processing.
+- Batch uploads via browser (files or folders) with preflight summary and
+  filtering; queued, one-at-a-time processing.
 - Compact History view with status, filename, time, output labels, and one-click
   primary actions (download or view log).
 - Details-on-demand panel for full timestamps, outputs list, and error logs.

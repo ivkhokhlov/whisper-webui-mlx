@@ -92,6 +92,21 @@ def sanitize_filename(filename: str) -> str:
     return safe_name or "upload.bin"
 
 
+def sanitize_display_path(filename: str, fallback: str) -> str:
+    normalized = filename.replace("\\", "/")
+    parts = []
+    for part in normalized.split("/"):
+        if part in {"", ".", ".."}:
+            continue
+        if ":" in part:
+            continue
+        if not is_safe_path_component(part):
+            continue
+        parts.append(part)
+    display = "/".join(parts)
+    return display or fallback
+
+
 def list_result_files(job_id: str) -> list[str]:
     if not is_safe_path_component(job_id):
         return []
@@ -209,6 +224,7 @@ async def upload_files(
         if not upload.filename:
             continue
         safe_name = sanitize_filename(upload.filename)
+        display_name = sanitize_display_path(upload.filename, safe_name)
         job_id = uuid4().hex
         job_dir = uploads_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +234,7 @@ async def upload_files(
                 shutil.copyfileobj(upload.file, outfile)
         finally:
             await upload.close()
-        insert_job(db_path, new_job_record(job_id, safe_name, destination))
+        insert_job(db_path, new_job_record(job_id, display_name, destination))
 
     return RedirectResponse(url="/?tab=queue", status_code=303)
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mlx_ui.app import app
+from mlx_ui.app import app, sanitize_display_path
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
 
@@ -54,11 +54,29 @@ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
     for job in jobs:
         job_path = Path(job.upload_path)
         assert job_path.is_file()
-        assert job_path.name == job.filename
+        assert job_path.name == Path(job.filename).name
         assert job_path.parent.name == job.id
         assert job_path.is_relative_to(uploads_dir)
         assert job.status == "queued"
         assert job.language == "any"
+
+
+def test_sanitize_display_path_preserves_relative() -> None:
+    assert (
+        sanitize_display_path("folder/sub/file.mkv", "file.mkv")
+        == "folder/sub/file.mkv"
+    )
+
+
+def test_sanitize_display_path_strips_parent_refs() -> None:
+    assert sanitize_display_path("../evil.mkv", "evil.mkv") == "evil.mkv"
+
+
+def test_sanitize_display_path_windows_path() -> None:
+    assert (
+        sanitize_display_path(r"C:\\Users\\x\\file.mp3", "file.mp3")
+        == "Users/x/file.mp3"
+    )
 
 
 def test_upload_without_language(tmp_path: Path) -> None:

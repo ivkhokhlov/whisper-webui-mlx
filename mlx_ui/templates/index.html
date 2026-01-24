@@ -180,8 +180,31 @@
       }
 
       .upload-select {
-        display: block;
-        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .select-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid #f0c7b1;
+        background: #fff;
+        color: var(--accent-strong);
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .select-button:hover {
+        background: #fbe3d6;
+      }
+
+      .select-button.is-secondary {
+        background: #fff8f2;
       }
 
       .dropzone {
@@ -220,9 +243,18 @@
         color: var(--ink-muted);
       }
 
+      .dropzone-helper {
+        font-size: 0.8rem;
+        color: var(--ink-muted);
+      }
+
       .file-summary {
         font-size: 0.85rem;
         color: var(--ink-muted);
+      }
+
+      .file-summary-secondary {
+        color: #b07456;
       }
 
       .file-list {
@@ -230,6 +262,23 @@
         gap: 8px;
         margin: 0;
         padding: 0;
+      }
+
+      .file-toggle {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: var(--accent-strong);
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .file-toggle:hover {
+        text-decoration: underline;
       }
 
       .file-item {
@@ -1230,7 +1279,7 @@
               </div>
             </div>
             <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
-              <label class="upload-label" for="file-input">Select audio or video files</label>
+              <label class="upload-label" for="file-input">Select audio or video files or folders</label>
               <input
                 id="file-input"
                 class="upload-input"
@@ -1240,6 +1289,17 @@
                 required
                 accept="audio/*,video/*"
               >
+              <input
+                id="folder-input"
+                class="upload-input"
+                type="file"
+                multiple
+                webkitdirectory
+              >
+              <div class="upload-select">
+                <label class="select-button" for="file-input">Select files</label>
+                <label class="select-button is-secondary" for="folder-input">Select folder</label>
+              </div>
               <label
                 class="dropzone"
                 id="dropzone"
@@ -1248,13 +1308,18 @@
                 for="file-input"
                 aria-describedby="dropzone-hint"
               >
-                <div class="dropzone-title">Drag & drop files here</div>
+                <div class="dropzone-title">Drag & drop files or folders here</div>
                 <div class="dropzone-subtitle" id="dropzone-hint">
                   or click to browse audio/video files
                 </div>
+                <div class="dropzone-helper">
+                  Supported: audio/video files (ffmpeg-readable). Non-media files will be skipped.
+                </div>
               </label>
               <div class="file-summary" id="file-summary" aria-live="polite">No files selected yet.</div>
+              <div class="file-summary file-summary-secondary" id="file-skipped" aria-live="polite"></div>
               <div class="file-list" id="file-list" aria-live="polite"></div>
+              <button class="file-toggle" id="file-list-toggle" type="button">Show all</button>
               <div class="upload-actions">
                 <button class="cta" id="upload-submit" type="submit">Queue uploads</button>
                 <span class="hint">Files stay local in data/uploads.</span>
@@ -1634,9 +1699,12 @@
         const toastStack = document.getElementById("toast-stack");
         const uploadForm = document.querySelector(".upload-card");
         const fileInput = document.getElementById("file-input");
+        const folderInput = document.getElementById("folder-input");
         const dropzone = document.getElementById("dropzone");
         const fileList = document.getElementById("file-list");
         const fileSummary = document.getElementById("file-summary");
+        const fileSkipped = document.getElementById("file-skipped");
+        const fileListToggle = document.getElementById("file-list-toggle");
         const uploadSubmit = document.getElementById("upload-submit");
         const notifiedJobIds = new Set();
         let notificationsSeeded = false;
@@ -1660,6 +1728,33 @@
           typeof Intl !== "undefined" && Intl.RelativeTimeFormat
             ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto", style: "short" })
             : null;
+        const MAX_VISIBLE_FILES = 50;
+        const ESTIMATE_MB_PER_MIN_FAST = 12;
+        const ESTIMATE_MB_PER_MIN_SLOW = 4;
+        const ESTIMATE_PER_FILE_MIN = 0.25;
+        const MEDIA_EXTENSIONS = new Set([
+          "mp3",
+          "wav",
+          "m4a",
+          "flac",
+          "ogg",
+          "opus",
+          "aac",
+          "wma",
+          "alac",
+          "aiff",
+          "amr",
+          "mp4",
+          "mov",
+          "mkv",
+          "webm",
+          "m4v",
+          "avi",
+          "mpg",
+          "mpeg",
+          "3gp",
+        ]);
+        const SKIP_PATH_PARTS = new Set(["__MACOSX"]);
 
         function escapeHtml(value) {
           return String(value)
@@ -1670,9 +1765,13 @@
             .replaceAll("'", "&#39;");
         }
 
-        const pendingFiles = [];
+        const pendingItems = [];
+        let skippedCount = 0;
+        let showAllFiles = false;
+        let scanningFolder = false;
         let syncingInput = false;
         let dragDepth = 0;
+        let uploadInFlight = false;
 
         function formatBytes(bytes) {
           if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -1689,11 +1788,82 @@
           return `${value.toFixed(precision)} ${units[unitIndex]}`;
         }
 
-        function buildFileKey(file) {
-          return `${file.name}::${file.size}::${file.lastModified}`;
+        function normalizeDisplayPath(value) {
+          return String(value || "").replace(/\\/g, "/");
         }
 
-        function syncInputFiles(files) {
+        function getExtension(value) {
+          const normalized = String(value || "");
+          const lastDot = normalized.lastIndexOf(".");
+          if (lastDot <= 0 || lastDot === normalized.length - 1) {
+            return "";
+          }
+          return normalized.slice(lastDot + 1).toLowerCase();
+        }
+
+        function isHiddenPath(displayPath) {
+          const normalized = normalizeDisplayPath(displayPath);
+          return normalized.split("/").some((part) => {
+            if (!part) {
+              return true;
+            }
+            if (SKIP_PATH_PARTS.has(part)) {
+              return true;
+            }
+            return part.startsWith(".");
+          });
+        }
+
+        function isAcceptedMedia(file, displayPath) {
+          if (isHiddenPath(displayPath)) {
+            return false;
+          }
+          const type = String(file.type || "").toLowerCase();
+          if (type.startsWith("audio/") || type.startsWith("video/")) {
+            return true;
+          }
+          const ext = getExtension(displayPath);
+          return MEDIA_EXTENSIONS.has(ext);
+        }
+
+        function buildItemKey(item) {
+          return `${item.displayPath}::${item.file.size}::${item.file.lastModified}`;
+        }
+
+        function prepareItems(rawItems) {
+          const items = [];
+          let skipped = 0;
+          rawItems.forEach(({ file, displayPath }) => {
+            const normalized =
+              normalizeDisplayPath(displayPath) ||
+              normalizeDisplayPath(file.webkitRelativePath) ||
+              normalizeDisplayPath(file.name);
+            if (!normalized || !isAcceptedMedia(file, normalized)) {
+              skipped += 1;
+              return;
+            }
+            items.push({ file, displayPath: normalized });
+          });
+          return { items, skipped };
+        }
+
+        function estimateRangeMinutes(totalBytes, count) {
+          const totalMb = totalBytes / (1024 * 1024);
+          const fast = totalMb / ESTIMATE_MB_PER_MIN_FAST + count * ESTIMATE_PER_FILE_MIN;
+          const slow = totalMb / ESTIMATE_MB_PER_MIN_SLOW + count * ESTIMATE_PER_FILE_MIN;
+          return { fast, slow };
+        }
+
+        function formatEstimateRange(fastMinutes, slowMinutes) {
+          if (!Number.isFinite(fastMinutes) || !Number.isFinite(slowMinutes)) {
+            return "";
+          }
+          const low = Math.max(1, Math.round(fastMinutes));
+          const high = Math.max(low, Math.round(slowMinutes));
+          return `${low}-${high} min`;
+        }
+
+        function syncInputFiles(items) {
           if (!fileInput) {
             return;
           }
@@ -1701,44 +1871,41 @@
             return;
           }
           const transfer = new DataTransfer();
-          files.forEach((file) => transfer.items.add(file));
+          items.forEach((item) => transfer.items.add(item.file));
           syncingInput = true;
           fileInput.files = transfer.files;
           syncingInput = false;
         }
 
-        function renderFileList() {
-          if (!fileList || !fileSummary || !uploadSubmit || !dropzone) {
+        function renderFileItems() {
+          if (!fileList) {
             return;
           }
           fileList.innerHTML = "";
-          if (pendingFiles.length === 0) {
-            fileSummary.textContent = "No files selected yet.";
-            uploadSubmit.disabled = true;
-            dropzone.classList.remove("has-files");
+          if (pendingItems.length === 0) {
+            if (fileListToggle) {
+              fileListToggle.style.display = "none";
+            }
             return;
           }
-          const totalBytes = pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0);
-          const label = pendingFiles.length === 1 ? "file" : "files";
-          fileSummary.textContent = `${pendingFiles.length} ${label} ready · ${formatBytes(totalBytes)}`;
-          uploadSubmit.disabled = false;
-          dropzone.classList.add("has-files");
-
+          const visibleCount = showAllFiles
+            ? pendingItems.length
+            : Math.min(MAX_VISIBLE_FILES, pendingItems.length);
           const fragment = document.createDocumentFragment();
-          pendingFiles.forEach((file, index) => {
-            const item = document.createElement("div");
-            item.className = "file-item";
+          pendingItems.slice(0, visibleCount).forEach((item, index) => {
+            const row = document.createElement("div");
+            row.className = "file-item";
 
             const meta = document.createElement("div");
             meta.className = "file-meta";
 
             const name = document.createElement("div");
             name.className = "file-name";
-            name.textContent = file.name || "Untitled file";
+            name.textContent = item.displayPath || "Untitled file";
 
             const size = document.createElement("div");
             size.className = "file-size";
-            size.textContent = formatBytes(file.size || 0);
+            size.textContent = formatBytes(item.file.size || 0);
 
             meta.appendChild(name);
             meta.appendChild(size);
@@ -1747,33 +1914,160 @@
             remove.className = "file-remove";
             remove.type = "button";
             remove.dataset.removeIndex = String(index);
-            remove.setAttribute("aria-label", `Remove ${file.name || "file"}`);
+            remove.setAttribute("aria-label", `Remove ${item.displayPath || "file"}`);
             remove.textContent = "Remove";
 
-            item.appendChild(meta);
-            item.appendChild(remove);
-            fragment.appendChild(item);
+            row.appendChild(meta);
+            row.appendChild(remove);
+            fragment.appendChild(row);
           });
           fileList.appendChild(fragment);
+          if (fileListToggle) {
+            if (pendingItems.length > MAX_VISIBLE_FILES) {
+              fileListToggle.style.display = "inline-flex";
+              fileListToggle.textContent = showAllFiles ? "Show first 50" : "Show all";
+            } else {
+              fileListToggle.style.display = "none";
+            }
+          }
         }
 
-        function setPendingFiles(nextFiles) {
-          pendingFiles.splice(0, pendingFiles.length, ...nextFiles);
-          syncInputFiles(pendingFiles);
+        function renderFileList() {
+          if (!fileList || !fileSummary || !uploadSubmit || !dropzone) {
+            return;
+          }
+          if (scanningFolder) {
+            fileSummary.textContent = "Scanning folder...";
+            uploadSubmit.disabled = true;
+            if (fileSkipped) {
+              fileSkipped.textContent = "";
+            }
+            if (pendingItems.length === 0) {
+              dropzone.classList.remove("has-files");
+              renderFileItems();
+            } else {
+              dropzone.classList.add("has-files");
+              renderFileItems();
+            }
+            return;
+          }
+          if (pendingItems.length === 0) {
+            fileSummary.textContent = "No files selected yet.";
+            uploadSubmit.disabled = true;
+            dropzone.classList.remove("has-files");
+            if (fileSkipped) {
+              fileSkipped.textContent =
+                skippedCount > 0 ? `Skipped ${skippedCount} items (non-media/hidden)` : "";
+            }
+            renderFileItems();
+            return;
+          }
+          const totalBytes = pendingItems.reduce(
+            (sum, item) => sum + (item.file.size || 0),
+            0
+          );
+          const label = pendingItems.length === 1 ? "file" : "files";
+          const { fast, slow } = estimateRangeMinutes(totalBytes, pendingItems.length);
+          const estimate = formatEstimateRange(fast, slow);
+          const estimateText = estimate ? ` · Est. ${estimate}` : "";
+          fileSummary.textContent = `${pendingItems.length} ${label} ready · ${formatBytes(
+            totalBytes
+          )}${estimateText}`;
+          if (fileSkipped && skippedCount > 0) {
+            fileSkipped.textContent = `Skipped ${skippedCount} items (non-media/hidden)`;
+          } else if (fileSkipped) {
+            fileSkipped.textContent = "";
+          }
+          uploadSubmit.disabled = false;
+          dropzone.classList.add("has-files");
+          renderFileItems();
+        }
+
+        function setPendingItems(nextItems, nextSkipped = 0) {
+          pendingItems.splice(0, pendingItems.length, ...nextItems);
+          skippedCount = nextSkipped;
+          showAllFiles = false;
+          syncInputFiles(pendingItems);
           renderFileList();
         }
 
-        function mergeFiles(existing, incoming) {
+        function mergeItems(existing, incoming) {
           const merged = [...existing];
-          const seen = new Set(existing.map(buildFileKey));
-          incoming.forEach((file) => {
-            const key = buildFileKey(file);
+          const seen = new Set(existing.map(buildItemKey));
+          incoming.forEach((item) => {
+            const key = buildItemKey(item);
             if (!seen.has(key)) {
-              merged.push(file);
+              merged.push(item);
               seen.add(key);
             }
           });
           return merged;
+        }
+
+        function readDirectoryEntries(directoryEntry) {
+          const reader = directoryEntry.createReader();
+          return new Promise((resolve) => {
+            const entries = [];
+            const readBatch = () => {
+              reader.readEntries(
+                (batch) => {
+                  if (!batch.length) {
+                    resolve(entries);
+                    return;
+                  }
+                  entries.push(...batch);
+                  readBatch();
+                },
+                () => resolve(entries)
+              );
+            };
+            readBatch();
+          });
+        }
+
+        async function traverseEntry(entry, pathPrefix) {
+          if (!entry) {
+            return [];
+          }
+          if (entry.isFile) {
+            return new Promise((resolve) => {
+              entry.file(
+                (file) => resolve([{ file, displayPath: `${pathPrefix}${file.name}` }]),
+                () => resolve([])
+              );
+            });
+          }
+          if (entry.isDirectory) {
+            const nextPrefix = `${pathPrefix}${entry.name}/`;
+            const children = await readDirectoryEntries(entry);
+            const nested = await Promise.all(
+              children.map((child) => traverseEntry(child, nextPrefix))
+            );
+            return nested.flat();
+          }
+          return [];
+        }
+
+        async function collectDroppedItems(dataTransfer) {
+          if (!dataTransfer) {
+            return { items: [], skipped: 0, usedEntries: false };
+          }
+          const dataItems = Array.from(dataTransfer.items || []);
+          const entries = dataItems
+            .map((item) =>
+              typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null
+            )
+            .filter(Boolean);
+          if (entries.length > 0) {
+            const collected = await Promise.all(entries.map((entry) => traverseEntry(entry, "")));
+            const rawItems = collected.flat();
+            const prepared = prepareItems(rawItems);
+            return { ...prepared, usedEntries: true };
+          }
+          const files = Array.from(dataTransfer.files || []);
+          const rawItems = files.map((file) => ({ file, displayPath: file.name }));
+          const prepared = prepareItems(rawItems);
+          return { ...prepared, usedEntries: false };
         }
 
         function isFileDrag(event) {
@@ -1980,9 +2274,31 @@
             if (syncingInput) {
               return;
             }
-            const nextFiles = Array.from(fileInput.files || []);
-            setPendingFiles(nextFiles);
+            const rawItems = Array.from(fileInput.files || []).map((file) => ({
+              file,
+              displayPath: file.webkitRelativePath || file.name,
+            }));
+            const prepared = prepareItems(rawItems);
+            setPendingItems(prepared.items, prepared.skipped);
           });
+
+          if (folderInput) {
+            folderInput.addEventListener("change", () => {
+              const rawItems = Array.from(folderInput.files || []).map((file) => ({
+                file,
+                displayPath: file.webkitRelativePath || file.name,
+              }));
+              const prepared = prepareItems(rawItems);
+              setPendingItems(prepared.items, prepared.skipped);
+            });
+          }
+
+          if (fileListToggle) {
+            fileListToggle.addEventListener("click", () => {
+              showAllFiles = !showAllFiles;
+              renderFileList();
+            });
+          }
 
           dropzone.addEventListener("keydown", (event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -2017,18 +2333,47 @@
             }
           });
 
-          dropzone.addEventListener("drop", (event) => {
+          dropzone.addEventListener("drop", async (event) => {
             if (!isFileDrag(event)) {
               return;
             }
             event.preventDefault();
             dragDepth = 0;
             dropzone.classList.remove("is-active");
-            const droppedFiles = Array.from(event.dataTransfer.files || []);
-            if (droppedFiles.length === 0) {
+            if (!event.dataTransfer) {
               return;
             }
-            setPendingFiles(mergeFiles(pendingFiles, droppedFiles));
+            const shouldScan = Array.from(event.dataTransfer.items || []).some((item) => {
+              if (typeof item.webkitGetAsEntry !== "function") {
+                return false;
+              }
+              const entry = item.webkitGetAsEntry();
+              return entry && entry.isDirectory;
+            });
+            if (shouldScan) {
+              scanningFolder = true;
+              renderFileList();
+            }
+            let prepared;
+            try {
+              prepared = await collectDroppedItems(event.dataTransfer);
+            } finally {
+              if (shouldScan) {
+                scanningFolder = false;
+              }
+            }
+            if (!prepared) {
+              renderFileList();
+              return;
+            }
+            const nextSkipped = skippedCount + prepared.skipped;
+            if (prepared.items.length === 0) {
+              skippedCount = nextSkipped;
+              renderFileList();
+              return;
+            }
+            const merged = mergeItems(pendingItems, prepared.items);
+            setPendingItems(merged, nextSkipped);
           });
 
           fileList.addEventListener("click", (event) => {
@@ -2040,9 +2385,41 @@
             if (Number.isNaN(index)) {
               return;
             }
-            const nextFiles = pendingFiles.slice();
-            nextFiles.splice(index, 1);
-            setPendingFiles(nextFiles);
+            const nextItems = pendingItems.slice();
+            nextItems.splice(index, 1);
+            setPendingItems(nextItems, skippedCount);
+          });
+
+          uploadForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            if (uploadInFlight || pendingItems.length === 0) {
+              return;
+            }
+            uploadInFlight = true;
+            uploadSubmit.disabled = true;
+            try {
+              const formData = new FormData();
+              pendingItems.forEach((item) => {
+                formData.append("files", item.file, item.displayPath || item.file.name);
+              });
+              const response = await fetch("/upload", {
+                method: "POST",
+                body: formData,
+              });
+              if (response.ok) {
+                window.location = "/?tab=queue";
+                return;
+              }
+              const message = await response.text();
+              console.error("Upload failed", response.status, message);
+              alert("Upload failed. Check the console for details.");
+            } catch (error) {
+              console.error("Upload failed", error);
+              alert("Upload failed. Check the console for details.");
+            } finally {
+              uploadInFlight = false;
+              uploadSubmit.disabled = pendingItems.length === 0;
+            }
           });
         }
 
