@@ -104,9 +104,9 @@ def send_telegram_message(
     text: str,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> None:
-    payload = urllib.parse.urlencode(
-        {"chat_id": config.chat_id, "text": text}
-    ).encode("utf-8")
+    payload = urllib.parse.urlencode({"chat_id": config.chat_id, "text": text}).encode(
+        "utf-8"
+    )
     request = urllib.request.Request(
         _api_url(config.token, "sendMessage"),
         data=payload,
@@ -122,9 +122,7 @@ def send_telegram_document(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> None:
     file_path = Path(file_path)
-    content_type = (
-        mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-    )
+    content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
     fields: dict[str, str] = {"chat_id": config.chat_id}
     if caption:
         fields["caption"] = caption

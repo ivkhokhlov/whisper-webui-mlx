@@ -14,7 +14,9 @@ def cleanup_upload_path(
     resolved_upload = Path(upload_path).resolve()
     resolved_root = Path(uploads_root).resolve()
     if not resolved_upload.is_relative_to(resolved_root):
-        logger.warning("Refusing to remove upload outside uploads dir%s", _job_suffix(job_id))
+        logger.warning(
+            "Refusing to remove upload outside uploads dir%s", _job_suffix(job_id)
+        )
         return
     if not resolved_upload.exists():
         return

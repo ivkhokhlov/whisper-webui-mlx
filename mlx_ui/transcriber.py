@@ -90,9 +90,13 @@ class WhisperTranscriber:
             DEFAULT_WHISPER_MODEL,
         )
         self.device = device or os.getenv(WHISPER_DEVICE_ENV, "cpu")
-        self.fp16 = fp16 if fp16 is not None else _parse_bool_env(
-            WHISPER_FP16_ENV,
-            False,
+        self.fp16 = (
+            fp16
+            if fp16 is not None
+            else _parse_bool_env(
+                WHISPER_FP16_ENV,
+                False,
+            )
         )
         self.cache_dir = _resolve_whisper_cache_dir()
         self._model = None
@@ -213,8 +217,7 @@ def resolve_transcriber() -> Transcriber:
     if backend in {"fake", "noop", "test"}:
         return FakeTranscriber()
     raise ValueError(
-        f"Unknown transcriber backend '{backend}'. "
-        "Use 'wtm', 'whisper', or 'fake'."
+        f"Unknown transcriber backend '{backend}'. Use 'wtm', 'whisper', or 'fake'."
     )
 
 

@@ -1,12 +1,21 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from mlx_ui.db import JobRecord, cancel_running_job, init_db, insert_job, list_jobs, reorder_queue
+from mlx_ui.db import (
+    JobRecord,
+    cancel_running_job,
+    init_db,
+    insert_job,
+    list_jobs,
+    reorder_queue,
+)
 from mlx_ui.worker import Worker
 from mlx_ui.transcriber import FakeTranscriber
 
 
-def _make_job(job_id: str, filename: str, created_at: str, uploads_dir: Path) -> JobRecord:
+def _make_job(
+    job_id: str, filename: str, created_at: str, uploads_dir: Path
+) -> JobRecord:
     job_dir = uploads_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     upload_path = job_dir / filename
@@ -57,8 +66,12 @@ def test_reorder_queue_rejects_invalid_ids(tmp_path: Path) -> None:
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
     base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    job1 = _make_job("job1", "alpha.wav", base_time.isoformat(timespec="seconds"), uploads_dir)
-    job2 = _make_job("job2", "beta.wav", base_time.isoformat(timespec="seconds"), uploads_dir)
+    job1 = _make_job(
+        "job1", "alpha.wav", base_time.isoformat(timespec="seconds"), uploads_dir
+    )
+    job2 = _make_job(
+        "job2", "beta.wav", base_time.isoformat(timespec="seconds"), uploads_dir
+    )
     insert_job(db_path, job1)
     insert_job(db_path, job2)
 

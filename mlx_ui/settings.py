@@ -8,7 +8,11 @@ import threading
 from typing import Mapping
 
 from mlx_ui.telegram import mask_secret
-from mlx_ui.update_check import DISABLE_UPDATE_CHECK_ENV, is_update_check_disabled, read_local_version
+from mlx_ui.update_check import (
+    DISABLE_UPDATE_CHECK_ENV,
+    is_update_check_disabled,
+    read_local_version,
+)
 from mlx_ui.transcriber import (
     BACKEND_ENV,
     DEFAULT_BACKEND,
@@ -441,7 +445,9 @@ def read_build_date(base_dir: Path) -> str | None:
         timestamp = pyproject.stat().st_mtime
     except OSError:
         return None
-    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat(timespec="seconds")
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat(
+        timespec="seconds"
+    )
 
 
 def resolve_transcriber_with_settings(
@@ -462,6 +468,5 @@ def resolve_transcriber_with_settings(
     if backend in {"fake", "noop", "test"}:
         return FakeTranscriber()
     raise ValueError(
-        f"Unknown transcriber backend '{backend}'. "
-        "Use 'wtm', 'whisper', or 'fake'."
+        f"Unknown transcriber backend '{backend}'. Use 'wtm', 'whisper', or 'fake'."
     )

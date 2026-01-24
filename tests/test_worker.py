@@ -34,7 +34,9 @@ class RecordingTranscriber:
         return result_path
 
 
-def _make_job(job_id: str, filename: str, created_at: str, uploads_dir: Path) -> JobRecord:
+def _make_job(
+    job_id: str, filename: str, created_at: str, uploads_dir: Path
+) -> JobRecord:
     job_dir = uploads_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     upload_path = job_dir / filename
@@ -49,7 +51,9 @@ def _make_job(job_id: str, filename: str, created_at: str, uploads_dir: Path) ->
     )
 
 
-def _wait_for_jobs(db_path: Path, expected_count: int, timeout: float = 2.0) -> list[JobRecord]:
+def _wait_for_jobs(
+    db_path: Path, expected_count: int, timeout: float = 2.0
+) -> list[JobRecord]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         jobs = list_jobs(db_path)
