@@ -48,6 +48,8 @@ default model selection, WTM quick mode, and Telegram delivery configuration.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
+- Telegram delivery sends a single message with the transcript file attached
+  and the filename in the caption.
 - (Planned/available) Live mode for recording and chunked transcription in the
   browser.
 

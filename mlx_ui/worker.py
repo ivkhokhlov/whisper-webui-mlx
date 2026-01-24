@@ -79,7 +79,9 @@ class Worker:
         try:
             maybe_send_telegram(job, result_path)
         except Exception:
-            logger.exception("Worker failed to deliver Telegram message for job %s", job.id)
+            logger.exception(
+                "Worker failed to deliver Telegram message for job %s", job.id
+            )
         update_job_status(self.db_path, job.id, "done", completed_at=_now_utc())
         cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
         return True

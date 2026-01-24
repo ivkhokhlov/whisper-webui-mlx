@@ -15,7 +15,9 @@ def _make_job(tmp_path: Path) -> JobRecord:
         id="job1",
         filename="sample.wav",
         status="queued",
-        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat(timespec="seconds"),
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat(
+            timespec="seconds"
+        ),
         upload_path=str(upload_path),
         language="fr",
     )

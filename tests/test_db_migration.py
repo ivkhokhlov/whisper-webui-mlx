@@ -37,7 +37,9 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "started_at" in columns
         assert "completed_at" in columns
         assert "error_message" in columns
-        row = connection.execute("SELECT language FROM jobs WHERE id = 'job-1'").fetchone()
+        row = connection.execute(
+            "SELECT language FROM jobs WHERE id = 'job-1'"
+        ).fetchone()
         assert row is not None
         assert row[0] == "en"
 

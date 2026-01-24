@@ -28,12 +28,18 @@ from mlx_ui.settings import (
     update_settings_file,
     validate_settings_payload,
 )
-from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
+from mlx_ui.update_check import (
+    DEFAULT_TIMEOUT,
+    check_for_updates,
+    is_update_check_disabled,
+)
 from mlx_ui.uploads import cleanup_upload_path
 from mlx_ui.worker import start_worker
 
 app = FastAPI(title="Whisper WebUI (MLX)")
-templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+templates = Jinja2Templates(
+    directory=str(Path(__file__).resolve().parent / "templates")
+)
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
 DEFAULT_RESULTS_DIR = BASE_DIR / "data" / "results"
@@ -353,7 +359,10 @@ def api_state() -> dict[str, object]:
         "queue": [_serialize_job(job) for job in queue_jobs],
         "queue_running": _serialize_job(running_job) if running_job else None,
         "queue_pending": [_serialize_job(job) for job in queued_jobs],
-        "queue_counts": {"running": 1 if running_job else 0, "queued": len(queued_jobs)},
+        "queue_counts": {
+            "running": 1 if running_job else 0,
+            "queued": len(queued_jobs),
+        },
         "history": [_serialize_job(job) for job in history_jobs],
         "results_by_job": build_results_index(history_jobs),
         "worker": _worker_state(jobs),
@@ -381,7 +390,9 @@ def download_result(job_id: str, filename: str):
 
 
 @app.get("/api/jobs/{job_id}/preview")
-def job_preview(job_id: str, chars: int = Query(300, ge=50, le=2000)) -> dict[str, object]:
+def job_preview(
+    job_id: str, chars: int = Query(300, ge=50, le=2000)
+) -> dict[str, object]:
     if not is_safe_path_component(job_id):
         raise HTTPException(status_code=404)
 
