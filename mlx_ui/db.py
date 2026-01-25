@@ -15,6 +15,7 @@ class JobRecord:
     started_at: str | None = None
     completed_at: str | None = None
     error_message: str | None = None
+    queue_position: int | None = None
 
 
 SCHEMA = """
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     language TEXT NOT NULL,
     started_at TEXT,
     completed_at TEXT,
-    error_message TEXT
+    error_message TEXT,
+    queue_position INTEGER
 );
 """
 
@@ -60,13 +62,53 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE jobs ADD COLUMN completed_at TEXT")
     if "error_message" not in columns:
         connection.execute("ALTER TABLE jobs ADD COLUMN error_message TEXT")
+    if "queue_position" not in columns:
+        connection.execute("ALTER TABLE jobs ADD COLUMN queue_position INTEGER")
     connection.execute(
         "UPDATE jobs SET language = 'en' WHERE language IS NULL OR language = ''"
     )
+    _backfill_queue_positions(connection)
+
+
+def _backfill_queue_positions(connection: sqlite3.Connection) -> None:
+    rows = connection.execute(
+        """
+        SELECT id
+        FROM jobs
+        WHERE status = 'queued' AND queue_position IS NULL
+        ORDER BY created_at ASC
+        """
+    ).fetchall()
+    if not rows:
+        return
+    max_row = connection.execute(
+        """
+        SELECT MAX(queue_position)
+        FROM jobs
+        WHERE status = 'queued'
+        """
+    ).fetchone()
+    start = max_row[0] if max_row and max_row[0] is not None else 0
+    for offset, row in enumerate(rows, start=1):
+        connection.execute(
+            "UPDATE jobs SET queue_position = ? WHERE id = ?",
+            (start + offset, row["id"]),
+        )
 
 
 def insert_job(db_path: Path, job: JobRecord) -> None:
     with _connect(db_path) as connection:
+        queue_position = job.queue_position
+        if job.status == "queued" and queue_position is None:
+            row = connection.execute(
+                """
+                SELECT MAX(queue_position)
+                FROM jobs
+                WHERE status = 'queued'
+                """
+            ).fetchone()
+            max_position = row[0] if row and row[0] is not None else 0
+            queue_position = max_position + 1
         connection.execute(
             """
             INSERT INTO jobs (
@@ -78,9 +120,10 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 language,
                 started_at,
                 completed_at,
-                error_message
+                error_message,
+                queue_position
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -92,6 +135,7 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 job.started_at,
                 job.completed_at,
                 job.error_message,
+                queue_position,
             ),
         )
         connection.commit()
@@ -110,9 +154,24 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
                 language,
                 started_at,
                 completed_at,
-                error_message
+                error_message,
+                queue_position
             FROM jobs
-            ORDER BY created_at ASC
+            ORDER BY
+                CASE
+                    WHEN status = 'running' THEN 0
+                    WHEN status = 'queued' THEN 1
+                    ELSE 2
+                END,
+                CASE
+                    WHEN status = 'queued' THEN queue_position IS NULL
+                    ELSE 0
+                END,
+                CASE
+                    WHEN status = 'queued' THEN queue_position
+                    ELSE NULL
+                END,
+                created_at ASC
             """
         ).fetchall()
 
@@ -132,7 +191,8 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
                 language,
                 started_at,
                 completed_at,
-                error_message
+                error_message,
+                queue_position
             FROM jobs
             WHERE id = ?
             """,
@@ -151,6 +211,54 @@ def delete_queued_job(db_path: Path, job_id: str) -> bool:
             WHERE id = ? AND status = 'queued'
             """,
             (job_id,),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
+def reorder_queue(db_path: Path, job_ids: list[str]) -> bool:
+    if not job_ids:
+        with _connect(db_path) as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status = 'queued'"
+            ).fetchone()
+            queued_count = row[0] if row else 0
+        return queued_count == 0
+    if len(set(job_ids)) != len(job_ids):
+        return False
+    with _connect(db_path) as connection:
+        queued_rows = connection.execute(
+            """
+            SELECT id
+            FROM jobs
+            WHERE status = 'queued'
+            """
+        ).fetchall()
+        queued_ids = [row["id"] for row in queued_rows]
+        if len(queued_ids) != len(job_ids):
+            return False
+        if set(queued_ids) != set(job_ids):
+            return False
+        for index, job_id in enumerate(job_ids, start=1):
+            connection.execute(
+                "UPDATE jobs SET queue_position = ? WHERE id = ?",
+                (index, job_id),
+            )
+        connection.commit()
+    return True
+
+
+def cancel_running_job(db_path: Path, job_id: str) -> bool:
+    completed_at = _now_utc()
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'cancelled',
+                completed_at = ?
+            WHERE id = ? AND status = 'running'
+            """,
+            (completed_at, job_id),
         )
         connection.commit()
     return cursor.rowcount > 0
@@ -239,10 +347,14 @@ def claim_next_job(db_path: Path) -> JobRecord | None:
                 language,
                 started_at,
                 completed_at,
-                error_message
+                error_message,
+                queue_position
             FROM jobs
             WHERE status = 'queued'
-            ORDER BY created_at ASC
+            ORDER BY
+                queue_position IS NULL,
+                queue_position ASC,
+                created_at ASC
             LIMIT 1
             """
         ).fetchone()

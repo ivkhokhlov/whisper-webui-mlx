@@ -42,14 +42,15 @@ default model selection, WTM quick mode, and Telegram delivery configuration.
 - Details-on-demand panel for full timestamps, outputs list, and error logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
+- History action menus (⋯) dismiss on outside click for faster triage.
 - Local data storage under data/ for easy retention and cleanup.
 - Settings panel for default model selection and WTM quick mode, persisted in
   data/settings.json.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
-- Telegram delivery sends a single message with the transcript file attached
-  and the filename in the caption.
+- Telegram delivery sends a text notification followed by the transcript file
+  with the filename in the caption.
 - (Planned/available) Live mode for recording and chunked transcription in the
   browser.
 
