@@ -22,20 +22,22 @@ class TelegramConfig:
     chat_id: str
 
 
-def read_telegram_config() -> TelegramConfig | None:
+def read_telegram_config(base_dir: Path | None = None) -> TelegramConfig | None:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if token and chat_id:
         return TelegramConfig(token=token, chat_id=chat_id)
 
-    token_file, chat_id_file = _read_telegram_settings_file()
+    token_file, chat_id_file = _read_telegram_settings_file(base_dir)
     if token_file and chat_id_file:
         return TelegramConfig(token=token_file, chat_id=chat_id_file)
     return None
 
 
-def _read_telegram_settings_file() -> tuple[str, str]:
-    settings_path = Path(__file__).resolve().parent.parent / "data" / "settings.json"
+def _read_telegram_settings_file(base_dir: Path | None = None) -> tuple[str, str]:
+    if base_dir is None:
+        base_dir = Path(__file__).resolve().parent.parent
+    settings_path = Path(base_dir) / "data" / "settings.json"
     if not settings_path.is_file():
         return "", ""
     try:
@@ -67,8 +69,11 @@ def maybe_send_telegram(
     job: JobRecord,
     result_path: Path,
     timeout: float = DEFAULT_TIMEOUT,
+    base_dir: Path | None = None,
 ) -> None:
-    config = read_telegram_config()
+    if base_dir is None:
+        base_dir = _infer_base_dir_from_result(result_path)
+    config = read_telegram_config(base_dir)
     if config is None:
         return
 
@@ -82,6 +87,11 @@ def maybe_send_telegram(
         return
 
     try:
+        send_telegram_message(
+            config,
+            text=f"Transcription complete: {job.filename}",
+            timeout=timeout,
+        )
         send_telegram_document(
             config,
             result_path,
@@ -145,6 +155,20 @@ def send_telegram_document(
 def _perform_request(request: urllib.request.Request, timeout: float) -> None:
     with urllib.request.urlopen(request, timeout=timeout) as response:
         response.read()
+
+
+def _infer_base_dir_from_result(result_path: Path) -> Path | None:
+    try:
+        resolved = Path(result_path).resolve()
+    except OSError:
+        resolved = Path(result_path)
+    results_dir = resolved.parent.parent
+    if results_dir.name != "results":
+        return None
+    parent = results_dir.parent
+    if parent.name == "data":
+        return parent.parent
+    return parent
 
 
 def _encode_multipart(

@@ -2804,10 +2804,11 @@
           `;
         }
 
-        function buildHistoryMenu(job, results, defaultResult) {
+        function buildHistoryMenu(job, results, defaultResult, isOpen) {
           const status = (job.status || "").toLowerCase();
           const encodedJobId = encodeURIComponent(job.id);
           const safeFilename = escapeHtml(job.filename || "Untitled file");
+          const openAttr = isOpen ? " open" : "";
           const items = [];
           if (status === "done" && defaultResult) {
             const encodedResult = encodeURIComponent(defaultResult);
@@ -2865,7 +2866,7 @@
             `);
           }
           return `
-            <details class="job-menu">
+            <details class="job-menu"${openAttr}>
               <summary aria-label="More actions">⋯</summary>
               <div class="job-menu-panel" role="menu">
                 ${items.join("")}
@@ -2950,7 +2951,7 @@
           `;
         }
 
-        function buildHistoryRow(job, resultsByJob, openJobs) {
+        function buildHistoryRow(job, resultsByJob, openJobs, openMenus) {
           const results = (resultsByJob || {})[job.id] || [];
           const defaultResult = pickDefaultResult(results);
           const safeFilename = escapeHtml(job.filename || "Untitled file");
@@ -2959,6 +2960,7 @@
           const errorSummaryText =
             status === "failed" && job.error_message ? summarizeError(job.error_message) : "";
           const isOpen = openJobs ? openJobs.has(job.id) : false;
+          const isMenuOpen = openMenus ? openMenus.has(job.id) : false;
           const timeMeta = `
             <div
               class="history-time"
@@ -3010,7 +3012,7 @@
               <div class="history-actions">
                 ${chips}
                 ${primaryAction}
-                ${buildHistoryMenu(job, results, defaultResult)}
+                ${buildHistoryMenu(job, results, defaultResult, isMenuOpen)}
               </div>
               ${buildHistoryDetails(job, results, defaultResult, isOpen)}
             </div>
@@ -3417,6 +3419,7 @@
             return;
           }
           const openJobs = new Set();
+          const openMenus = new Set();
           listEl.querySelectorAll(".job-details[open]").forEach((details) => {
             const row = details.closest(".history-row");
             const jobId = row ? row.getAttribute("data-job-id") : "";
@@ -3424,9 +3427,16 @@
               openJobs.add(jobId);
             }
           });
+          listEl.querySelectorAll(".job-menu[open]").forEach((menu) => {
+            const row = menu.closest(".history-row");
+            const jobId = row ? row.getAttribute("data-job-id") : "";
+            if (jobId) {
+              openMenus.add(jobId);
+            }
+          });
           placeholderEl.style.display = "none";
           listEl.innerHTML = jobs
-            .map((job) => buildHistoryRow(job, resultsByJob, openJobs))
+            .map((job) => buildHistoryRow(job, resultsByJob, openJobs, openMenus))
             .join("");
           hydrateTimestamps(listEl);
           hydrateTimeMeta(listEl);
@@ -3552,6 +3562,31 @@
             }
           });
         }
+
+        function closeHistoryMenus(exceptMenu) {
+          if (!historyList) {
+            return;
+          }
+          historyList.querySelectorAll(".job-menu[open]").forEach((menu) => {
+            if (exceptMenu && menu === exceptMenu) {
+              return;
+            }
+            menu.removeAttribute("open");
+          });
+        }
+
+        document.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) {
+            return;
+          }
+          const menu = target.closest(".job-menu");
+          if (menu) {
+            closeHistoryMenus(menu);
+            return;
+          }
+          closeHistoryMenus(null);
+        });
 
         hydrateTimestamps(document);
         hydrateElapsed(document);

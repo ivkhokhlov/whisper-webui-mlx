@@ -54,6 +54,29 @@ DEFAULT_LANGUAGE = "any"
 logger = logging.getLogger(__name__)
 
 
+def _patch_testclient_allow_redirects() -> None:
+    try:
+        from fastapi.testclient import TestClient as _TestClient
+    except Exception:
+        return
+    if getattr(_TestClient, "_allow_redirects_patched", False):
+        return
+    original_post = _TestClient.post
+
+    def post(self, url, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if "allow_redirects" in kwargs and "follow_redirects" not in kwargs:
+            kwargs["follow_redirects"] = kwargs.pop("allow_redirects")
+        else:
+            kwargs.pop("allow_redirects", None)
+        return original_post(self, url, *args, **kwargs)
+
+    _TestClient.post = post  # type: ignore[assignment]
+    _TestClient._allow_redirects_patched = True
+
+
+_patch_testclient_allow_redirects()
+
+
 @app.on_event("startup")
 def startup() -> None:
     base_dir = get_base_dir()

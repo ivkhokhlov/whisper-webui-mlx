@@ -31,6 +31,7 @@ class Worker:
         self.poll_interval = poll_interval
         self.transcriber = transcriber or resolve_transcriber()
         self._stop_event = threading.Event()
+        self._paused_event = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -53,6 +54,15 @@ class Worker:
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def pause(self) -> None:
+        self._paused_event.set()
+
+    def resume(self) -> None:
+        self._paused_event.clear()
+
+    def is_paused(self) -> bool:
+        return self._paused_event.is_set()
+
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             processed = self.run_once()
@@ -60,6 +70,8 @@ class Worker:
                 self._stop_event.wait(self.poll_interval)
 
     def run_once(self) -> bool:
+        if self._paused_event.is_set():
+            return False
         job = claim_next_job(self.db_path)
         if job is None:
             return False
