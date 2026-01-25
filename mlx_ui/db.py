@@ -216,6 +216,58 @@ def delete_queued_job(db_path: Path, job_id: str) -> bool:
     return cursor.rowcount > 0
 
 
+def delete_history_job(db_path: Path, job_id: str) -> bool:
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            DELETE FROM jobs
+            WHERE id = ? AND status IN ('done', 'failed')
+            """,
+            (job_id,),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
+def list_history_jobs(db_path: Path) -> list[JobRecord]:
+    with _connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                filename,
+                status,
+                created_at,
+                upload_path,
+                language,
+                started_at,
+                completed_at,
+                error_message,
+                queue_position
+            FROM jobs
+            WHERE status IN ('done', 'failed')
+            """
+        ).fetchall()
+    return [JobRecord(**dict(row)) for row in rows]
+
+
+def delete_history_jobs(db_path: Path, job_ids: list[str]) -> int:
+    if not job_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in job_ids)
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            f"""
+            DELETE FROM jobs
+            WHERE status IN ('done', 'failed')
+              AND id IN ({placeholders})
+            """,
+            job_ids,
+        )
+        connection.commit()
+    return cursor.rowcount
+
+
 def reorder_queue(db_path: Path, job_ids: list[str]) -> bool:
     if not job_ids:
         with _connect(db_path) as connection:

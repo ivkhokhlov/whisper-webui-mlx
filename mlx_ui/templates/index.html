@@ -464,6 +464,15 @@
         margin-bottom: 6px;
       }
 
+      .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+
       .queue-summary {
         display: flex;
         align-items: center;
@@ -483,6 +492,12 @@
         border-radius: 999px;
         padding: 4px 10px;
         white-space: nowrap;
+      }
+
+      .history-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .job-list {
@@ -637,6 +652,16 @@
         background: #fff3ea;
       }
 
+      .job-primary.is-danger {
+        background: #fff1f1;
+        border: 1px solid #f4d2d2;
+        color: #8b2f2f;
+      }
+
+      .job-primary.is-danger:hover {
+        background: #ffe3e3;
+      }
+
       .job-primary:disabled {
         opacity: 0.6;
         cursor: not-allowed;
@@ -697,6 +722,21 @@
       .job-menu-item:hover {
         background: #fff3ea;
         color: var(--accent-strong);
+      }
+
+      .job-menu-divider {
+        height: 1px;
+        background: #f1e2d2;
+        margin: 4px 6px;
+      }
+
+      .job-menu-item.is-danger {
+        color: #8b2f2f;
+      }
+
+      .job-menu-item.is-danger:hover {
+        background: #fff1f1;
+        color: #8b2f2f;
       }
 
       .job-details {
@@ -1496,8 +1536,22 @@
             aria-labelledby="tab-history"
             data-panel="history"
           >
-            <h2>History</h2>
-            <p>Completed jobs appear here. Expand a row for timestamps, outputs, and logs.</p>
+            <div class="history-header">
+              <div>
+                <h2>History</h2>
+                <p>Completed jobs appear here. Expand a row for timestamps, outputs, and logs.</p>
+              </div>
+              <div class="history-controls">
+                <button
+                  class="job-primary is-secondary is-danger"
+                  type="button"
+                  data-history-clear
+                  {% if not history_jobs %}disabled{% endif %}
+                >
+                  Delete all results
+                </button>
+              </div>
+            </div>
             <div class="job-list" aria-live="polite" id="history-list">
               {% for job in history_jobs %}
                 {% set results = results_by_job.get(job.id, []) %}
@@ -1583,15 +1637,6 @@
                             </a>
                           {% endfor %}
                         {% endif %}
-                        <button
-                          class="job-menu-item"
-                          type="button"
-                          role="menuitem"
-                          data-action="copy-filename"
-                          data-filename="{{ job.filename }}"
-                        >
-                          Copy filename
-                        </button>
                         {% if job.status == "done" and result_ns.default %}
                           <button
                             class="job-menu-item"
@@ -1603,6 +1648,24 @@
                             Copy preview
                           </button>
                         {% endif %}
+                        <button
+                          class="job-menu-item"
+                          type="button"
+                          role="menuitem"
+                          data-action="copy-filename"
+                          data-filename="{{ job.filename }}"
+                        >
+                          Copy filename
+                        </button>
+                        <div class="job-menu-divider" role="separator"></div>
+                        <button
+                          class="job-menu-item is-danger"
+                          type="button"
+                          role="menuitem"
+                          data-action="delete-history"
+                        >
+                          Delete...
+                        </button>
                       </div>
                     </details>
                   </div>
@@ -1916,6 +1979,7 @@
         const queueList = document.getElementById("queue-list");
         const historyList = document.getElementById("history-list");
         const historyPlaceholder = document.getElementById("history-placeholder");
+        const historyClearButton = document.querySelector("[data-history-clear]");
         const workerStatus = document.getElementById("worker-status");
         const workerDetail = document.getElementById("worker-detail");
         const queueCountEls = document.querySelectorAll("[data-queue-count]");
@@ -2490,6 +2554,65 @@
           });
         }
 
+        function updateHistoryClearState(count) {
+          if (!historyClearButton) {
+            return;
+          }
+          historyClearButton.disabled = !count;
+        }
+
+        function getHistoryRowSummary(row) {
+          const filenameEl = row ? row.querySelector(".history-filename") : null;
+          const filename = filenameEl ? filenameEl.textContent.trim() : "Untitled file";
+          const timeEl = row ? row.querySelector("[data-time-meta]") : null;
+          const createdAt = timeEl ? timeEl.getAttribute("data-created-at") || "" : "";
+          const startedAt = timeEl ? timeEl.getAttribute("data-started-at") || "" : "";
+          const completedAt = timeEl ? timeEl.getAttribute("data-completed-at") || "" : "";
+          const anchorIso = completedAt || startedAt || createdAt;
+          const { absolute } = formatTimestamp(anchorIso);
+          const duration = calculateDuration(startedAt || createdAt, completedAt);
+          const chips = row ? Array.from(row.querySelectorAll(".output-chip")) : [];
+          const outputs = chips
+            .map((chip) => chip.textContent.trim())
+            .filter((text) => Boolean(text));
+          return {
+            filename,
+            absoluteTime: absolute,
+            duration,
+            outputs,
+          };
+        }
+
+        function buildHistoryDeleteMessage(summary) {
+          const timeParts = [];
+          if (summary.absoluteTime) {
+            timeParts.push(summary.absoluteTime);
+          }
+          if (summary.duration) {
+            timeParts.push(summary.duration);
+          }
+          const timeText = timeParts.length ? ` (${timeParts.join(" · ")})` : "";
+          const lines = [
+            `Delete "${summary.filename}"${timeText}?`,
+            "This removes the job from History and deletes its stored outputs (transcripts/logs) from disk.",
+          ];
+          if (summary.outputs.length) {
+            lines.push(`Outputs: ${summary.outputs.join(", ")}`);
+          }
+          lines.push("Downloaded files, clipboard contents, and Telegram copies aren't removed.");
+          return lines.join("\n");
+        }
+
+        function buildHistoryClearMessage(count) {
+          const label = count === 1 ? "item" : "items";
+          return [
+            "Delete all results?",
+            `This will delete ${count} completed ${label} and remove their stored outputs (transcripts/logs) from disk.`,
+            "This can't be undone.",
+            "Downloaded files, clipboard contents, and Telegram copies aren't removed.",
+          ].join("\n");
+        }
+
         if (uploadForm && fileInput && dropzone && fileList && fileSummary && uploadSubmit) {
           renderFileList();
 
@@ -2841,17 +2964,6 @@
               `);
             });
           }
-          items.push(`
-            <button
-              class="job-menu-item"
-              type="button"
-              role="menuitem"
-              data-action="copy-filename"
-              data-filename="${safeFilename}"
-            >
-              Copy filename
-            </button>
-          `);
           if (status === "done" && defaultResult) {
             items.push(`
               <button
@@ -2865,6 +2977,28 @@
               </button>
             `);
           }
+          items.push(`
+            <button
+              class="job-menu-item"
+              type="button"
+              role="menuitem"
+              data-action="copy-filename"
+              data-filename="${safeFilename}"
+            >
+              Copy filename
+            </button>
+          `);
+          items.push('<div class="job-menu-divider" role="separator"></div>');
+          items.push(`
+            <button
+              class="job-menu-item is-danger"
+              type="button"
+              role="menuitem"
+              data-action="delete-history"
+            >
+              Delete...
+            </button>
+          `);
           return `
             <details class="job-menu"${openAttr}>
               <summary aria-label="More actions">⋯</summary>
@@ -3416,6 +3550,7 @@
           if (!jobs || jobs.length === 0) {
             listEl.innerHTML = "";
             placeholderEl.style.display = "grid";
+            updateHistoryClearState(0);
             return;
           }
           const openJobs = new Set();
@@ -3441,6 +3576,7 @@
           hydrateTimestamps(listEl);
           hydrateTimeMeta(listEl);
           wireHistoryDetails(listEl);
+          updateHistoryClearState(jobs.length);
         }
 
         async function refreshState() {
@@ -3483,6 +3619,40 @@
           }
         }
 
+        async function deleteHistoryJob(jobId) {
+          const response = await fetch(`/api/history/${encodeURIComponent(jobId)}`, {
+            method: "DELETE",
+          });
+          let payload = {};
+          try {
+            payload = await response.json();
+          } catch (error) {
+            payload = {};
+          }
+          if (!response.ok) {
+            const message = payload && payload.detail ? payload.detail : "Failed to delete history item.";
+            throw new Error(message);
+          }
+          return payload;
+        }
+
+        async function clearHistoryJobs() {
+          const response = await fetch("/api/history/clear", {
+            method: "POST",
+          });
+          let payload = {};
+          try {
+            payload = await response.json();
+          } catch (error) {
+            payload = {};
+          }
+          if (!response.ok) {
+            const message = payload && payload.detail ? payload.detail : "Failed to clear history.";
+            throw new Error(message);
+          }
+          return payload;
+        }
+
         if (queueList) {
           queueList.addEventListener("click", async (event) => {
             const target = event.target;
@@ -3506,6 +3676,44 @@
             } catch (error) {
               console.warn("Failed to remove queued job", error);
               notifySystem("Action failed", "Failed to remove queued job.", "error");
+            } finally {
+              await refreshState();
+            }
+          });
+        }
+
+        if (historyClearButton) {
+          historyClearButton.addEventListener("click", async () => {
+            if (historyClearButton.disabled) {
+              return;
+            }
+            const count = historyList ? historyList.querySelectorAll(".history-row").length : 0;
+            if (!count) {
+              updateHistoryClearState(0);
+              return;
+            }
+            if (!window.confirm(buildHistoryClearMessage(count))) {
+              return;
+            }
+            historyClearButton.setAttribute("disabled", "disabled");
+            try {
+              const payload = await clearHistoryJobs();
+              if (payload && payload.failed_results) {
+                const failedCount = payload.failed_results;
+                const deletedCount = payload.deleted_jobs || 0;
+                notifySystem(
+                  "Cleanup incomplete",
+                  `Deleted ${deletedCount} items. ${failedCount} folders couldn't be removed.`,
+                  "error"
+                );
+              } else {
+                const deletedCount = payload && payload.deleted_jobs ? payload.deleted_jobs : count;
+                notifySystem("History cleared", `Deleted ${deletedCount} items.`, "success");
+              }
+            } catch (error) {
+              console.warn("Failed to clear history", error);
+              const message = error instanceof Error ? error.message : "Failed to clear history.";
+              notifySystem("Action failed", message, "error");
             } finally {
               await refreshState();
             }
@@ -3555,6 +3763,27 @@
                 return;
               }
               await copyPreviewForJob(jobId, row);
+            }
+            if (action === "delete-history") {
+              const jobId = row.getAttribute("data-job-id");
+              if (!jobId) {
+                return;
+              }
+              const summary = getHistoryRowSummary(row);
+              if (!window.confirm(buildHistoryDeleteMessage(summary))) {
+                return;
+              }
+              actionEl.setAttribute("disabled", "disabled");
+              try {
+                await deleteHistoryJob(jobId);
+                notifySystem("History item deleted", "The history entry was removed.", "success");
+              } catch (error) {
+                console.warn("Failed to delete history item", error);
+                const message = error instanceof Error ? error.message : "Failed to delete history item.";
+                notifySystem("Action failed", message, "error");
+              } finally {
+                await refreshState();
+              }
             }
             const menu = actionEl.closest(".job-menu");
             if (menu) {

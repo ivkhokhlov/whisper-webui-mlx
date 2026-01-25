@@ -143,6 +143,117 @@ def test_delete_queued_job_removes_upload(tmp_path: Path) -> None:
     assert not uploads_dir.exists()
 
 
+def test_delete_history_job_removes_results(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-history"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="done",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="any",
+        completed_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    )
+    insert_job(db_path, job)
+
+    results_dir = Path(app.state.results_dir) / job_id
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / "alpha.txt").write_text("transcript", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/history/{job_id}")
+
+    assert response.status_code == 200
+    assert list_jobs(db_path) == []
+    assert not results_dir.exists()
+    assert not upload_path.exists()
+    assert not uploads_dir.exists()
+
+
+def test_delete_history_job_rejects_queue(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-queued"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="queued",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="any",
+    )
+    insert_job(db_path, job)
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/history/{job_id}")
+
+    assert response.status_code == 409
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].id == job_id
+
+
+def test_clear_history_removes_completed(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    done_id = "job-done"
+    failed_id = "job-failed"
+    queued_id = "job-queued"
+
+    for job_id, status in ((done_id, "done"), (failed_id, "failed"), (queued_id, "queued")):
+        uploads_dir = Path(app.state.uploads_dir) / job_id
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        upload_path = uploads_dir / "alpha.txt"
+        upload_path.write_text("data", encoding="utf-8")
+        job = JobRecord(
+            id=job_id,
+            filename="alpha.txt",
+            status=status,
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(upload_path),
+            language="any",
+            completed_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
+            if status in {"done", "failed"}
+            else None,
+        )
+        insert_job(db_path, job)
+        if status in {"done", "failed"}:
+            results_dir = Path(app.state.results_dir) / job_id
+            results_dir.mkdir(parents=True, exist_ok=True)
+            (results_dir / "alpha.txt").write_text("transcript", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.post("/api/history/clear")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deleted_jobs"] == 2
+    assert payload["deleted_results"] == 2
+    assert payload["failed_results"] == 0
+
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].id == queued_id
+    assert not (Path(app.state.results_dir) / done_id).exists()
+    assert not (Path(app.state.results_dir) / failed_id).exists()
 def test_jobs_persist_across_restart(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     files = [("files", ("alpha.txt", b"one", "text/plain"))]

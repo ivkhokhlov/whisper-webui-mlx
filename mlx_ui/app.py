@@ -12,10 +12,13 @@ from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import (
     JobRecord,
+    delete_history_job,
+    delete_history_jobs,
     delete_queued_job,
     get_job,
     init_db,
     insert_job,
+    list_history_jobs,
     list_jobs,
     recover_running_jobs,
 )
@@ -144,6 +147,30 @@ def clear_directory(path: Path) -> None:
             continue
         except OSError as exc:
             logger.warning("Failed to remove %s: %s", entry, exc)
+
+
+def remove_results_dir(job_id: str) -> str:
+    if not is_safe_path_component(job_id):
+        logger.warning("Refusing to remove results for unsafe job id %s", job_id)
+        return "failed"
+    results_dir = get_results_dir()
+    job_dir = results_dir / job_id
+    results_dir_resolved = results_dir.resolve()
+    job_dir_resolved = job_dir.resolve()
+    if not job_dir_resolved.is_relative_to(results_dir_resolved):
+        logger.warning("Refusing to remove results outside results dir for job %s", job_id)
+        return "failed"
+    if not job_dir_resolved.exists():
+        return "missing"
+    try:
+        if job_dir_resolved.is_dir():
+            shutil.rmtree(job_dir_resolved)
+        else:
+            job_dir_resolved.unlink()
+        return "deleted"
+    except Exception:
+        logger.exception("Failed to remove results for job %s", job_id)
+        return "failed"
 
 
 def is_safe_path_component(value: str) -> bool:
@@ -472,3 +499,60 @@ def delete_job_from_queue(job_id: str) -> dict[str, bool]:
         )
     cleanup_upload_path(job.upload_path, get_uploads_dir(), job.id)
     return {"ok": True}
+
+
+@app.delete("/api/history/{job_id}")
+def delete_history_item(job_id: str) -> dict[str, object]:
+    if not is_safe_path_component(job_id):
+        raise HTTPException(status_code=404)
+    db_path = get_db_path()
+    job = get_job(db_path, job_id)
+    if job is None:
+        raise HTTPException(status_code=404)
+    if job.status not in {"done", "failed"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Only completed jobs can be removed.",
+        )
+    result_state = remove_results_dir(job.id)
+    if result_state == "failed":
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to remove stored outputs.",
+        )
+    cleanup_upload_path(job.upload_path, get_uploads_dir(), job.id)
+    deleted = delete_history_job(db_path, job_id)
+    if not deleted:
+        return {
+            "ok": True,
+            "warnings": ["History entry was already removed."],
+        }
+    return {"ok": True}
+
+
+@app.post("/api/history/clear")
+def clear_history() -> dict[str, object]:
+    db_path = get_db_path()
+    jobs = list_history_jobs(db_path)
+    deletable_ids: list[str] = []
+    deleted_results = 0
+    failed_results = 0
+    for job in jobs:
+        result_state = remove_results_dir(job.id)
+        if result_state == "deleted":
+            deleted_results += 1
+        elif result_state == "failed":
+            failed_results += 1
+            continue
+        cleanup_upload_path(job.upload_path, get_uploads_dir(), job.id)
+        deletable_ids.append(job.id)
+    deleted_jobs = delete_history_jobs(db_path, deletable_ids)
+    response: dict[str, object] = {
+        "ok": True,
+        "deleted_jobs": deleted_jobs,
+        "deleted_results": deleted_results,
+        "failed_results": failed_results,
+    }
+    if deleted_jobs != len(deletable_ids):
+        response["warnings"] = ["Some history entries were already removed."]
+    return response

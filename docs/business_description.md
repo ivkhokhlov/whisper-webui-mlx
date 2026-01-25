@@ -43,6 +43,8 @@ default model selection, WTM quick mode, and Telegram delivery configuration.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
 - History action menus (⋯) dismiss on outside click for faster triage.
+- Per-item history deletion and bulk “delete all results” controls with
+  confirmations, removing stored outputs from disk.
 - Local data storage under data/ for easy retention and cleanup.
 - Settings panel for default model selection and WTM quick mode, persisted in
   data/settings.json.
