@@ -46,8 +46,8 @@ default model selection, WTM quick mode, and Telegram delivery configuration.
 - Per-item history deletion and bulk “delete all results” controls with
   confirmations, removing stored outputs from disk.
 - Local data storage under data/ for easy retention and cleanup.
-- Settings panel for default model selection and WTM quick mode, persisted in
-  data/settings.json.
+- Settings panel for default model selection (defaults to large-v3-turbo) and
+  WTM quick mode, persisted in data/settings.json.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
