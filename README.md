@@ -76,7 +76,7 @@ make fmt
 - `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
 - `WTM_QUICK` - set to `1`/`true` to enable quick mode (default: `false`)
 - `TRANSCRIBER_BACKEND` - `wtm` (default), `whisper`, or `fake`
-- `WHISPER_MODEL` - Whisper model name (default: `small`)
+- `WHISPER_MODEL` - Whisper model name (default: `large-v3-turbo`)
 - `WHISPER_DEVICE` - `cpu` (default) or `cuda` if you extend the image
 - `WHISPER_FP16` - set to `1`/`true` to enable fp16 (GPU-only)
 - `WHISPER_CACHE_DIR` - override Whisper model cache directory
