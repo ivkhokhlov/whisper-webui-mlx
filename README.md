@@ -4,6 +4,9 @@ Local-only Web UI for running whisper-turbo-mlx on macOS Apple Silicon. Upload
 audio or video files, process them sequentially with `wtm`, and download the
 results from a queue + history view.
 
+## Demo
+![Demo](docs/demo.gif)
+
 ## Origin / inspiration
 This repo’s core idea and MLX backend flow are based on JosefAlbers’s
 `whisper-turbo-mlx` project:
