@@ -42,7 +42,7 @@ downloads model weights (can take a while).
 You can install the app and a convenient launcher script with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pvpshoot/whisper-webui-mlx/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ivkhokhlov/whisper-webui-mlx/master/scripts/install.sh | bash
 ```
 
 This will:
