@@ -37,6 +37,25 @@ The launcher will install (if missing): Xcode Command Line Tools, Homebrew,
 Python 3.12, ffmpeg, Python deps, and whisper-turbo-mlx. The first run also
 downloads model weights (can take a while).
 
+## Install via curl
+
+You can install the app and a convenient launcher script with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pvpshoot/whisper-webui-mlx/master/scripts/install.sh | bash
+```
+
+This will:
+
+- Clone/update the repo under `~/.local/share/whisper-webui-mlx` (by default)
+- Create a `whisper-webui-mlx` launcher in `~/.local/bin`
+
+Make sure `~/.local/bin` is on your `PATH`, then you can start the app with:
+
+```bash
+whisper-webui-mlx
+```
+
 ## Docker quick start (CPU backend)
 Docker runs a CPU-only transcription backend (`openai-whisper`). This is slower
 than MLX but works on any Docker host. For best performance on Apple Silicon,
