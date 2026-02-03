@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL_DEFAULT="https://github.com/pvpshoot/whisper-webui-mlx.git"
+REPO_URL_DEFAULT="https://github.com/ivkhokhlov/whisper-webui-mlx.git"
 
 usage() {
     cat <<'EOF'
 Whisper WebUI (MLX) installer
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/pvpshoot/whisper-webui-mlx/master/scripts/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/ivkhokhlov/whisper-webui-mlx/master/scripts/install.sh | bash
 
 Options:
-  --repo URL       Override git repository URL (default: https://github.com/pvpshoot/whisper-webui-mlx.git)
+  --repo URL       Override git repository URL (default: https://github.com/ivkhokhlov/whisper-webui-mlx.git)
   --dir PATH       Install directory (default: $HOME/.local/share/whisper-webui-mlx)
   --bin-dir PATH   Directory for the launcher script (default: $HOME/.local/bin)
   -h, --help       Show this help
