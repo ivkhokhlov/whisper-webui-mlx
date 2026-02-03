@@ -98,6 +98,7 @@ select_python() {
 
 ensure_python() {
   local python_bin
+
   python_bin="$(select_python || true)"
   if [[ -n "$python_bin" ]]; then
     printf '%s\n' "==> Using Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
@@ -105,13 +106,40 @@ ensure_python() {
     return 0
   fi
 
+  # Prefer Homebrew's python@3.12 even if it isn't linked into PATH.
+  if command -v brew >/dev/null 2>&1; then
+    local brew_prefix
+    brew_prefix="$(brew --prefix python@3.12 2>/dev/null || true)"
+    if [[ -n "$brew_prefix" && -x "$brew_prefix/bin/python3.12" ]]; then
+      python_bin="$brew_prefix/bin/python3.12"
+      if python_is_compatible "$python_bin"; then
+        printf '%s\n' "==> Using Homebrew Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
+        echo "$python_bin"
+        return 0
+      fi
+    fi
+  fi
+
   printf '%s\n' "==> Python 3.12.3+ not found. Installing python@3.12 via Homebrew..." >&2
   brew install python@3.12
   hash -r
+
+  if command -v brew >/dev/null 2>&1; then
+    local brew_prefix
+    brew_prefix="$(brew --prefix python@3.12 2>/dev/null || true)"
+    if [[ -n "$brew_prefix" && -x "$brew_prefix/bin/python3.12" ]]; then
+      python_bin="$brew_prefix/bin/python3.12"
+      printf '%s\n' "==> Using Homebrew Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
+      echo "$python_bin"
+      return 0
+    fi
+  fi
+
   if command -v python3.12 >/dev/null 2>&1; then
     echo "python3.12"
     return 0
   fi
+
   fail "python3.12 not found after install. Ensure Homebrew is on PATH."
 }
 
@@ -134,6 +162,13 @@ ensure_python_deps() {
   local python_bin="$1"
   if [[ ! -f "$ROOT_DIR/requirements.txt" ]]; then
     fail "requirements.txt not found in repo root."
+  fi
+  if [[ -d "$VENV_DIR" ]]; then
+    # Check that existing venv Python is compatible; recreate if too old.
+    if ! python_is_compatible "$VENV_PYTHON"; then
+      warn "Existing virtualenv Python is too old; recreating venv..."
+      rm -rf "$VENV_DIR"
+    fi
   fi
   if [[ ! -d "$VENV_DIR" ]]; then
     log "Creating virtual environment at $VENV_DIR..."
