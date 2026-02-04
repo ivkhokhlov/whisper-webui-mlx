@@ -9,8 +9,9 @@ support files or folders with a preflight summary (count, size, estimate) and
 basic filtering before queueing. After initial setup and model download, it runs
 fully offline. Recent UI work focuses on a compact, scannable History view with
 details-on-demand and transcript previews, aligned queue status metadata for
-clearer scanning, plus a dedicated Settings panel for default model selection,
-WTM quick mode, and Telegram delivery configuration.
+clearer scanning, a stable Worker status card (single-line filename truncation,
+no duplicated status text), plus a dedicated Settings panel for default model
+selection, WTM quick mode, and Telegram delivery configuration.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -38,6 +39,8 @@ WTM quick mode, and Telegram delivery configuration.
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
+- Worker status card that surfaces the current job filename (truncated with
+  ellipsis to avoid layout shifts) and elapsed time.
 - Compact History view with status, filename, time, output labels, and one-click
   primary actions (download or view log).
 - Details-on-demand panel for full timestamps, outputs list, and error logs.

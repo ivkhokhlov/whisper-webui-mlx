@@ -99,29 +99,22 @@
 
       .worker-detail {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 6px;
         align-items: baseline;
-      }
-
-      .worker-detail-prefix {
-        white-space: nowrap;
+        min-width: 0;
       }
 
       .worker-filename {
-        flex: 1 1 160px;
+        flex: 1 1 auto;
         min-width: 0;
-        max-width: 100%;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
         overflow: hidden;
         text-overflow: ellipsis;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        white-space: nowrap;
       }
 
       .worker-elapsed {
+        flex: 0 0 auto;
         white-space: nowrap;
       }
 
@@ -1417,10 +1410,11 @@
           <div class="status" id="worker-status">{{ worker.status }}</div>
           <p id="worker-detail" class="worker-detail">
             {% if worker.status == "Running" and worker.filename %}
-              <span class="worker-detail-prefix">Running</span>
-              <span class="worker-filename" title="{{ worker.filename }}" aria-label="{{ worker.filename }}">
-                {{ worker.filename }}
-              </span>
+              <span
+                class="worker-filename"
+                title="{{ worker.filename }}"
+                aria-label="{{ worker.filename }}"
+              >{{ worker.filename }}</span>
             {% else %}
               <span class="worker-detail-idle">Sequential queue, one job at a time.</span>
             {% endif %}
@@ -2075,15 +2069,12 @@
             return;
           }
           workerDetail.textContent = "";
-          const prefix = document.createElement("span");
-          prefix.className = "worker-detail-prefix";
-          prefix.textContent = "Running";
           const name = document.createElement("span");
           name.className = "worker-filename";
           name.textContent = filename;
           name.title = filename;
           name.setAttribute("aria-label", filename);
-          workerDetail.append(prefix, name);
+          workerDetail.append(name);
           if (elapsed) {
             const elapsedEl = document.createElement("span");
             elapsedEl.className = "worker-elapsed";
