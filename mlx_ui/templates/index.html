@@ -881,17 +881,18 @@
 
 
       .job-row {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(88px, max-content);
         gap: 16px;
         padding: 14px 16px;
         border-radius: 12px;
         background: #fff;
         border: 1px solid #f4e6d8;
-        align-items: flex-start;
+        align-items: start;
       }
 
       .job-row.is-running {
+        grid-template-columns: auto minmax(0, 1fr) minmax(88px, max-content);
         border-color: var(--accent);
         background: #fff0e1;
         box-shadow: 0 16px 30px rgba(212, 106, 62, 0.18);
@@ -938,7 +939,6 @@
         letter-spacing: 0.1em;
         font-size: 0.72rem;
         color: var(--accent-strong);
-        align-self: center;
       }
 
       .job-elapsed {
@@ -951,8 +951,23 @@
         display: flex;
         flex-direction: column;
         align-items: flex-end;
+        justify-self: end;
+        text-align: right;
         gap: 6px;
         min-width: 92px;
+      }
+
+      .job-actions-top {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+
+      .job-actions-bottom {
+        margin-top: auto;
+        display: flex;
+        align-items: flex-end;
+        justify-content: flex-end;
       }
 
       .job-bin {
@@ -1299,8 +1314,11 @@
         }
 
         .job-row {
-          flex-direction: column;
-          align-items: flex-start;
+          grid-template-columns: 1fr;
+        }
+
+        .job-row.is-running {
+          grid-template-columns: 1fr;
         }
 
         .history-row {
@@ -1325,6 +1343,10 @@
           align-items: center;
           justify-content: space-between;
           width: 100%;
+        }
+
+        .job-actions-bottom {
+          margin-top: 0;
         }
 
         .status-card {
@@ -1505,23 +1527,28 @@
                     {% endif %}
                   </div>
                   <div class="job-actions">
-                    <div class="job-status">{{ job.status }}</div>
+                    <div class="job-actions-top">
+                      <div class="job-status">{{ job.status }}</div>
+                    </div>
                     {% if is_running and job.started_at %}
-                      <div class="job-elapsed" data-started-at="{{ job.started_at }}"></div>
-                    {% endif %}
-                    {% if job.status == "queued" %}
-                      <button
-                        class="job-bin"
-                        type="button"
-                        data-job-id="{{ job.id }}"
-                        aria-label="Remove from queue"
-                        title="Remove from queue"
-                      >
-                        <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                          <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
-                        </svg>
-                        <span class="sr-only">Remove</span>
-                      </button>
+                      <div class="job-actions-bottom">
+                        <div class="job-elapsed" data-started-at="{{ job.started_at }}"></div>
+                      </div>
+                    {% elif job.status == "queued" %}
+                      <div class="job-actions-bottom">
+                        <button
+                          class="job-bin"
+                          type="button"
+                          data-job-id="{{ job.id }}"
+                          aria-label="Remove from queue"
+                          title="Remove from queue"
+                        >
+                          <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
+                          </svg>
+                          <span class="sr-only">Remove</span>
+                        </button>
+                      </div>
                     {% endif %}
                   </div>
                 </div>
@@ -2890,7 +2917,12 @@
               </button>
             `
             : "";
-          return `<div class="job-actions">${status}${extraBlock}${binButton}</div>`;
+          const bottomParts = [extraBlock, binButton].filter(Boolean).join("");
+          const topSlot = `<div class="job-actions-top">${status}</div>`;
+          const bottomSlot = bottomParts
+            ? `<div class="job-actions-bottom">${bottomParts}</div>`
+            : "";
+          return `<div class="job-actions">${topSlot}${bottomSlot}</div>`;
         }
 
         function buildQueueLine(position) {
