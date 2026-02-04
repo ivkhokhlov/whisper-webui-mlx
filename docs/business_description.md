@@ -56,6 +56,7 @@ WTM quick mode, and Telegram delivery configuration.
   and the original filename as the caption.
 - (Planned/available) Live mode for recording and chunked transcription in the
   browser.
+- Branded favicon in the browser tab for quick visual recognition of the local UI.
 
 ## Value proposition
 - Privacy by design: all processing stays on the user's machine.
