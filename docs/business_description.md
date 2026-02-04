@@ -8,8 +8,9 @@ sequentially, and download text results from a queue/history view. Uploads
 support files or folders with a preflight summary (count, size, estimate) and
 basic filtering before queueing. After initial setup and model download, it runs
 fully offline. Recent UI work focuses on a compact, scannable History view with
-details-on-demand and transcript previews, plus a dedicated Settings panel for
-default model selection, WTM quick mode, and Telegram delivery configuration.
+details-on-demand and transcript previews, aligned queue status metadata for
+clearer scanning, plus a dedicated Settings panel for default model selection,
+WTM quick mode, and Telegram delivery configuration.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
