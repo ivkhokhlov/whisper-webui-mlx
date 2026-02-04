@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from mlx_ui.db import (
@@ -44,6 +45,8 @@ templates = Jinja2Templates(
     directory=str(Path(__file__).resolve().parent / "templates")
 )
 BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 DEFAULT_UPLOADS_DIR = BASE_DIR / "data" / "uploads"
 DEFAULT_RESULTS_DIR = BASE_DIR / "data" / "results"
 DEFAULT_DB_PATH = BASE_DIR / "data" / "jobs.db"
@@ -78,6 +81,11 @@ def _patch_testclient_allow_redirects() -> None:
 
 
 _patch_testclient_allow_redirects()
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    return FileResponse(STATIC_DIR / "favicon.ico")
 
 
 @app.on_event("startup")
