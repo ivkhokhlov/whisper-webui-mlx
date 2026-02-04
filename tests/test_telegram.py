@@ -60,15 +60,13 @@ def test_maybe_send_telegram_success(monkeypatch, tmp_path: Path) -> None:
 
     maybe_send_telegram(job, result_path, timeout=2.5)
 
-    assert len(requests) == 2
+    assert len(requests) == 1
     assert requests[0][1] == 2.5
-    assert requests[1][1] == 2.5
-    assert requests[0][0].full_url.endswith("/sendMessage")
-    assert requests[1][0].full_url.endswith("/sendDocument")
-    assert b"chat_id=123" in requests[0][0].data
-    assert b"Transcription+complete%3A" in requests[0][0].data
-    assert b"chat_id" in requests[1][0].data
-    assert result_path.name.encode("utf-8") in requests[1][0].data
+    assert requests[0][0].full_url.endswith("/sendDocument")
+    assert b"chat_id" in requests[0][0].data
+    assert job.filename.encode("utf-8") in requests[0][0].data
+    assert b"Transcription complete" not in requests[0][0].data
+    assert result_path.name.encode("utf-8") in requests[0][0].data
 
 
 def test_maybe_send_telegram_skips_without_config(monkeypatch, tmp_path: Path) -> None:

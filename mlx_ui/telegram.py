@@ -87,15 +87,10 @@ def maybe_send_telegram(
         return
 
     try:
-        send_telegram_message(
-            config,
-            text=f"Transcription complete: {job.filename}",
-            timeout=timeout,
-        )
         send_telegram_document(
             config,
             result_path,
-            caption=f"Transcription complete: {job.filename}",
+            caption=job.filename,
             timeout=timeout,
         )
     except Exception as exc:
