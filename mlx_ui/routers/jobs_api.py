@@ -15,7 +15,12 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
-from mlx_ui.app_context import get_base_dir, get_db_path, get_results_dir, get_uploads_dir
+from mlx_ui.app_context import (
+    get_base_dir,
+    get_db_path,
+    get_results_dir,
+    get_uploads_dir,
+)
 from mlx_ui.db import (
     JobRecord,
     delete_history_job,

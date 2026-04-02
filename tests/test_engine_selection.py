@@ -76,10 +76,7 @@ def test_engine_registry_exposes_visible_settings_engines(monkeypatch) -> None:
     assert options[2]["implemented"] is True
     assert options[3]["available"] is False
     assert options[3]["implemented"] is True
-    assert (
-        options[2]["reason"]
-        == "the optional 'cohere' Python SDK is not installed."
-    )
+    assert options[2]["reason"] == "the optional 'cohere' Python SDK is not installed."
     assert (
         options[3]["reason"]
         == "Parakeet currently requires Linux with an NVIDIA CUDA GPU."
@@ -121,9 +118,13 @@ def test_engine_setting_selects_cohere_backend(tmp_path: Path, monkeypatch) -> N
 
 def test_backend_aliases_resolve_through_registry() -> None:
     assert engine_registry.resolve_backend_provider("wtm").id == "whisper_mlx"
-    assert engine_registry.resolve_backend_provider("openai-whisper").id == "whisper_cpu"
+    assert (
+        engine_registry.resolve_backend_provider("openai-whisper").id == "whisper_cpu"
+    )
     assert engine_registry.resolve_backend_provider("fake").id == "fake"
-    assert engine_registry.resolve_backend_provider("fake", include_hidden=False) is None
+    assert (
+        engine_registry.resolve_backend_provider("fake", include_hidden=False) is None
+    )
 
 
 def test_resolve_transcriber_supports_legacy_backend_aliases(monkeypatch) -> None:

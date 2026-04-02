@@ -20,9 +20,7 @@ ENGINE_COHERE = COHERE_ENGINE
 ENGINE_PARAKEET = PARAKEET_TDT_V3_ENGINE
 ENGINE_CHOICES = tuple(provider.id for provider in list_engine_providers())
 CONFIGURABLE_ENGINE_CHOICES = get_selectable_engine_ids()
-COHERE_PRODUCT_NOTE = (
-    "Cohere runs in the cloud and needs network access. It is not a local/offline engine."
-)
+COHERE_PRODUCT_NOTE = "Cohere runs in the cloud and needs network access. It is not a local/offline engine."
 PARAKEET_DECODING_CHOICES = ("greedy", "beam")
 DEFAULT_PARAKEET_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 DEFAULT_PARAKEET_CHUNK_DURATION = 30
@@ -275,4 +273,3 @@ def validate_settings_payload(payload: object) -> tuple[dict[str, object], list[
         )
 
     return updates, errors
-

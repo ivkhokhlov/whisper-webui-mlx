@@ -76,10 +76,14 @@ class EngineProvider:
     visible_in_settings: bool = True
 
     def is_available(self) -> bool:
-        return any(implementation.is_available() for implementation in self.implementations)
+        return any(
+            implementation.is_available() for implementation in self.implementations
+        )
 
     def is_implemented(self) -> bool:
-        return any(implementation.is_implemented() for implementation in self.implementations)
+        return any(
+            implementation.is_implemented() for implementation in self.implementations
+        )
 
     def unavailable_reason(self) -> str | None:
         if self.is_available():
@@ -107,7 +111,9 @@ class EngineProvider:
             normalized = implementation_id.strip().lower()
             for implementation in self.implementations:
                 aliases = (implementation.id,) + implementation.backend_aliases
-                if any(alias.strip().lower() == normalized for alias in aliases if alias):
+                if any(
+                    alias.strip().lower() == normalized for alias in aliases if alias
+                ):
                     if require_available and not implementation.is_available():
                         raise ValueError(
                             f"Backend '{implementation_id}' is not available for engine '{self.id}'."
@@ -347,7 +353,9 @@ for provider in _ENGINE_PROVIDERS:
 def list_engine_providers(*, visible_only: bool = False) -> tuple[EngineProvider, ...]:
     if not visible_only:
         return _ENGINE_PROVIDERS
-    return tuple(provider for provider in _ENGINE_PROVIDERS if provider.visible_in_settings)
+    return tuple(
+        provider for provider in _ENGINE_PROVIDERS if provider.visible_in_settings
+    )
 
 
 def get_engine_provider(engine_id: str) -> EngineProvider | None:

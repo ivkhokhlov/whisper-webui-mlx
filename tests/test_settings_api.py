@@ -105,7 +105,10 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     )
     assert payload["local_models"]["whisper"]["configured_model"] == "large-v3-turbo"
     assert payload["local_models"]["whisper"]["configured_model_present"] is False
-    assert payload["local_models"]["parakeet"]["configured_model"] == "nvidia/parakeet-tdt-0.6b-v3"
+    assert (
+        payload["local_models"]["parakeet"]["configured_model"]
+        == "nvidia/parakeet-tdt-0.6b-v3"
+    )
     assert payload["local_models"]["parakeet"]["configured_model_present"] is False
     assert payload["local_models"]["selected"] is None
 
@@ -416,7 +419,9 @@ def test_live_snapshot_reports_flag_and_environment_requirements(
     )
 
 
-def test_downloaded_models_only_lists_whisper_models(tmp_path: Path, monkeypatch) -> None:
+def test_downloaded_models_only_lists_whisper_models(
+    tmp_path: Path, monkeypatch
+) -> None:
     cache_root = tmp_path / "cache"
     whisper_cache = cache_root / "whisper"
     hf_cache = cache_root / "huggingface" / "hub"
@@ -424,22 +429,16 @@ def test_downloaded_models_only_lists_whisper_models(tmp_path: Path, monkeypatch
     hf_cache.mkdir(parents=True, exist_ok=True)
     (whisper_cache / "large-v3-turbo.pt").write_text("ok", encoding="utf-8")
     (hf_cache / "models--openai--whisper-large-v3").mkdir(parents=True, exist_ok=True)
-    (
-        hf_cache
-        / "models--openai--whisper-large-v3"
-        / "snapshots"
-        / "abc123"
-    ).mkdir(parents=True, exist_ok=True)
+    (hf_cache / "models--openai--whisper-large-v3" / "snapshots" / "abc123").mkdir(
+        parents=True, exist_ok=True
+    )
     (hf_cache / "models--nvidia--parakeet-tdt-0.6b-v3").mkdir(
         parents=True,
         exist_ok=True,
     )
-    (
-        hf_cache
-        / "models--nvidia--parakeet-tdt-0.6b-v3"
-        / "snapshots"
-        / "def456"
-    ).mkdir(parents=True, exist_ok=True)
+    (hf_cache / "models--nvidia--parakeet-tdt-0.6b-v3" / "snapshots" / "def456").mkdir(
+        parents=True, exist_ok=True
+    )
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
 
     models = list_downloaded_models()
@@ -471,12 +470,9 @@ def test_runtime_metadata_reports_local_model_visibility_and_selected_readiness(
     whisper_cache.mkdir(parents=True, exist_ok=True)
     hf_cache.mkdir(parents=True, exist_ok=True)
     (whisper_cache / "large-v3-turbo.pt").write_text("ok", encoding="utf-8")
-    (
-        hf_cache
-        / "models--nvidia--parakeet-tdt-0.6b-v3"
-        / "snapshots"
-        / "def456"
-    ).mkdir(parents=True, exist_ok=True)
+    (hf_cache / "models--nvidia--parakeet-tdt-0.6b-v3" / "snapshots" / "def456").mkdir(
+        parents=True, exist_ok=True
+    )
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
 
     metadata = build_runtime_metadata(base_dir=tmp_path)

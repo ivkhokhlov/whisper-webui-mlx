@@ -171,7 +171,5 @@ def test_write_transcript_outputs_uses_word_timings_when_segments_are_missing(
 
     assert has_timing_data(result) is True
     assert written[OUTPUT_FORMAT_SRT].read_text(encoding="utf-8") == (
-        "1\n"
-        "00:00:00,000 --> 00:00:01,100\n"
-        "hello world\n"
+        "1\n00:00:00,000 --> 00:00:01,100\nhello world\n"
     )

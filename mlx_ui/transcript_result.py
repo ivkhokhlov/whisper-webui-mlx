@@ -147,14 +147,20 @@ def _collect_timed_segments(result: TranscriptResult) -> tuple[_TimedSegment, ..
             segments.append(normalized)
     if segments:
         return tuple(segments)
-    normalized_words = _timed_segment_from_words(result.words, fallback_text=result.text)
+    normalized_words = _timed_segment_from_words(
+        result.words, fallback_text=result.text
+    )
     if normalized_words is not None:
         return (normalized_words,)
     return ()
 
 
 def _timed_segment_from_segment(segment: TranscriptSegment) -> _TimedSegment | None:
-    if segment.start is not None and segment.end is not None and segment.end > segment.start:
+    if (
+        segment.start is not None
+        and segment.end is not None
+        and segment.end > segment.start
+    ):
         text = _segment_text(segment)
         if not text:
             return None
@@ -194,7 +200,9 @@ def _segment_text(segment: TranscriptSegment) -> str:
 
 
 def _join_words(words: Sequence[TranscriptWordTiming]) -> str:
-    return " ".join(part for part in (_normalize_text(word.text) for word in words) if part)
+    return " ".join(
+        part for part in (_normalize_text(word.text) for word in words) if part
+    )
 
 
 def _serialize_segment(segment: TranscriptSegment) -> dict[str, object]:
@@ -234,9 +242,7 @@ def _format_timestamp(seconds: float, *, decimal: str = ".") -> str:
     hours, remainder = divmod(total_milliseconds, 3_600_000)
     minutes, remainder = divmod(remainder, 60_000)
     secs, milliseconds = divmod(remainder, 1_000)
-    return (
-        f"{hours:02d}:{minutes:02d}:{secs:02d}{decimal}{milliseconds:03d}"
-    )
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}{decimal}{milliseconds:03d}"
 
 
 def _normalize_text(text: str) -> str:

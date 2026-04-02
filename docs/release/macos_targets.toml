@@ -1,0 +1,44 @@
+# macOS release targets (artifact contract)
+#
+# This file is the single source of truth for macOS release target definitions.
+# Build/packaging scripts should consume it instead of hard-coding names/IDs.
+#
+# Glossary:
+# - "engine" values use UI/product-facing engine ids (see README "Engine matrix").
+# - A "release artifact" is the file attached to a GitHub release (typically a zip).
+# - The zip is expected to contain a single .app bundle at the top level.
+#
+# Non-goals:
+# - Parakeet local support on macOS is intentionally NOT part of this contract.
+
+[macos]
+product_name = "Whisper WebUI (MLX)"
+bundle_identifier_base = "com.whisperwebui.mlx"
+bundle_name = "Whisper WebUI (MLX).app"
+
+# Artifact naming policy:
+# - prefix: stable, kebab-case project name (matches install launcher naming)
+# - version: {version} placeholder (from pyproject.toml)
+# - target: one of the keys in [macos.targets]
+# - ext: typically "zip" (zipped .app) and/or "dmg" (drag-to-Applications installer)
+artifact_prefix = "whisper-webui-mlx"
+
+[macos.targets."macos-arm64"]
+# Apple Silicon: primary local path (MLX / Metal).
+arch = "arm64"
+minimum_macos = "12.0"
+default_local_engine = "whisper_mlx"
+optional_engines = ["whisper_cpu", "cohere"]
+bundle_identifier_suffix = "" # full bundle id: com.whisperwebui.mlx
+artifact_name = "whisper-webui-mlx-v{version}-macos-arm64.zip"
+dmg_artifact_name = "whisper-webui-mlx-v{version}-macos-arm64.dmg"
+
+[macos.targets."macos-intel"]
+# Intel: practical CPU fallback path (openai-whisper).
+arch = "x86_64"
+minimum_macos = "12.0"
+default_local_engine = "whisper_cpu"
+optional_engines = ["cohere"]
+bundle_identifier_suffix = ".cpu" # full bundle id: com.whisperwebui.mlx.cpu
+artifact_name = "whisper-webui-mlx-v{version}-macos-intel.zip"
+dmg_artifact_name = "whisper-webui-mlx-v{version}-macos-intel.dmg"
