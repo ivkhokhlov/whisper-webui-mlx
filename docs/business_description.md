@@ -7,13 +7,17 @@ video files in batches, choose a job language, queue work, and retrieve results
 from a queue/history flow backed by SQLite and on-disk artifacts. The product
 still runs on `127.0.0.1` and keeps uploads, results, settings, and logs on the
 local machine, but it now supports both local engines and an optional cloud
-engine. Recent work added a real provider registry, per-job engine persistence,
-per-job engine resolution in the worker, normalized transcript outputs, local
-model readiness metadata, and UI badges that show which engine and language each
-job used. The `/live` route remains an honest beta preview rather than a
-production capture workflow. Ongoing refactors keep the app maintainable while
-preserving the same UI/API contract, including an app-factory bootstrap path,
-focused routers, provider modules per engine, and template partials.
+engine. In developer/repo mode, mutable runtime state lives under `data/` inside
+the repo. In packaged macOS app mode, the same mutable state lives under
+`~/Library/Application Support/<bundle_id>/data/` so the `.app` bundle and its
+embedded payload remain read-only. Recent work added a real provider registry,
+per-job engine persistence, per-job engine resolution in the worker, normalized
+transcript outputs, local model readiness metadata, and UI badges that show
+which engine and language each job used. The `/live` route remains an honest
+beta preview rather than a production capture workflow. Ongoing refactors keep
+the app maintainable while preserving the same UI/API contract, including an
+app-factory bootstrap path, focused routers, provider modules per engine, and
+template partials.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -39,6 +43,9 @@ focused routers, provider modules per engine, and template partials.
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
   SQLite, plus best-effort Telegram delivery and update checks.
+- A packaged macOS distribution path (self-contained `.app` + DMG) so a
+  non-technical user can install, double-click, and use the same localhost UX
+  without cloning the repo or installing Python.
 - Shared output writers so engines can produce `.txt` by default and `.json`,
   `.srt`, or `.vtt` when real metadata exists.
 
@@ -74,10 +81,13 @@ focused routers, provider modules per engine, and template partials.
 - History action menus (⋯) dismiss on outside click for faster triage.
 - Per-item history deletion and bulk “delete all results” controls with
   confirmations, removing stored outputs from disk.
-- Local data storage under data/ for easy retention and cleanup.
+- Local data storage:
+  - developer/repo mode: `data/` in the repo
+  - packaged macOS app mode: `~/Library/Application Support/<bundle_id>/data/`
 - Settings panel for engine selection, Whisper/Parakeet/Cohere configuration,
   default language, output formats, WTM quick mode, Telegram delivery, and local
-  diagnostics, persisted in `data/settings.json`.
+  diagnostics, persisted in `data/settings.json` (dev) or
+  `~/Library/Application Support/<bundle_id>/data/settings.json` (packaged).
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be

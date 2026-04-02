@@ -261,9 +261,15 @@ def test_worker_resolves_requested_engine_per_job_and_reuses_cache(
     assert stored_jobs["job1"].effective_engine == "whisper_mlx"
     assert stored_jobs["job2"].effective_engine == "whisper_cpu"
     assert stored_jobs["job3"].effective_engine == "whisper_mlx"
-    assert (results_dir / "job1" / "alpha.txt").read_text(encoding="utf-8") == "whisper_mlx"
-    assert (results_dir / "job2" / "beta.txt").read_text(encoding="utf-8") == "whisper_cpu"
-    assert (results_dir / "job3" / "gamma.txt").read_text(encoding="utf-8") == "whisper_mlx"
+    assert (results_dir / "job1" / "alpha.txt").read_text(
+        encoding="utf-8"
+    ) == "whisper_mlx"
+    assert (results_dir / "job2" / "beta.txt").read_text(
+        encoding="utf-8"
+    ) == "whisper_cpu"
+    assert (results_dir / "job3" / "gamma.txt").read_text(
+        encoding="utf-8"
+    ) == "whisper_mlx"
 
 
 def test_worker_fails_job_when_requested_engine_cannot_be_resolved(

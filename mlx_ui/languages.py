@@ -37,7 +37,9 @@ _COMMON_LANGUAGE_OPTIONS: tuple[LanguageOption, ...] = (
 )
 
 _COMMON_LANGUAGE_LABELS = {
-    option.id: option.label for option in _COMMON_LANGUAGE_OPTIONS if option.id != AUTO_LANGUAGE
+    option.id: option.label
+    for option in _COMMON_LANGUAGE_OPTIONS
+    if option.id != AUTO_LANGUAGE
 }
 
 
@@ -72,11 +74,12 @@ def language_label(language: str) -> str:
     return _COMMON_LANGUAGE_LABELS.get(normalized, normalized.upper())
 
 
-def build_language_options(selected_language: str | None = None) -> list[dict[str, str]]:
+def build_language_options(
+    selected_language: str | None = None,
+) -> list[dict[str, str]]:
     normalized_selected = normalize_language(selected_language)
     options = [
-        {"id": option.id, "label": option.label}
-        for option in _COMMON_LANGUAGE_OPTIONS
+        {"id": option.id, "label": option.label} for option in _COMMON_LANGUAGE_OPTIONS
     ]
     option_ids = {option["id"] for option in options}
     if normalized_selected not in option_ids:

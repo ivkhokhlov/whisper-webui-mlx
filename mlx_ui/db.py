@@ -21,6 +21,7 @@ class JobRecord:
     requested_engine: str | None = None
     effective_engine: str | None = None
 
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,

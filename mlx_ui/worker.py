@@ -39,8 +39,8 @@ class Worker:
         self.uploads_dir = Path(uploads_dir)
         self.results_dir = Path(results_dir)
         self.poll_interval = poll_interval
-        self.base_dir = Path(base_dir) if base_dir is not None else _default_base_dir(
-            self.db_path
+        self.base_dir = (
+            Path(base_dir) if base_dir is not None else _default_base_dir(self.db_path)
         )
         self.env = env if env is not None else os.environ
         self.transcriber = transcriber

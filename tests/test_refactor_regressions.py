@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 
 from fastapi.testclient import TestClient
 
 import mlx_ui.app as app_module
+import mlx_ui.app_context as app_context
 import mlx_ui.engine_registry as engine_registry
 import mlx_ui.engine_resolution as engine_resolution
 import mlx_ui.runtime_metadata as runtime_metadata
@@ -45,6 +48,28 @@ def test_run_sh_is_thin_wrapper_and_help_works() -> None:
     assert "--with-cohere" in result.stdout
 
 
+def test_packaged_runtime_defaults_do_not_use_repo_root(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv(app_context.RUNTIME_MODE_ENV, "packaged")
+    monkeypatch.setenv(app_context.PACKAGED_BUNDLE_ID_ENV, "com.whisperwebui.mlx.test")
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    expected = app_context.resolve_runtime_paths(
+        env=dict(os.environ),
+        platform=sys.platform,
+        home_dir=tmp_path,
+    )
+
+    app = app_module.create_app()
+
+    assert Path(app.state.base_dir) == expected.base_dir
+    assert Path(app.state.db_path) == expected.db_path
+    assert Path(app.state.uploads_dir) == expected.uploads_dir
+    assert Path(app.state.results_dir) == expected.results_dir
+    assert not Path(app.state.base_dir).is_relative_to(ROOT_DIR)
+
+
 def test_create_app_lifespan_runs_startup_tasks(tmp_path: Path, monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
 
@@ -80,7 +105,10 @@ def test_create_app_lifespan_runs_startup_tasks(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr(
         app_module,
         "build_settings_snapshot",
-        lambda base_dir: (_record("build_settings_snapshot", Path(base_dir)) or {"settings": {"update_check_enabled": True}}),
+        lambda base_dir: (
+            _record("build_settings_snapshot", Path(base_dir))
+            or {"settings": {"update_check_enabled": True}}
+        ),
     )
     monkeypatch.setattr(app_module, "is_update_check_disabled", lambda: False)
 
@@ -157,19 +185,34 @@ def test_app_includes_expected_routes_and_modules() -> None:
 
 
 def test_settings_facade_reexports_new_modules() -> None:
-    assert settings_facade.CONFIGURABLE_ENGINE_CHOICES is settings_schema.CONFIGURABLE_ENGINE_CHOICES
+    assert (
+        settings_facade.CONFIGURABLE_ENGINE_CHOICES
+        is settings_schema.CONFIGURABLE_ENGINE_CHOICES
+    )
     assert settings_facade.normalize_log_level is settings_schema.normalize_log_level
-    assert settings_facade.validate_settings_payload is settings_schema.validate_settings_payload
+    assert (
+        settings_facade.validate_settings_payload
+        is settings_schema.validate_settings_payload
+    )
 
     assert settings_facade.get_settings_path is settings_store.get_settings_path
     assert settings_facade.read_settings_file is settings_store.read_settings_file
     assert settings_facade.write_settings_file is settings_store.write_settings_file
     assert settings_facade.update_settings_file is settings_store.update_settings_file
 
-    assert settings_facade.build_runtime_metadata is runtime_metadata.build_runtime_metadata
-    assert settings_facade.build_settings_snapshot is runtime_metadata.build_settings_snapshot
+    assert (
+        settings_facade.build_runtime_metadata
+        is runtime_metadata.build_runtime_metadata
+    )
+    assert (
+        settings_facade.build_settings_snapshot
+        is runtime_metadata.build_settings_snapshot
+    )
 
-    assert settings_facade.ResolvedTranscriberSettings is engine_resolution.ResolvedTranscriberSettings
+    assert (
+        settings_facade.ResolvedTranscriberSettings
+        is engine_resolution.ResolvedTranscriberSettings
+    )
     assert (
         settings_facade.resolve_job_transcriber_spec_with_settings
         is engine_resolution.resolve_job_transcriber_spec_with_settings

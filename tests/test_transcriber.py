@@ -378,14 +378,17 @@ def test_parakeet_transcriber_raises_clear_error_when_runtime_missing(
     job = _make_job(tmp_path)
 
     def fail_runtime():  # type: ignore[no-untyped-def]
-        raise RuntimeError("Parakeet backend cannot run: NVIDIA NeMo ASR is not installed.")
+        raise RuntimeError(
+            "Parakeet backend cannot run: NVIDIA NeMo ASR is not installed."
+        )
 
     monkeypatch.setattr(transcriber_module, "_load_parakeet_runtime", fail_runtime)
 
     transcriber = ParakeetTranscriber()
 
     with pytest.raises(
-        RuntimeError, match="Parakeet backend cannot run: NVIDIA NeMo ASR is not installed."
+        RuntimeError,
+        match="Parakeet backend cannot run: NVIDIA NeMo ASR is not installed.",
     ):
         transcriber.transcribe(job, tmp_path / "results")
 
@@ -483,9 +486,7 @@ def test_cohere_transcriber_classifies_auth_failure(
         transcriber.transcribe(job, tmp_path / "results")
 
 
-def test_cohere_transcriber_classifies_rate_limit(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_cohere_transcriber_classifies_rate_limit(tmp_path: Path, monkeypatch) -> None:
     job = _make_job(tmp_path)
     FakeCohereClientV2.reset()
     FakeCohereClientV2.error = FakeCohereApiError(

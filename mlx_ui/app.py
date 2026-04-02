@@ -27,7 +27,11 @@ from mlx_ui.routers.live_api import router as live_router
 from mlx_ui.routers.pages import router as pages_router
 from mlx_ui.routers.settings_api import router as settings_router
 from mlx_ui.settings import build_settings_snapshot
-from mlx_ui.update_check import DEFAULT_TIMEOUT, check_for_updates, is_update_check_disabled
+from mlx_ui.update_check import (
+    DEFAULT_TIMEOUT,
+    check_for_updates,
+    is_update_check_disabled,
+)
 from mlx_ui.worker import start_worker
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"

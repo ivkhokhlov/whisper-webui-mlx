@@ -11,10 +11,29 @@ WITH_COHERE="${WHISPER_WEBUI_WITH_COHERE:-0}"
 WITH_WHISPER_CPU="${WHISPER_WEBUI_WITH_WHISPER_CPU:-0}"
 MACOS_ARCH=""
 INSTALL_MLX_DEFAULT=0
+DATA_ROOT_DIR="$ROOT_DIR"
+
+if [[ "${MLX_UI_RUNTIME_MODE:-}" == "packaged" ]]; then
+  bundle_id="${MLX_UI_BUNDLE_ID:-com.whisperwebui.mlx}"
+  if [[ -n "${HOME:-}" ]]; then
+    DATA_ROOT_DIR="${HOME}/Library/Application Support/${bundle_id}"
+  fi
+fi
+
+# macOS release targets contract (single source of truth):
+#   docs/release/macos_targets.toml
+#
+# Keep the bootstrap expectations and supported optional profiles aligned with
+# that contract. This script remains the canonical developer bootstrap entry.
 
 usage() {
   cat <<'EOF'
 Usage: ./scripts/setup_and_run.sh [--with-cohere] [--with-whisper-cpu]
+
+Release targets (packaging contract):
+  macos-arm64  -> default local engine: Whisper MLX
+  macos-intel  -> default local engine: Whisper CPU
+  Source of truth: docs/release/macos_targets.toml
 
 Default engine bootstrap:
   macOS arm64   -> Whisper MLX (best-supported local path)
@@ -363,7 +382,7 @@ check_disk_space() {
 }
 
 prepare_data_dirs() {
-  mkdir -p data/uploads data/results data/logs
+  mkdir -p "${DATA_ROOT_DIR}/data/uploads" "${DATA_ROOT_DIR}/data/results" "${DATA_ROOT_DIR}/data/logs"
 }
 
 wait_for_server() {
@@ -401,8 +420,8 @@ start_server() {
   fi
 
   log "Ready! URL: http://127.0.0.1:8000"
-  log "Results: $ROOT_DIR/data/results"
-  log "Logs: $ROOT_DIR/data/logs"
+  log "Results: ${DATA_ROOT_DIR}/data/results"
+  log "Logs: ${LOG_DIR:-${DATA_ROOT_DIR}/data/logs}"
   log "Stop the server with Ctrl+C."
 
   wait "$server_pid"

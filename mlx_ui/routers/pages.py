@@ -57,9 +57,7 @@ def read_root(request: Request):
     telegram_snapshot = build_telegram_snapshot(base_dir=base_dir)
     runtime_snapshot = build_runtime_metadata(base_dir=base_dir)
     downloaded_models = list(
-        settings_snapshot.get("local_models", {})
-        .get("whisper", {})
-        .get("models", [])
+        settings_snapshot.get("local_models", {}).get("whisper", {}).get("models", [])
     )
     settings_saved = request.query_params.get("saved") == "1"
     tab_param = request.query_params.get("tab")

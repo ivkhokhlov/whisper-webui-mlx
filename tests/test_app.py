@@ -279,7 +279,10 @@ def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> 
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Cloud engine selected. It requires network access and is not local/offline." in response.text
+    assert (
+        "Cloud engine selected. It requires network access and is not local/offline."
+        in response.text
+    )
 
 
 def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
