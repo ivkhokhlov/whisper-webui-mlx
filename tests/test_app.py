@@ -9,6 +9,32 @@ from mlx_ui.app import app, sanitize_display_path
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
 
+def _fake_live_update(
+    session_id: str,
+    status: str,
+    transcript: str,
+    received_chunks: int,
+    processed_windows: int,
+) -> object:
+    class _FakeUpdate:
+        def to_dict(self_nonlocal) -> dict[str, object]:
+            return {
+                "session_id": session_id,
+                "status": status,
+                "transcript": transcript,
+                "received_chunks": received_chunks,
+                "processed_windows": processed_windows,
+                "engine_id": "parakeet_tdt_v3",
+                "engine_label": "Parakeet TDT v3",
+                "model_id": "nvidia/parakeet-tdt-0.6b-v3",
+                "experimental": True,
+                "note": "Experimental local-only Parakeet streaming.",
+                "error": None,
+            }
+
+    return _FakeUpdate()
+
+
 def _configure_app(tmp_path: Path) -> None:
     app.state.base_dir = tmp_path
     app.state.uploads_dir = tmp_path / "uploads"
@@ -16,6 +42,7 @@ def _configure_app(tmp_path: Path) -> None:
     app.state.db_path = tmp_path / "jobs.db"
     app.state.worker_enabled = False
     app.state.update_check_enabled = False
+    app.state.live_service = None
 
 
 def test_root_ok(tmp_path: Path) -> None:
@@ -151,6 +178,9 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
     assert "Drop files from Finder here." in response.text
 
     assert 'id="selection-summary"' in response.text
+    assert 'id="upload-language"' in response.text
+    assert 'name="language"' in response.text
+    assert "Detect automatically" in response.text
     assert 'id="upload-submit"' in response.text
     assert 'id="clear-selection"' in response.text
 
@@ -195,15 +225,76 @@ def test_root_settings_sections_present(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert 'id="settings-engine-title"' in response.text
     assert 'id="settings-transcription-title"' in response.text
+    assert 'id="settings-cloud-title"' in response.text
     assert 'id="settings-notifications-title"' in response.text
     assert 'id="settings-storage-title"' in response.text
     assert 'id="settings-about-title"' in response.text
 
     assert 'id="engine-select"' in response.text
+    assert 'id="default-language"' in response.text
+    assert 'id="cohere-api-key"' in response.text
+    assert 'id="cohere-model"' in response.text
     assert 'value="whisper_mlx"' in response.text
     assert 'value="whisper_cpu"' in response.text
     assert 'value="cohere"' in response.text
-    assert "Coming soon" in response.text
+    assert "Cohere runs in the cloud and needs network access." in response.text
+
+
+def test_root_settings_masks_cohere_api_key(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    token = "cohere-secret-key-123456"
+    settings_path.write_text(
+        json.dumps({"cohere_api_key": token, "cohere_model": "command-r"}),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    assert token not in response.text
+    assert "*************3456" in response.text
+
+
+def test_root_queue_hint_stays_local_by_default(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Processed locally. Nothing is uploaded." in response.text
+
+
+def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps({"engine": "cohere"}), encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Cloud engine selected. It requires network access and is not local/offline." in response.text
+
+
+def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    assert "Local-first transcription" in response.text
+    assert (
+        "Files are stored here locally; cloud engines can send audio to their provider."
+        in response.text
+    )
+    assert "Local-only transcription" not in response.text
+    assert "Local storage and local transcription by default." in response.text
 
 
 def test_engine_setting_reflects_in_settings_form(tmp_path: Path) -> None:
@@ -278,17 +369,210 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
     assert "beta.txt" in response.text
 
 
-def test_live_page_ok(tmp_path: Path) -> None:
+def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
+    tmp_path: Path,
+) -> None:
     _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    queued_id = "job-queued"
+    queued_dir = Path(app.state.uploads_dir) / queued_id
+    queued_dir.mkdir(parents=True, exist_ok=True)
+    queued_path = queued_dir / "alpha.wav"
+    queued_path.write_text("data", encoding="utf-8")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=queued_id,
+            filename="alpha.wav",
+            status="queued",
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(queued_path),
+            language="fr",
+            requested_engine="cohere",
+        ),
+    )
+
+    running_id = "job-running"
+    running_dir = Path(app.state.uploads_dir) / running_id
+    running_dir.mkdir(parents=True, exist_ok=True)
+    running_path = running_dir / "bravo.wav"
+    running_path.write_text("data", encoding="utf-8")
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=running_id,
+            filename="bravo.wav",
+            status="running",
+            created_at=started_at,
+            started_at=started_at,
+            upload_path=str(running_path),
+            language="en",
+            requested_engine="cohere",
+            effective_engine="cohere",
+        ),
+    )
+
+    done_id = "job-done"
+    done_dir = Path(app.state.uploads_dir) / done_id
+    done_dir.mkdir(parents=True, exist_ok=True)
+    done_path = done_dir / "charlie.wav"
+    done_path.write_text("data", encoding="utf-8")
+    completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=done_id,
+            filename="charlie.wav",
+            status="done",
+            created_at=completed_at,
+            completed_at=completed_at,
+            upload_path=str(done_path),
+            language="fr",
+            requested_engine="cohere",
+            effective_engine="whisper_cpu",
+        ),
+    )
+    results_dir = Path(app.state.results_dir) / done_id
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / "charlie.txt").write_text("transcript", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Cohere cloud" in response.text
+    assert "Whisper CPU local" in response.text
+    assert "Requested Cohere cloud" in response.text
+    assert "Used Whisper CPU local" in response.text
+    assert 'id="worker-engine"' in response.text
+    assert "Engine: Cohere · cloud" in response.text
+    assert "Language: English" in response.text
+    assert 'title="Language: French"' in response.text
+    assert (
+        'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French"'
+        in response.text
+    )
+
+
+def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr(
+        "mlx_ui.app.build_live_transcription_snapshot",
+        lambda base_dir: {
+            "active": False,
+            "enabled": False,
+            "supported": False,
+            "reason": "Experimental flag is off. Set PARAKEET_LIVE_BETA=1 to try the live beta.",
+            "note": "Experimental local-only Parakeet streaming.",
+            "engine_label": "Parakeet TDT v3",
+            "configured_model": "nvidia/parakeet-tdt-0.6b-v3",
+            "latency_secs": 4.0,
+            "timeslice_ms": 1000,
+        },
+    )
     with TestClient(app) as client:
         response = client.get("/live")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "Live mode" in response.text
+    assert "experimental Parakeet beta" in response.text
     assert "Preview only" in response.text
     assert "Start live capture" in response.text
     assert "Use Queue instead" in response.text
+    assert "Experimental flag is off" in response.text
+
+
+def test_live_page_shows_active_beta_when_enabled(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr(
+        "mlx_ui.app.build_live_transcription_snapshot",
+        lambda base_dir: {
+            "active": True,
+            "enabled": True,
+            "supported": True,
+            "reason": None,
+            "note": "Experimental local-only Parakeet streaming.",
+            "engine_label": "Parakeet TDT v3",
+            "configured_model": "nvidia/parakeet-tdt-0.6b-v3",
+            "latency_secs": 4.0,
+            "timeslice_ms": 1000,
+        },
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/live")
+
+    assert response.status_code == 200
+    assert "Experimental beta" in response.text
+    assert "Ready for experimental capture." in response.text
+    assert "Stop capture" in response.text
+
+
+def test_live_api_uses_injected_service(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+
+    live_snapshot = {
+        "active": True,
+        "enabled": True,
+        "supported": True,
+        "reason": None,
+        "note": "Experimental local-only Parakeet streaming.",
+        "engine_label": "Parakeet TDT v3",
+        "configured_model": "nvidia/parakeet-tdt-0.6b-v3",
+        "left_context_secs": 10.0,
+        "chunk_secs": 2.0,
+        "right_context_secs": 2.0,
+        "timeslice_ms": 1000,
+        "latency_secs": 4.0,
+    }
+    monkeypatch.setattr(
+        "mlx_ui.app.build_live_transcription_snapshot",
+        lambda base_dir: live_snapshot,
+    )
+
+    class FakeLiveService:
+        def __init__(self) -> None:
+            self.chunks: list[bytes] = []
+
+        def open_session(self, config):  # type: ignore[no-untyped-def]
+            assert config.repo_id == "nvidia/parakeet-tdt-0.6b-v3"
+            return _fake_live_update("live-1", "ready", "", 0, 0)
+
+        def append_chunk(self, session_id, payload, *, content_type):  # type: ignore[no-untyped-def]
+            assert session_id == "live-1"
+            assert content_type == "audio/webm"
+            self.chunks.append(payload)
+            return _fake_live_update(
+                session_id,
+                "running",
+                "hello world",
+                len(self.chunks),
+                len(self.chunks),
+            )
+
+        def stop_session(self, session_id):  # type: ignore[no-untyped-def]
+            assert session_id == "live-1"
+            return _fake_live_update("live-1", "stopped", "hello world", 1, 1)
+
+    app.state.live_service = FakeLiveService()
+
+    with TestClient(app) as client:
+        start_response = client.post("/api/live/session")
+        chunk_response = client.post(
+            "/api/live/session/live-1/chunk",
+            files={"file": ("chunk.webm", b"abc", "audio/webm")},
+        )
+        stop_response = client.post("/api/live/session/live-1/stop")
+
+    assert start_response.status_code == 200
+    assert start_response.json()["session"]["status"] == "ready"
+    assert chunk_response.status_code == 200
+    assert chunk_response.json()["session"]["transcript"] == "hello world"
+    assert stop_response.status_code == 200
+    assert stop_response.json()["session"]["status"] == "stopped"
 
 
 def test_root_does_not_include_live_nav_entrypoint(tmp_path: Path) -> None:
@@ -313,6 +597,7 @@ def test_favicon_ok(tmp_path: Path) -> None:
 def test_settings_update_persists(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     payload = {
+        "default_language": "ru",
         "wtm_quick": "1",
         "whisper_model": "base",
         "telegram_token": "token-123",
@@ -326,6 +611,7 @@ def test_settings_update_persists(tmp_path: Path) -> None:
     settings_path = tmp_path / "data" / "settings.json"
     assert settings_path.exists()
     stored = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert stored["default_language"] == "ru"
     assert stored["wtm_quick"] is True
     assert stored["whisper_model"] == "base"
     assert stored["telegram_token"] == "token-123"
@@ -395,7 +681,26 @@ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
         assert job_path.parent.name == job.id
         assert job_path.is_relative_to(uploads_dir)
         assert job.status == "queued"
-        assert job.language == "any"
+        assert job.language == "auto"
+
+
+def test_upload_persists_requested_engine_from_settings(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps({"engine": "whisper_cpu"}), encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/upload",
+            files=[("files", ("alpha.txt", b"one", "text/plain"))],
+        )
+
+    assert response.status_code == 200
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    assert jobs[0].requested_engine == "whisper_cpu"
+    assert jobs[0].effective_engine is None
 
 
 def test_sanitize_display_path_preserves_relative() -> None:
@@ -424,6 +729,43 @@ def test_upload_without_language(tmp_path: Path) -> None:
         response = client.post("/upload", files=files)
 
     assert response.status_code == 200
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    assert jobs[0].language == "auto"
+
+
+def test_upload_persists_selected_language(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/upload",
+            data={"language": "ru"},
+            files=[("files", ("alpha.txt", b"one", "text/plain"))],
+        )
+
+    assert response.status_code == 200
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    assert jobs[0].language == "ru"
+
+
+def test_upload_uses_saved_default_language_when_form_omits_it(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps({"default_language": "fr"}), encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/upload",
+            files=[("files", ("alpha.txt", b"one", "text/plain"))],
+        )
+
+    assert response.status_code == 200
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    assert jobs[0].language == "fr"
 
 
 def test_delete_queued_job_removes_upload(tmp_path: Path) -> None:

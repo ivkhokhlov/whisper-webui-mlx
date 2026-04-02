@@ -8,6 +8,7 @@ FORCE=0
 
 usage() {
   printf '%s\n' "Usage: $0 [--name=APP_NAME] [--out=OUTPUT_DIR] [--force]"
+  printf '%s\n' "Builds an Apple Silicon macOS app bundle for the MLX-first local path."
 }
 
 for arg in "$@"; do
@@ -39,7 +40,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ "$(uname -m)" != "arm64" ]]; then
-  printf '%s\n' "ERROR: Apple Silicon (arm64) is required for Whisper WebUI (MLX)." >&2
+  printf '%s\n' "ERROR: This .app bundle target is Apple Silicon only. Intel macOS should use run.sh / setup_and_run.sh for the Whisper CPU path." >&2
   exit 1
 fi
 
@@ -124,3 +125,5 @@ chmod +x "${MACOS_DIR}/launcher"
 
 printf '%s\n' "Created app: ${APP_PATH}"
 printf '%s\n' "Logs: ${ROOT_DIR}/data/logs/app_launcher.log"
+printf '%s\n' "Expected local engine in this app bundle: Whisper MLX on Apple Silicon."
+printf '%s\n' "Optional Cohere support can still be installed separately via scripts/setup_and_run.sh --with-cohere."

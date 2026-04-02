@@ -7,7 +7,7 @@ import shutil
 import threading
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,15 +24,34 @@ from mlx_ui.db import (
     list_jobs,
     recover_running_jobs,
 )
+from mlx_ui.engine_registry import get_engine_provider
+from mlx_ui.live_transcription import (
+    LiveSessionNotFound,
+    LiveTranscriptionError,
+    LiveTranscriptionService,
+    ParakeetLiveConfig,
+)
+from mlx_ui.languages import (
+    DEFAULT_LANGUAGE,
+    language_label,
+    normalize_language,
+    parse_language,
+)
 from mlx_ui.logging_config import configure_logging
 from mlx_ui.settings import (
-    ENGINE_CHOICES,
+    CONFIGURABLE_ENGINE_CHOICES,
+    build_cohere_snapshot,
+    build_live_transcription_snapshot,
     build_runtime_metadata,
     build_settings_snapshot,
     build_telegram_snapshot,
-    list_downloaded_models,
     normalize_log_level,
-    resolve_transcriber_with_settings,
+    PARAKEET_LIVE_CHUNK_SECS,
+    PARAKEET_LIVE_LEFT_CONTEXT_SECS,
+    PARAKEET_LIVE_RIGHT_CONTEXT_SECS,
+    PARAKEET_LIVE_TIMESLICE_MS,
+    resolve_default_language_with_settings,
+    resolve_requested_engine_with_settings,
     update_settings_file,
     validate_settings_payload,
 )
@@ -60,8 +79,16 @@ app.state.db_path = DEFAULT_DB_PATH
 app.state.base_dir = BASE_DIR
 app.state.worker_enabled = True
 app.state.update_check_enabled = True
-DEFAULT_LANGUAGE = "any"
+app.state.live_service = None
 logger = logging.getLogger(__name__)
+
+_ENGINE_SHORT_LABELS = {
+    "whisper_mlx": "MLX",
+    "whisper_cpu": "Whisper CPU",
+    "parakeet_tdt_v3": "Parakeet",
+    "cohere": "Cohere",
+    "fake": "Fake",
+}
 
 
 def _patch_testclient_allow_redirects() -> None:
@@ -101,12 +128,11 @@ def startup() -> None:
     if recovered:
         logger.warning("Recovered %s running job(s) after unclean shutdown.", recovered)
     if getattr(app.state, "worker_enabled", True):
-        transcriber = resolve_transcriber_with_settings(base_dir=base_dir)
         start_worker(
             get_db_path(),
             get_uploads_dir(),
             get_results_dir(),
-            transcriber=transcriber,
+            base_dir=base_dir,
         )
     settings_snapshot = build_settings_snapshot(base_dir=base_dir)
     update_check_enabled = bool(
@@ -144,6 +170,14 @@ def get_uploads_dir() -> Path:
 
 def get_results_dir() -> Path:
     return Path(app.state.results_dir)
+
+
+def get_live_service() -> LiveTranscriptionService:
+    service = getattr(app.state, "live_service", None)
+    if service is None:
+        service = LiveTranscriptionService()
+        app.state.live_service = service
+    return service
 
 
 def ensure_uploads_dir() -> Path:
@@ -246,6 +280,8 @@ def new_job_record(
     job_id: str,
     filename: str,
     upload_path: Path,
+    requested_engine: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -253,7 +289,8 @@ def new_job_record(
         status="queued",
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         upload_path=str(upload_path),
-        language=DEFAULT_LANGUAGE,
+        language=language,
+        requested_engine=requested_engine,
     )
 
 
@@ -268,8 +305,128 @@ def _history_sort_key(job: JobRecord) -> str:
     return job.completed_at or job.created_at
 
 
-def _serialize_job(job: JobRecord) -> dict[str, str | None]:
-    return asdict(job)
+def _serialize_job(job: JobRecord) -> dict[str, object]:
+    payload = asdict(job)
+    payload["ui"] = _build_job_ui(job)
+    return payload
+
+
+def _build_job_ui(job: JobRecord) -> dict[str, object]:
+    requested_engine = _engine_ui(job.requested_engine)
+    effective_engine = _engine_ui(job.effective_engine)
+    language = _language_ui(job.language)
+    engine_badges, engine_summary = _job_engine_badges(
+        requested_engine=requested_engine,
+        effective_engine=effective_engine,
+    )
+    preview_meta_parts = []
+    if engine_summary:
+        preview_meta_parts.append(engine_summary)
+    preview_meta_parts.append(f"Language: {language['label']}")
+    return {
+        "requested_engine": requested_engine,
+        "effective_engine": effective_engine,
+        "engine_badges": engine_badges,
+        "engine_summary": engine_summary,
+        "language": language,
+        "preview_meta": " · ".join(preview_meta_parts),
+    }
+
+
+def _engine_ui(engine_id: str | None) -> dict[str, object] | None:
+    normalized = (engine_id or "").strip()
+    if not normalized:
+        return None
+    provider = get_engine_provider(normalized)
+    if provider is None:
+        mode = "unknown"
+        label = normalized
+        short_label = normalized
+        local = False
+        cloud = False
+    else:
+        mode = provider.mode
+        label = provider.label
+        short_label = _ENGINE_SHORT_LABELS.get(provider.id, provider.label)
+        local = provider.mode == "local"
+        cloud = provider.mode == "cloud"
+    return {
+        "id": normalized,
+        "label": label,
+        "short_label": short_label,
+        "mode": mode,
+        "mode_label": mode if mode in {"local", "cloud"} else "unknown",
+        "local": local,
+        "cloud": cloud,
+    }
+
+
+def _language_ui(language: str | None) -> dict[str, str]:
+    normalized = normalize_language(language)
+    return {
+        "id": normalized,
+        "label": language_label(normalized),
+        "short_label": _compact_language_label(normalized),
+    }
+
+
+def _compact_language_label(language: str) -> str:
+    if language == "auto":
+        return "Auto"
+    return language.upper()
+
+
+def _job_engine_badges(
+    *,
+    requested_engine: dict[str, object] | None,
+    effective_engine: dict[str, object] | None,
+) -> tuple[list[dict[str, str]], str | None]:
+    if (
+        requested_engine is not None
+        and effective_engine is not None
+        and requested_engine["id"] != effective_engine["id"]
+    ):
+        return (
+            [
+                _engine_badge(requested_engine, prefix="Requested", kind="requested"),
+                _engine_badge(effective_engine, prefix="Used", kind="effective"),
+            ],
+            (
+                f"Requested {_engine_text(requested_engine)}, "
+                f"used {_engine_text(effective_engine)}"
+            ),
+        )
+    engine = effective_engine or requested_engine
+    if engine is None:
+        return [], None
+    return ([_engine_badge(engine, kind="engine")], f"Engine: {_engine_text(engine)}")
+
+
+def _engine_badge(
+    engine: dict[str, object],
+    *,
+    prefix: str | None = None,
+    kind: str,
+) -> dict[str, str]:
+    label = f"{engine['short_label']} {engine['mode_label']}".strip()
+    if prefix:
+        label = f"{prefix} {label}"
+    title = _engine_text(engine)
+    if prefix:
+        title = f"{prefix} engine: {title}"
+    return {
+        "label": label,
+        "title": title,
+        "kind": kind,
+        "mode": str(engine["mode"]),
+    }
+
+
+def _engine_text(engine: dict[str, object]) -> str:
+    mode = engine["mode_label"]
+    if mode in {"local", "cloud"}:
+        return f"{engine['label']} · {mode}"
+    return str(engine["label"])
 
 
 def _queue_groups(jobs: list[JobRecord]) -> tuple[JobRecord | None, list[JobRecord]]:
@@ -282,12 +439,14 @@ def _worker_state(jobs: list[JobRecord]) -> dict[str, object]:
     queued_count = sum(1 for job in jobs if job.status == "queued")
     running_job = next((job for job in jobs if job.status == "running"), None)
     if running_job:
+        current_job_ui = _build_job_ui(running_job)
         return {
             "status": "Running",
             "job_id": running_job.id,
             "filename": running_job.filename,
             "started_at": running_job.started_at,
             "queue_length": queued_count,
+            "current_job_ui": current_job_ui,
         }
     return {
         "status": "Idle",
@@ -295,6 +454,7 @@ def _worker_state(jobs: list[JobRecord]) -> dict[str, object]:
         "filename": None,
         "started_at": None,
         "queue_length": queued_count,
+        "current_job_ui": None,
     }
 
 
@@ -303,11 +463,17 @@ def read_root(request: Request):
     jobs = get_job_store()
     queue_jobs, history_jobs = _split_jobs(jobs)
     queued_count = sum(1 for job in queue_jobs if job.status == "queued")
+    job_views = {job.id: _build_job_ui(job) for job in jobs}
     base_dir = get_base_dir()
     settings_snapshot = build_settings_snapshot(base_dir=base_dir)
+    cohere_snapshot = build_cohere_snapshot(base_dir=base_dir)
     telegram_snapshot = build_telegram_snapshot(base_dir=base_dir)
     runtime_snapshot = build_runtime_metadata(base_dir=base_dir)
-    downloaded_models = list_downloaded_models()
+    downloaded_models = list(
+        settings_snapshot.get("local_models", {})
+        .get("whisper", {})
+        .get("models", [])
+    )
     settings_saved = request.query_params.get("saved") == "1"
     tab_param = request.query_params.get("tab")
     active_tab = tab_param if tab_param in {"queue", "history", "settings"} else "queue"
@@ -324,9 +490,11 @@ def read_root(request: Request):
             "queue_jobs": queue_jobs,
             "queued_count": queued_count,
             "history_jobs": history_jobs,
+            "job_views": job_views,
             "results_by_job": build_results_index(history_jobs),
             "worker": _worker_state(jobs),
             "settings_snapshot": settings_snapshot,
+            "cohere_snapshot": cohere_snapshot,
             "telegram_snapshot": telegram_snapshot,
             "runtime_snapshot": runtime_snapshot,
             "storage_snapshot": storage_snapshot,
@@ -339,7 +507,73 @@ def read_root(request: Request):
 
 @app.get("/live", response_class=HTMLResponse)
 def read_live(request: Request):
-    return templates.TemplateResponse(request, "live.html", {})
+    live_snapshot = build_live_transcription_snapshot(base_dir=get_base_dir())
+    return templates.TemplateResponse(
+        request,
+        "live.html",
+        {
+            "live_snapshot": live_snapshot,
+        },
+    )
+
+
+@app.post("/api/live/session")
+def api_live_start_session() -> dict[str, object]:
+    live_snapshot = build_live_transcription_snapshot(base_dir=get_base_dir())
+    if not live_snapshot.get("active"):
+        raise HTTPException(
+            status_code=409,
+            detail=str(
+                live_snapshot.get("reason")
+                or "Parakeet live beta is not available in the current environment."
+            ),
+        )
+    config = _build_parakeet_live_config(live_snapshot)
+    try:
+        update = get_live_service().open_session(config)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "session": update.to_dict(),
+        "live": live_snapshot,
+    }
+
+
+@app.post("/api/live/session/{session_id}/chunk")
+async def api_live_append_chunk(
+    session_id: str,
+    file: UploadFile = File(...),
+) -> dict[str, object]:
+    try:
+        payload = await file.read()
+    finally:
+        await file.close()
+    try:
+        update = get_live_service().append_chunk(
+            session_id,
+            payload,
+            content_type=file.content_type,
+        )
+    except LiveSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="Live session not found.") from exc
+    except LiveTranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"session": update.to_dict()}
+
+
+@app.post("/api/live/session/{session_id}/stop")
+def api_live_stop_session(session_id: str) -> dict[str, object]:
+    try:
+        update = get_live_service().stop_session(session_id)
+    except LiveSessionNotFound as exc:
+        raise HTTPException(status_code=404, detail="Live session not found.") from exc
+    except LiveTranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"session": update.to_dict()}
 
 
 @app.get("/settings")
@@ -353,11 +587,18 @@ async def update_settings(request: Request) -> RedirectResponse:
     updates: dict[str, object] = {}
 
     engine = str(form.get("engine", "")).strip()
-    if engine in ENGINE_CHOICES:
+    if engine in CONFIGURABLE_ENGINE_CHOICES:
         updates["engine"] = engine
 
     if "wtm_quick_present" in form or "wtm_quick" in form:
         updates["wtm_quick"] = "wtm_quick" in form
+
+    default_language = parse_language(form.get("default_language"))
+    if default_language is not None:
+        updates["default_language"] = default_language
+
+    if "cohere_model" in form:
+        updates["cohere_model"] = str(form.get("cohere_model", "")).strip()
 
     whisper_model = str(form.get("whisper_model", "")).strip()
     if whisper_model:
@@ -369,6 +610,12 @@ async def update_settings(request: Request) -> RedirectResponse:
     log_level = str(form.get("log_level", "")).strip()
     if log_level:
         updates["log_level"] = normalize_log_level(log_level)
+
+    cohere_api_key = str(form.get("cohere_api_key", "")).strip()
+    if cohere_api_key:
+        updates["cohere_api_key"] = cohere_api_key
+    if "clear_cohere_api_key" in form:
+        updates["cohere_api_key"] = ""
 
     telegram_token = str(form.get("telegram_token", "")).strip()
     if telegram_token:
@@ -392,6 +639,7 @@ async def update_settings(request: Request) -> RedirectResponse:
 def api_settings() -> dict[str, object]:
     base_dir = get_base_dir()
     snapshot = build_settings_snapshot(base_dir=base_dir)
+    snapshot["cohere_snapshot"] = build_cohere_snapshot(base_dir=base_dir)
     snapshot["telegram_snapshot"] = build_telegram_snapshot(base_dir=base_dir)
     return snapshot
 
@@ -406,6 +654,7 @@ async def api_update_settings(request: Request) -> dict[str, object]:
         update_settings_file(get_base_dir(), updates)
     base_dir = get_base_dir()
     snapshot = build_settings_snapshot(base_dir=base_dir)
+    snapshot["cohere_snapshot"] = build_cohere_snapshot(base_dir=base_dir)
     snapshot["telegram_snapshot"] = build_telegram_snapshot(base_dir=base_dir)
     return snapshot
 
@@ -424,11 +673,16 @@ def api_clear_results() -> dict[str, str]:
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload_files(
-    request: Request,
     files: list[UploadFile] = File(...),
+    language: str | None = Form(None),
 ):
     uploads_dir = ensure_uploads_dir()
     db_path = get_db_path()
+    batch_language = normalize_language(
+        language,
+        default=resolve_default_language_with_settings(base_dir=get_base_dir()),
+    )
+    requested_engine = resolve_requested_engine_with_settings(base_dir=get_base_dir())
 
     for upload in files:
         if not upload.filename:
@@ -444,7 +698,16 @@ async def upload_files(
                 shutil.copyfileobj(upload.file, outfile)
         finally:
             await upload.close()
-        insert_job(db_path, new_job_record(job_id, display_name, destination))
+        insert_job(
+            db_path,
+            new_job_record(
+                job_id,
+                display_name,
+                destination,
+                requested_engine=requested_engine,
+                language=batch_language,
+            ),
+        )
 
     return RedirectResponse(url="/?tab=queue", status_code=303)
 
@@ -526,6 +789,26 @@ def _read_preview(file_path: Path, limit: int) -> tuple[str, bool]:
         data = handle.read(limit + 1)
     truncated = len(data) > limit
     return data[:limit], truncated
+
+
+def _build_parakeet_live_config(live_snapshot: dict[str, object]) -> ParakeetLiveConfig:
+    return ParakeetLiveConfig(
+        repo_id=str(live_snapshot.get("configured_model") or ""),
+        decoding_mode="greedy",
+        left_context_secs=float(
+            live_snapshot.get("left_context_secs") or PARAKEET_LIVE_LEFT_CONTEXT_SECS
+        ),
+        chunk_secs=float(
+            live_snapshot.get("chunk_secs") or PARAKEET_LIVE_CHUNK_SECS
+        ),
+        right_context_secs=float(
+            live_snapshot.get("right_context_secs")
+            or PARAKEET_LIVE_RIGHT_CONTEXT_SECS
+        ),
+        timeslice_ms=int(
+            live_snapshot.get("timeslice_ms") or PARAKEET_LIVE_TIMESLICE_MS
+        ),
+    )
 
 
 @app.delete("/api/jobs/{job_id}")

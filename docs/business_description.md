@@ -1,19 +1,17 @@
 # Business Description
 
 ## Product overview
-mlx-ui is a local-only web application for fast, private transcription of audio and
-video files on macOS Apple Silicon. It wraps the whisper-turbo-mlx engine in an
-easy, localhost UI that lets users upload files in batches, process them
-sequentially, and download text results from a queue/history view. Uploads
-support files or folders with a preflight summary (count, size, estimate) and
-basic filtering before queueing. After initial setup and model download, it runs
-fully offline. Recent UI work focuses on a compact Queue/History/Settings shell
-with a mobile-friendly tab rail, a calmer Queue first screen for batch uploads,
-a stable Worker status card that only shows current-file metadata while work is
-active, a denser History list for high-volume datasets, and a clearer Settings
-panel for default model selection, WTM quick mode, Telegram delivery, storage
-management, and local diagnostics. The `/live` route remains an honest beta
-preview rather than a production capture workflow.
+mlx-ui is a local-first transcription web application with a localhost UI,
+sequential job processing, and a growing engine matrix. Users upload audio or
+video files in batches, choose a job language, queue work, and retrieve results
+from a queue/history flow backed by SQLite and on-disk artifacts. The product
+still runs on `127.0.0.1` and keeps uploads, results, settings, and logs on the
+local machine, but it now supports both local engines and an optional cloud
+engine. Recent work added a real provider registry, per-job engine persistence,
+per-job engine resolution in the worker, normalized transcript outputs, local
+model readiness metadata, and UI badges that show which engine and language each
+job used. The `/live` route remains an honest beta preview rather than a
+production capture workflow.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -21,26 +19,41 @@ preview rather than a production capture workflow.
 - CLI-based ML transcription is powerful but too technical for many users and
   teams.
 - Batch transcription needs job tracking, queues, and reliable result storage.
-- Offline or air-gapped environments cannot depend on hosted services.
+- Some users need offline/local processing, while others need a practical cloud
+  fallback when local acceleration is unavailable.
 
 ## Solution
 - A local web UI on 127.0.0.1 that makes transcription accessible to
   non-technical users.
-- Apple-Silicon-optimized MLX backend (wtm) for fast on-device processing.
-- Sequential job queue to keep the model warm and avoid parallel overhead.
-- Local storage of uploads, results, logs, and job metadata with SQLite.
-- Optional Telegram delivery of text results and best-effort update checks,
-  configurable from the Settings tab.
+- Engine registry and settings model that expose real engine availability,
+  configuration, and compatibility notes instead of hard-coded backend logic.
+- Best-supported Apple Silicon MLX path for fast local processing, plus a real
+  CPU Whisper path for Intel/Docker, a local Parakeet path for Linux + CUDA, and
+  an optional Cohere cloud path.
+- Sequential job queue with per-job `requested_engine`, `effective_engine`, and
+  explicit language values so queued work remains truthful even when settings
+  change later.
+- Local storage of uploads, results, logs, settings, and job metadata with
+  SQLite, plus best-effort Telegram delivery and update checks.
+- Shared output writers so engines can produce `.txt` by default and `.json`,
+  `.srt`, or `.vtt` when real metadata exists.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
   internal meetings).
-- macOS Apple Silicon users who want fast, offline transcription.
+- macOS Apple Silicon users who want the fastest local path.
+- macOS Intel users who still want a practical local UI with CPU transcription.
+- Linux + CUDA users who want Parakeet locally.
+- Users who prefer a local UI but sometimes need an optional cloud transcription
+  backend.
 - Anyone who prefers a simple UI over managing ML CLI workflows.
 
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
+- Batch-level language selector plus a persisted default language setting.
+- Requested/effective engine tracking per job, exposed in the worker card,
+  queue, history, and preview metadata.
 - Worker status card that surfaces queue depth, mode, and current job metadata
   only when the worker is actively processing.
 - Compact top-level navigation for Queue, History, and Settings that stays
@@ -58,14 +71,17 @@ preview rather than a production capture workflow.
 - Per-item history deletion and bulk “delete all results” controls with
   confirmations, removing stored outputs from disk.
 - Local data storage under data/ for easy retention and cleanup.
-- Settings panel for default model selection (defaults to large-v3-turbo) and
-  WTM quick mode, persisted in data/settings.json.
+- Settings panel for engine selection, Whisper/Parakeet/Cohere configuration,
+  default language, output formats, WTM quick mode, Telegram delivery, and local
+  diagnostics, persisted in `data/settings.json`.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
-- Settings and the transcriber resolver now keep the selected engine
-  (`Whisper (MLX / Metal)` vs `Whisper (CPU)`), effective backend, log level,
-  and update-check preference aligned between saved settings, environment
-  overrides, and the About/runtime snapshot.
+- Runtime metadata reports which local Whisper and Parakeet models appear to be
+  cached already, so the app can explain likely first-run downloads before jobs
+  stall.
+- Settings and the resolver keep the selected engine, compatibility notes, log
+  level, output formats, update-check preference, and environment overrides
+  aligned between saved settings and runtime snapshots.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
@@ -76,19 +92,29 @@ preview rather than a production capture workflow.
 - Branded favicon in the browser tab for quick visual recognition of the local UI.
 
 ## Value proposition
-- Privacy by design: all processing stays on the user's machine.
-- Speed and cost control: no per-minute API fees, no upload bottlenecks.
-- Operational simplicity: one-command setup and offline operation.
+- Local-first privacy: the default experience keeps the UI, storage, and local
+  engines on the user's machine.
+- Honest engine behavior: the app distinguishes local/offline engines from cloud
+  processing instead of pretending every backend is equivalent.
+- Speed and cost control: Apple Silicon MLX remains the premium local path, with
+  CPU and cloud options when that path is unavailable.
+- Operational simplicity: one-command setup on macOS, coherent settings, and a
+  queue/history UX instead of raw CLIs.
 - Reliability: sequential processing avoids model re-init churn and resource
   spikes, while compact history keeps large job lists responsive.
 
 ## Differentiators
 - Apple Silicon MLX acceleration (faster than CPU-only alternatives).
-- Local-only design with no external dependencies after setup.
+- Real multi-engine registry with explicit compatibility and readiness metadata.
 - Built-in queue/history flow optimized for scanning and triage, not just demos.
-- Optional CPU-only Docker backend for broader compatibility.
+- Local-first product that still handles cloud transcription honestly when the
+  user explicitly selects it.
+- Optional CPU Docker backend and Intel macOS path for broader compatibility.
 
 ## Constraints and scope
 - Native MLX backend requires macOS Apple Silicon.
+- Parakeet currently requires Linux + CUDA + PyTorch + NeMo.
+- Cohere requires network access, an API key, and an explicit supported
+  language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.
 - Out of scope for v1: diarization, advanced timestamping, pause/cancel queue.

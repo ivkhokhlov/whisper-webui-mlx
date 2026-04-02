@@ -1,0 +1,2 @@
+# Optional cloud transcription profile.
+cohere>=5.21.1,<6.0

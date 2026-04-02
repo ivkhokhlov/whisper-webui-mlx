@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
+from mlx_ui.languages import AUTO_LANGUAGE, LEGACY_AUTO_LANGUAGE, normalize_language
+
 
 @dataclass
 class JobRecord:
@@ -16,7 +18,8 @@ class JobRecord:
     completed_at: str | None = None
     error_message: str | None = None
     queue_position: int | None = None
-
+    requested_engine: str | None = None
+    effective_engine: str | None = None
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -29,7 +32,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at TEXT,
     completed_at TEXT,
     error_message TEXT,
-    queue_position INTEGER
+    queue_position INTEGER,
+    requested_engine TEXT,
+    effective_engine TEXT
 );
 """
 
@@ -38,6 +43,15 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     return connection
+
+
+def _job_record_from_data(job_data: dict[str, object]) -> JobRecord:
+    job_data["language"] = normalize_language(job_data.get("language"))
+    return JobRecord(**job_data)
+
+
+def _job_record_from_row(row: sqlite3.Row) -> JobRecord:
+    return _job_record_from_data(dict(row))
 
 
 def init_db(db_path: Path) -> None:
@@ -49,25 +63,46 @@ def init_db(db_path: Path) -> None:
 
 
 def _migrate_schema(connection: sqlite3.Connection) -> None:
-    columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
-    }
-    if "language" not in columns:
+    if not _table_has_column(connection, "jobs", "language"):
         connection.execute(
-            "ALTER TABLE jobs ADD COLUMN language TEXT NOT NULL DEFAULT 'en'"
+            f"ALTER TABLE jobs ADD COLUMN language TEXT NOT NULL DEFAULT '{AUTO_LANGUAGE}'"
         )
-    if "started_at" not in columns:
+    if not _table_has_column(connection, "jobs", "started_at"):
         connection.execute("ALTER TABLE jobs ADD COLUMN started_at TEXT")
-    if "completed_at" not in columns:
+    if not _table_has_column(connection, "jobs", "completed_at"):
         connection.execute("ALTER TABLE jobs ADD COLUMN completed_at TEXT")
-    if "error_message" not in columns:
+    if not _table_has_column(connection, "jobs", "error_message"):
         connection.execute("ALTER TABLE jobs ADD COLUMN error_message TEXT")
-    if "queue_position" not in columns:
+    if not _table_has_column(connection, "jobs", "queue_position"):
         connection.execute("ALTER TABLE jobs ADD COLUMN queue_position INTEGER")
+    if not _table_has_column(connection, "jobs", "requested_engine"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN requested_engine TEXT")
+    if not _table_has_column(connection, "jobs", "effective_engine"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN effective_engine TEXT")
     connection.execute(
-        "UPDATE jobs SET language = 'en' WHERE language IS NULL OR language = ''"
+        """
+        UPDATE jobs
+        SET language = ?
+        WHERE language IS NULL
+           OR TRIM(language) = ''
+           OR LOWER(TRIM(language)) = ?
+        """,
+        (AUTO_LANGUAGE, LEGACY_AUTO_LANGUAGE),
     )
     _backfill_queue_positions(connection)
+
+
+def _table_has_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+) -> bool:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    for row in rows:
+        name = row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        if name == column_name:
+            return True
+    return False
 
 
 def _backfill_queue_positions(connection: sqlite3.Connection) -> None:
@@ -99,6 +134,7 @@ def _backfill_queue_positions(connection: sqlite3.Connection) -> None:
 def insert_job(db_path: Path, job: JobRecord) -> None:
     with _connect(db_path) as connection:
         queue_position = job.queue_position
+        language = normalize_language(job.language)
         if job.status == "queued" and queue_position is None:
             row = connection.execute(
                 """
@@ -121,9 +157,11 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 started_at,
                 completed_at,
                 error_message,
-                queue_position
+                queue_position,
+                requested_engine,
+                effective_engine
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -131,11 +169,13 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 job.status,
                 job.created_at,
                 job.upload_path,
-                job.language,
+                language,
                 job.started_at,
                 job.completed_at,
                 job.error_message,
                 queue_position,
+                job.requested_engine,
+                job.effective_engine,
             ),
         )
         connection.commit()
@@ -155,7 +195,9 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
                 started_at,
                 completed_at,
                 error_message,
-                queue_position
+                queue_position,
+                requested_engine,
+                effective_engine
             FROM jobs
             ORDER BY
                 CASE
@@ -175,7 +217,7 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
             """
         ).fetchall()
 
-    return [JobRecord(**dict(row)) for row in rows]
+    return [_job_record_from_row(row) for row in rows]
 
 
 def get_job(db_path: Path, job_id: str) -> JobRecord | None:
@@ -192,7 +234,9 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
                 started_at,
                 completed_at,
                 error_message,
-                queue_position
+                queue_position,
+                requested_engine,
+                effective_engine
             FROM jobs
             WHERE id = ?
             """,
@@ -200,7 +244,7 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
         ).fetchone()
     if row is None:
         return None
-    return JobRecord(**dict(row))
+    return _job_record_from_row(row)
 
 
 def delete_queued_job(db_path: Path, job_id: str) -> bool:
@@ -243,12 +287,14 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
                 started_at,
                 completed_at,
                 error_message,
-                queue_position
+                queue_position,
+                requested_engine,
+                effective_engine
             FROM jobs
             WHERE status IN ('done', 'failed')
             """
         ).fetchall()
-    return [JobRecord(**dict(row)) for row in rows]
+    return [_job_record_from_row(row) for row in rows]
 
 
 def delete_history_jobs(db_path: Path, job_ids: list[str]) -> int:
@@ -324,6 +370,7 @@ def update_job_status(
     started_at: str | None = None,
     completed_at: str | None = None,
     error_message: str | None = None,
+    effective_engine: str | None = None,
 ) -> None:
     updates: dict[str, str | None] = {"status": status}
     if started_at is not None:
@@ -332,6 +379,8 @@ def update_job_status(
         updates["completed_at"] = completed_at
     if error_message is not None:
         updates["error_message"] = error_message
+    if effective_engine is not None:
+        updates["effective_engine"] = effective_engine
     set_clause = ", ".join(f"{column} = ?" for column in updates)
     values = list(updates.values()) + [job_id]
     with _connect(db_path) as connection:
@@ -371,7 +420,11 @@ def recover_running_jobs(
     return cursor.rowcount
 
 
-def claim_next_job(db_path: Path) -> JobRecord | None:
+def claim_next_job(
+    db_path: Path,
+    *,
+    effective_engine: str | None = None,
+) -> JobRecord | None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
@@ -400,7 +453,9 @@ def claim_next_job(db_path: Path) -> JobRecord | None:
                 started_at,
                 completed_at,
                 error_message,
-                queue_position
+                queue_position,
+                requested_engine,
+                effective_engine
             FROM jobs
             WHERE status = 'queued'
             ORDER BY
@@ -415,19 +470,33 @@ def claim_next_job(db_path: Path) -> JobRecord | None:
             return None
         job_id = row["id"]
         started_at = _now_utc()
-        connection.execute(
-            """
-            UPDATE jobs
-            SET status = 'running', started_at = ?
-            WHERE id = ?
-            """,
-            (started_at, job_id),
-        )
+        if effective_engine is None:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = 'running', started_at = ?
+                WHERE id = ?
+                """,
+                (started_at, job_id),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = 'running',
+                    started_at = ?,
+                    effective_engine = ?
+                WHERE id = ?
+                """,
+                (started_at, effective_engine, job_id),
+            )
         connection.execute("COMMIT")
         job_data = dict(row)
         job_data["status"] = "running"
         job_data["started_at"] = started_at
-        return JobRecord(**job_data)
+        if effective_engine is not None:
+            job_data["effective_engine"] = effective_engine
+        return _job_record_from_data(job_data)
     except Exception:
         connection.execute("ROLLBACK")
         raise
