@@ -61,10 +61,13 @@ def get_git_remote_url() -> str | None:
 
 
 def read_local_version() -> str | None:
+    version = _read_version_from_pyproject()
+    if version:
+        return version
     try:
         return importlib.metadata.version("mlx-ui")
     except importlib.metadata.PackageNotFoundError:
-        return _read_version_from_pyproject()
+        return None
 
 
 def check_for_updates(timeout: float = DEFAULT_TIMEOUT) -> None:

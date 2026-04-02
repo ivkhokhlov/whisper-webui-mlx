@@ -25,6 +25,17 @@ def test_resolve_update_url_from_github_remote() -> None:
     assert url == "https://api.github.com/repos/octo/repo/releases/latest"
 
 
+def test_read_local_version_prefers_pyproject(monkeypatch) -> None:
+    monkeypatch.setattr(update_check, "_read_version_from_pyproject", lambda: "9.9.9")
+    monkeypatch.setattr(
+        update_check.importlib.metadata,
+        "version",
+        lambda name: "0.1.0",
+    )
+
+    assert update_check.read_local_version() == "9.9.9"
+
+
 def test_check_for_updates_handles_urlerror(monkeypatch) -> None:
     monkeypatch.setattr(update_check, "read_local_version", lambda: "0.1.0")
     monkeypatch.setattr(
