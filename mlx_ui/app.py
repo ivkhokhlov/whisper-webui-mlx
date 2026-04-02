@@ -1,6 +1,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 import logging
+import os
 from pathlib import Path
 import shutil
 import threading
@@ -25,9 +26,12 @@ from mlx_ui.db import (
 )
 from mlx_ui.logging_config import configure_logging
 from mlx_ui.settings import (
+    ENGINE_CHOICES,
+    build_runtime_metadata,
     build_settings_snapshot,
     build_telegram_snapshot,
     list_downloaded_models,
+    normalize_log_level,
     resolve_transcriber_with_settings,
     update_settings_file,
     validate_settings_payload,
@@ -104,8 +108,13 @@ def startup() -> None:
             get_results_dir(),
             transcriber=transcriber,
         )
+    settings_snapshot = build_settings_snapshot(base_dir=base_dir)
+    update_check_enabled = bool(
+        settings_snapshot.get("settings", {}).get("update_check_enabled", True)
+    )
     if (
         getattr(app.state, "update_check_enabled", True)
+        and update_check_enabled
         and not is_update_check_disabled()
     ):
         thread = threading.Thread(
@@ -166,7 +175,9 @@ def remove_results_dir(job_id: str) -> str:
     results_dir_resolved = results_dir.resolve()
     job_dir_resolved = job_dir.resolve()
     if not job_dir_resolved.is_relative_to(results_dir_resolved):
-        logger.warning("Refusing to remove results outside results dir for job %s", job_id)
+        logger.warning(
+            "Refusing to remove results outside results dir for job %s", job_id
+        )
         return "failed"
     if not job_dir_resolved.exists():
         return "missing"
@@ -295,8 +306,17 @@ def read_root(request: Request):
     base_dir = get_base_dir()
     settings_snapshot = build_settings_snapshot(base_dir=base_dir)
     telegram_snapshot = build_telegram_snapshot(base_dir=base_dir)
+    runtime_snapshot = build_runtime_metadata(base_dir=base_dir)
     downloaded_models = list_downloaded_models()
     settings_saved = request.query_params.get("saved") == "1"
+    tab_param = request.query_params.get("tab")
+    active_tab = tab_param if tab_param in {"queue", "history", "settings"} else "queue"
+    storage_snapshot = {
+        "uploads_dir": str(get_uploads_dir()),
+        "results_dir": str(get_results_dir()),
+        "db_path": str(get_db_path()),
+        "log_dir": str(Path(os.getenv("LOG_DIR", base_dir / "data" / "logs"))),
+    }
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -308,8 +328,11 @@ def read_root(request: Request):
             "worker": _worker_state(jobs),
             "settings_snapshot": settings_snapshot,
             "telegram_snapshot": telegram_snapshot,
+            "runtime_snapshot": runtime_snapshot,
+            "storage_snapshot": storage_snapshot,
             "downloaded_models": downloaded_models,
             "settings_saved": settings_saved,
+            "active_tab": active_tab,
         },
     )
 
@@ -329,11 +352,23 @@ async def update_settings(request: Request) -> RedirectResponse:
     form = await request.form()
     updates: dict[str, object] = {}
 
-    updates["wtm_quick"] = "wtm_quick" in form
+    engine = str(form.get("engine", "")).strip()
+    if engine in ENGINE_CHOICES:
+        updates["engine"] = engine
+
+    if "wtm_quick_present" in form or "wtm_quick" in form:
+        updates["wtm_quick"] = "wtm_quick" in form
 
     whisper_model = str(form.get("whisper_model", "")).strip()
     if whisper_model:
         updates["whisper_model"] = whisper_model
+
+    if "update_check_enabled_present" in form or "update_check_enabled" in form:
+        updates["update_check_enabled"] = "update_check_enabled" in form
+
+    log_level = str(form.get("log_level", "")).strip()
+    if log_level:
+        updates["log_level"] = normalize_log_level(log_level)
 
     telegram_token = str(form.get("telegram_token", "")).strip()
     if telegram_token:
@@ -355,7 +390,10 @@ async def update_settings(request: Request) -> RedirectResponse:
 
 @app.get("/api/settings")
 def api_settings() -> dict[str, object]:
-    return build_settings_snapshot(base_dir=get_base_dir())
+    base_dir = get_base_dir()
+    snapshot = build_settings_snapshot(base_dir=base_dir)
+    snapshot["telegram_snapshot"] = build_telegram_snapshot(base_dir=base_dir)
+    return snapshot
 
 
 @app.post("/api/settings")
@@ -366,7 +404,10 @@ async def api_update_settings(request: Request) -> dict[str, object]:
         raise HTTPException(status_code=422, detail=errors)
     if updates:
         update_settings_file(get_base_dir(), updates)
-    return build_settings_snapshot(base_dir=get_base_dir())
+    base_dir = get_base_dir()
+    snapshot = build_settings_snapshot(base_dir=base_dir)
+    snapshot["telegram_snapshot"] = build_telegram_snapshot(base_dir=base_dir)
+    return snapshot
 
 
 @app.post("/api/settings/clear-uploads")

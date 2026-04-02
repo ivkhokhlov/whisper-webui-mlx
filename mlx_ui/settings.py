@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,21 @@ from mlx_ui.transcriber import (
     WtmTranscriber,
 )
 
+ENGINE_MLX = "whisper_mlx"
+ENGINE_CPU = "whisper_cpu"
+ENGINE_CHOICES = (ENGINE_MLX, ENGINE_CPU)
+
+
+def is_whisper_available() -> bool:
+    return importlib.util.find_spec("whisper") is not None
+
+
+def is_wtm_available() -> bool:
+    return importlib.util.find_spec("whisper_turbo") is not None
+
+
 DEFAULT_SETTINGS: dict[str, object] = {
+    "engine": ENGINE_MLX,
     "update_check_enabled": True,
     "log_level": "INFO",
     "wtm_quick": False,
@@ -54,6 +69,11 @@ def read_settings_file(path: Path) -> dict[str, object]:
     if not isinstance(payload, dict):
         return {}
     parsed: dict[str, object] = {}
+    engine = payload.get("engine")
+    if isinstance(engine, str):
+        normalized = engine.strip()
+        if normalized in ENGINE_CHOICES:
+            parsed["engine"] = normalized
     update_check = payload.get("update_check_enabled")
     if isinstance(update_check, bool):
         parsed["update_check_enabled"] = update_check
@@ -131,6 +151,17 @@ def compute_effective_settings(
     effective: dict[str, object] = {}
     sources: dict[str, str] = {}
 
+    backend_env = env.get(BACKEND_ENV, "")
+    if backend_env is not None and backend_env.strip() != "":
+        effective["engine"] = _engine_from_backend_env(env)
+        sources["engine"] = "env"
+    elif "engine" in file_settings:
+        effective["engine"] = str(file_settings["engine"])
+        sources["engine"] = "file"
+    else:
+        effective["engine"] = DEFAULT_SETTINGS["engine"]
+        sources["engine"] = "default"
+
     disable_value = env.get(DISABLE_UPDATE_CHECK_ENV)
     if disable_value is not None and disable_value.strip() != "":
         effective["update_check_enabled"] = not is_update_check_disabled(env)
@@ -188,6 +219,16 @@ def compute_effective_settings(
     return effective, sources, file_settings
 
 
+def _engine_from_backend_env(env: Mapping[str, str]) -> str:
+    backend = env.get(BACKEND_ENV, DEFAULT_BACKEND).strip().lower()
+    if backend in {"whisper", "openai-whisper", "openai"}:
+        return ENGINE_CPU
+    if backend in {"wtm", "mlx", "wtm-cli"}:
+        return ENGINE_MLX
+    # Unknown backend: keep UI stable and use default engine label.
+    return str(DEFAULT_SETTINGS["engine"])
+
+
 def write_settings_file(path: Path, data: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, indent=2, sort_keys=True)
@@ -213,6 +254,13 @@ def validate_settings_payload(payload: object) -> tuple[dict[str, object], list[
         return {}, ["Payload must be a JSON object."]
     updates: dict[str, object] = {}
     errors: list[str] = []
+
+    if "engine" in payload:
+        value = payload["engine"]
+        if isinstance(value, str) and value.strip() in ENGINE_CHOICES:
+            updates["engine"] = value.strip()
+        else:
+            errors.append(f"engine must be one of: {', '.join(ENGINE_CHOICES)}")
 
     if "update_check_enabled" in payload:
         value = payload["update_check_enabled"]
@@ -285,6 +333,10 @@ def build_settings_snapshot(
         "settings": effective,
         "sources": sources,
         "defaults": DEFAULT_SETTINGS,
+        "compat": {
+            "whisper_available": is_whisper_available(),
+            "wtm_available": is_wtm_available(),
+        },
         "file": {
             "path": str(path),
             "exists": path.exists(),
@@ -292,9 +344,32 @@ def build_settings_snapshot(
         "options": {
             "log_levels": list(ALLOWED_LOG_LEVELS),
             "output_formats": list(ALLOWED_OUTPUT_FORMATS),
+            "engines": [
+                {
+                    "id": ENGINE_MLX,
+                    "label": "Whisper (MLX / Metal)",
+                    "available": is_wtm_available(),
+                },
+                {
+                    "id": ENGINE_CPU,
+                    "label": "Whisper (CPU)",
+                    "available": is_whisper_available(),
+                },
+                {
+                    "id": "cohere",
+                    "label": "Cohere",
+                    "available": False,
+                },
+                {
+                    "id": "parakeet_tdt_v3",
+                    "label": "Parakeet TDT v3",
+                    "available": False,
+                },
+            ],
         },
         "meta": {
             "env_vars": {
+                "engine": BACKEND_ENV,
                 "update_check_enabled": DISABLE_UPDATE_CHECK_ENV,
                 "log_level": "LOG_LEVEL",
                 "wtm_quick": "WTM_QUICK",
@@ -421,15 +496,51 @@ def build_runtime_metadata(base_dir: Path | None = None) -> dict[str, object]:
     if base_dir is None:
         base_dir = Path(__file__).resolve().parent.parent
     telegram = build_telegram_snapshot(base_dir=base_dir)
+    effective, sources, _file_settings = compute_effective_settings(base_dir=base_dir)
+    engine_value = str(effective.get("engine") or DEFAULT_SETTINGS["engine"])
+    engine_source = sources.get("engine", "default")
     version = read_local_version() or "unknown"
     build_date = read_build_date(base_dir)
     wtm_path = WtmTranscriber().wtm_path
+    whisper_available = is_whisper_available()
+    wtm_available = is_wtm_available()
+    backend_env = os.getenv(BACKEND_ENV, "").strip()
+    engine_active = engine_value
+    engine_note = None
+    if backend_env:
+        backend_value = backend_env
+        backend_source = "env"
+        if engine_active == ENGINE_CPU and not whisper_available:
+            engine_note = "Whisper (CPU) is selected but the optional 'openai-whisper' dependency is not installed."
+        if engine_active == ENGINE_MLX and not wtm_available:
+            engine_note = "Whisper (MLX / Metal) is selected but WTM is not installed."
+    else:
+        if engine_active == ENGINE_CPU and not whisper_available and wtm_available:
+            engine_active = ENGINE_MLX
+            engine_note = "Whisper (CPU) isn't available; using Whisper (MLX / Metal)."
+        elif engine_active == ENGINE_MLX and not wtm_available and whisper_available:
+            engine_active = ENGINE_CPU
+            engine_note = "Whisper (MLX / Metal) isn't available; using Whisper (CPU)."
+
+        backend_value = DEFAULT_BACKEND if engine_active == ENGINE_MLX else "whisper"
+        backend_source = engine_source
     return {
         "telegram": telegram,
         "about": {
             "version": version,
             "build_date": build_date or "unknown",
             "wtm_path": wtm_path,
+            "backend": backend_value,
+            "backend_source": backend_source,
+            "backend_env": BACKEND_ENV,
+            "engine": engine_value,
+            "engine_source": engine_source,
+            "engine_active": engine_active,
+            "engine_note": engine_note,
+            "compat": {
+                "whisper_available": whisper_available,
+                "wtm_available": wtm_available,
+            },
         },
     }
 
@@ -460,11 +571,30 @@ def resolve_transcriber_with_settings(
         base_dir=base_dir,
         env=env,
     )
-    backend = env.get(BACKEND_ENV, DEFAULT_BACKEND).strip().lower()
+    backend_from_env = env.get(BACKEND_ENV, "").strip().lower()
+    engine = str(effective.get("engine") or DEFAULT_SETTINGS["engine"])
+    if backend_from_env:
+        backend = backend_from_env
+    else:
+        backend = DEFAULT_BACKEND if engine == ENGINE_MLX else "whisper"
+        if backend == "whisper" and not is_whisper_available() and is_wtm_available():
+            backend = DEFAULT_BACKEND
+        elif (
+            backend in {"wtm", "mlx", "wtm-cli"}
+            and not is_wtm_available()
+            and is_whisper_available()
+        ):
+            backend = "whisper"
     if backend in {"wtm", "mlx", "wtm-cli"}:
         return WtmTranscriber(quick=bool(effective["wtm_quick"]))
     if backend in {"whisper", "openai-whisper", "openai"}:
-        return WhisperTranscriber(model_name=str(effective["whisper_model"]))
+        device = None
+        if not backend_from_env and engine == ENGINE_CPU:
+            device = "cpu"
+        return WhisperTranscriber(
+            model_name=str(effective["whisper_model"]),
+            device=device,
+        )
     if backend in {"fake", "noop", "test"}:
         return FakeTranscriber()
     raise ValueError(
