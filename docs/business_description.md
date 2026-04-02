@@ -11,7 +11,9 @@ engine. Recent work added a real provider registry, per-job engine persistence,
 per-job engine resolution in the worker, normalized transcript outputs, local
 model readiness metadata, and UI badges that show which engine and language each
 job used. The `/live` route remains an honest beta preview rather than a
-production capture workflow.
+production capture workflow. Ongoing refactors keep the app maintainable while
+preserving the same UI/API contract, including an app-factory bootstrap path,
+focused routers, provider modules per engine, and template partials.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -33,6 +35,8 @@ production capture workflow.
 - Sequential job queue with per-job `requested_engine`, `effective_engine`, and
   explicit language values so queued work remains truthful even when settings
   change later.
+- Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
+  so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
   SQLite, plus best-effort Telegram delivery and update checks.
 - Shared output writers so engines can produce `.txt` by default and `.json`,

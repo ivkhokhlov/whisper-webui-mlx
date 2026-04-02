@@ -1,0 +1,223 @@
+          <section
+            class="panel{% if active_tab == 'queue' %} is-active{% endif %}"
+            id="panel-queue"
+            data-panel="queue"
+            {% if active_tab != 'queue' %}hidden{% endif %}
+          >
+            <div class="queue-header">
+              <div>
+                <h2>Queue</h2>
+                <p>Upload files to start transcription (one at a time).</p>
+              </div>
+              <div class="queue-summary">
+                <div class="queue-count" data-queue-count>
+                  {{ queued_count }} {{ "file" if queued_count == 1 else "files" }} queued
+                </div>
+              </div>
+            </div>
+            <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
+              <div class="upload-header">
+                <div class="upload-header-main">
+                  <h3 class="upload-title" id="upload-title">
+                    {% if not queue_jobs %}Your queue is empty{% else %}Start a transcription{% endif %}
+                  </h3>
+                  <p class="upload-subtitle" id="upload-subtitle">
+                    {% if not queue_jobs %}
+                      Start with files for a quick upload, or choose a folder for batch work.
+                      Download transcripts from History when done.
+                    {% else %}
+                      Select files for the fastest start. Use a folder when you want to batch many
+                      items and subfolders.
+                    {% endif %}
+                  </p>
+                  {% if not queue_jobs %}
+                    <div class="empty-guide" aria-label="How queue works">
+                      <span class="empty-guide-item"><strong>1</strong> Select</span>
+                      <span class="empty-guide-item"><strong>2</strong> Queue</span>
+                      <span class="empty-guide-item"><strong>3</strong> Download</span>
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+              <label class="sr-only" for="file-input">Select audio or video files</label>
+              <input
+                id="file-input"
+                class="upload-input"
+                type="file"
+                name="files"
+                multiple
+                required
+                accept="audio/*,video/*"
+              >
+              <input
+                id="folder-input"
+                class="upload-input"
+                type="file"
+                multiple
+                webkitdirectory
+              >
+              <div class="upload-select" role="group" aria-label="Choose files or a folder">
+                <button class="select-button is-primary" type="button" data-upload-pick="files">
+                  Select files…
+                </button>
+                <button class="select-button is-secondary" type="button" data-upload-pick="folder">
+                  Select folder…
+                </button>
+              </div>
+              <div class="upload-note">
+                Folder upload scans subfolders too. Drag and drop is available below if you prefer it.
+              </div>
+              <label
+                class="dropzone"
+                id="dropzone"
+                tabindex="0"
+                role="button"
+                for="file-input"
+                aria-describedby="dropzone-hint dropzone-helper"
+              >
+                <div class="dropzone-title">Prefer drag & drop?</div>
+                <div class="dropzone-subtitle" id="dropzone-hint">
+                  Drop files from Finder here.
+                </div>
+                <div class="dropzone-helper" id="dropzone-helper">
+                  Common formats: MP3, M4A, WAV, MP4, MOV, MKV. Anything else is skipped.
+                </div>
+              </label>
+              <div class="selection-summary" id="selection-summary" aria-live="polite" aria-atomic="true">
+                <div class="selection-chips" aria-label="Selection summary">
+                  <span class="selection-chip is-strong" id="selection-valid">0 files</span>
+                  <span class="selection-chip" id="selection-size">0 B</span>
+                  <span class="selection-chip" id="selection-batch">Small batch</span>
+                  <span
+                    class="selection-chip is-muted"
+                    id="selection-skipped"
+                    title="Skipped items are not audio/video, hidden, or unsupported."
+                  >Skipped 0</span>
+                </div>
+                <div class="selection-state" id="selection-state" hidden>
+                  <span class="spinner" aria-hidden="true"></span>
+                  Reading folder… This can take a moment.
+                </div>
+              </div>
+              <div class="file-list" id="file-list" aria-live="polite"></div>
+              <button class="file-toggle" id="file-list-toggle" type="button">Show all</button>
+              <div class="upload-config">
+                <div class="upload-config-field">
+                  <label class="settings-label" for="upload-language">Language</label>
+                  <select class="settings-input" id="upload-language" name="language">
+                    {% for language_option in settings_snapshot.options.languages %}
+                      <option
+                        value="{{ language_option.id }}"
+                        {% if settings_snapshot.settings.default_language == language_option.id %}selected{% endif %}
+                      >
+                        {{ language_option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <p class="upload-config-note">
+                  Saved on each job. Use automatic detection for local engines, or choose a fixed
+                  language before queueing jobs for providers that require one.
+                </p>
+              </div>
+              <div class="upload-actions">
+                <div class="upload-actions-buttons">
+                  <button class="cta" id="upload-submit" type="submit">Queue uploads</button>
+                  <button class="job-primary is-secondary" id="clear-selection" type="button" disabled>
+                    Clear selection
+                  </button>
+                </div>
+                <span class="hint">
+                  {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
+                    Cloud engine selected. It requires network access and is not local/offline.
+                  {% else %}
+                    Processed locally. Nothing is uploaded.
+                  {% endif %}
+                </span>
+              </div>
+            </form>
+            <div class="job-list" aria-live="polite" id="queue-list">
+              {% set offset = 1 if queue_jobs | selectattr("status", "equalto", "running") | list | length > 0 else 0 %}
+              {% set queue_index = namespace(value=0) %}
+              {% for job in queue_jobs %}
+                {% set job_view = job_views.get(job.id, {}) %}
+                {% set is_running = job.status == "running" %}
+                {% if job.status == "queued" %}
+                  {% set queue_index.value = queue_index.value + 1 %}
+                {% endif %}
+                <div class="job-row{% if is_running %} is-running{% endif %}">
+                  {% if is_running %}
+                    <div class="job-icon" aria-hidden="true">⏳</div>
+                  {% endif %}
+                  <div class="job-body">
+                    <div class="job-topline">
+                      <div class="job-name" title="{{ job.filename }}">{{ job.filename }}</div>
+                      <span class="status-badge is-{{ job.status }}">{{ job.status | capitalize }}</span>
+                    </div>
+                    <div class="job-subline">
+                      <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
+                        Added {{ job.created_at }}
+                      </div>
+                      {% if job.started_at %}
+                        <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
+                          Started {{ job.started_at }}
+                        </div>
+                      {% endif %}
+                      {% if job.status == "queued" %}
+                        {% set queue_position = queue_index.value + offset %}
+                        {% set items_ahead = queue_position - 1 %}
+                        <span class="job-chip is-strong">Queue #{{ queue_position }}</span>
+                        <span class="job-chip">
+                          {{ items_ahead }} {{ "item" if items_ahead == 1 else "items" }} ahead
+                        </span>
+                      {% endif %}
+                      {% if is_running and job.started_at %}
+                        <span
+                          class="job-chip is-strong job-elapsed"
+                          data-started-at="{{ job.started_at }}"
+                        >
+                          Elapsed …
+                        </span>
+                      {% endif %}
+                      {% if job_view.engine_badges %}
+                        <span class="meta-chips" aria-label="Engine">
+                          {% for badge in job_view.engine_badges %}
+                            <span
+                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
+                              title="{{ badge.title }}"
+                            >
+                              {{ badge.label }}
+                            </span>
+                          {% endfor %}
+                        </span>
+                      {% endif %}
+                      {% if job_view.language %}
+                        <span
+                          class="meta-chip is-language"
+                          title="Language: {{ job_view.language.label }}"
+                        >
+                          {{ job_view.language.short_label }}
+                        </span>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="job-actions">
+                    {% if job.status == "queued" %}
+                      <button
+                        class="job-bin"
+                        type="button"
+                        data-job-id="{{ job.id }}"
+                        aria-label="Remove from queue"
+                        title="Remove from queue"
+                      >
+                        <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
+                        </svg>
+                        <span class="job-bin-text">Remove</span>
+                      </button>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </section>

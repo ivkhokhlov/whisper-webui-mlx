@@ -1,0 +1,24 @@
+                  <div class="live-stage__actions">
+                    <div class="live-stage__controls">
+                      <button
+                        class="cta{% if not live_snapshot.active %} is-disabled{% endif %}"
+                        id="live-start"
+                        type="button"
+                        {% if not live_snapshot.active %}disabled aria-disabled="true"{% endif %}
+                      >
+                        Start live capture
+                      </button>
+                      <button class="cta is-secondary is-disabled" id="live-stop" type="button" disabled aria-disabled="true">
+                        Stop capture
+                      </button>
+                      <a class="cta is-secondary" href="/?tab=queue">Use Queue instead</a>
+                    </div>
+                    <p class="live-stage__note" id="live-note">
+                      {% if live_snapshot.active %}
+                        {{ live_snapshot.note }} First partial text usually appears after about
+                        {{ "%.1f"|format(live_snapshot.latency_secs) }} seconds.
+                      {% else %}
+                        {{ live_snapshot.reason }}
+                      {% endif %}
+                    </p>
+                  </div>

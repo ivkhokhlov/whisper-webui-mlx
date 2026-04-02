@@ -5,7 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mlx_ui.app import app, sanitize_display_path
+from mlx_ui.app import app
+from mlx_ui.storage import sanitize_display_path
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
 
@@ -460,7 +461,7 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
 def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
     _configure_app(tmp_path)
     monkeypatch.setattr(
-        "mlx_ui.app.build_live_transcription_snapshot",
+        "mlx_ui.routers.pages.build_live_transcription_snapshot",
         lambda base_dir: {
             "active": False,
             "enabled": False,
@@ -488,7 +489,7 @@ def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
 def test_live_page_shows_active_beta_when_enabled(tmp_path: Path, monkeypatch) -> None:
     _configure_app(tmp_path)
     monkeypatch.setattr(
-        "mlx_ui.app.build_live_transcription_snapshot",
+        "mlx_ui.routers.pages.build_live_transcription_snapshot",
         lambda base_dir: {
             "active": True,
             "enabled": True,
@@ -529,7 +530,7 @@ def test_live_api_uses_injected_service(tmp_path: Path, monkeypatch) -> None:
         "latency_secs": 4.0,
     }
     monkeypatch.setattr(
-        "mlx_ui.app.build_live_transcription_snapshot",
+        "mlx_ui.routers.live_api.build_live_transcription_snapshot",
         lambda base_dir: live_snapshot,
     )
 

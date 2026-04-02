@@ -46,6 +46,8 @@ def _connect(db_path: Path) -> sqlite3.Connection:
 
 
 def _job_record_from_data(job_data: dict[str, object]) -> JobRecord:
+    if job_data.get("status") == "reserved":
+        job_data["status"] = "running"
     job_data["language"] = normalize_language(job_data.get("language"))
     return JobRecord(**job_data)
 
@@ -201,7 +203,7 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
             FROM jobs
             ORDER BY
                 CASE
-                    WHEN status = 'running' THEN 0
+                    WHEN status IN ('running', 'reserved') THEN 0
                     WHEN status = 'queued' THEN 1
                     ELSE 2
                 END,
@@ -354,7 +356,7 @@ def cancel_running_job(db_path: Path, job_id: str) -> bool:
             UPDATE jobs
             SET status = 'cancelled',
                 completed_at = ?
-            WHERE id = ? AND status = 'running'
+            WHERE id = ? AND status IN ('running', 'reserved')
             """,
             (completed_at, job_id),
         )
@@ -412,12 +414,82 @@ def recover_running_jobs(
                     WHEN error_message IS NULL OR error_message = '' THEN ?
                     ELSE error_message
                 END
-            WHERE status = 'running'
+            WHERE status IN ('running', 'reserved')
             """,
             (completed_at, error_message),
         )
         connection.commit()
     return cursor.rowcount
+
+
+def mark_job_running(
+    db_path: Path,
+    job_id: str,
+    *,
+    started_at: str | None = None,
+    effective_engine: str | None = None,
+) -> bool:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    started_at_value = started_at or _now_utc()
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'running',
+                started_at = ?,
+                effective_engine = ?
+            WHERE id = ? AND status = 'reserved'
+            """,
+            (started_at_value, effective_engine, job_id),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
+def mark_job_done(
+    db_path: Path,
+    job_id: str,
+    *,
+    completed_at: str | None = None,
+) -> bool:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    completed_at_value = completed_at or _now_utc()
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'done',
+                completed_at = ?
+            WHERE id = ? AND status = 'running'
+            """,
+            (completed_at_value, job_id),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
+
+
+def mark_job_failed(
+    db_path: Path,
+    job_id: str,
+    *,
+    completed_at: str | None = None,
+    error_message: str | None = None,
+) -> bool:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    completed_at_value = completed_at or _now_utc()
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'failed',
+                completed_at = ?,
+                error_message = ?
+            WHERE id = ? AND status IN ('running', 'reserved')
+            """,
+            (completed_at_value, error_message, job_id),
+        )
+        connection.commit()
+    return cursor.rowcount > 0
 
 
 def claim_next_job(
@@ -434,7 +506,7 @@ def claim_next_job(
             """
             SELECT id
             FROM jobs
-            WHERE status = 'running'
+            WHERE status IN ('running', 'reserved')
             LIMIT 1
             """
         ).fetchone()
@@ -469,33 +541,17 @@ def claim_next_job(
             connection.execute("COMMIT")
             return None
         job_id = row["id"]
-        started_at = _now_utc()
-        if effective_engine is None:
-            connection.execute(
-                """
-                UPDATE jobs
-                SET status = 'running', started_at = ?
-                WHERE id = ?
-                """,
-                (started_at, job_id),
-            )
-        else:
-            connection.execute(
-                """
-                UPDATE jobs
-                SET status = 'running',
-                    started_at = ?,
-                    effective_engine = ?
-                WHERE id = ?
-                """,
-                (started_at, effective_engine, job_id),
-            )
+        connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'reserved'
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
         connection.execute("COMMIT")
         job_data = dict(row)
-        job_data["status"] = "running"
-        job_data["started_at"] = started_at
-        if effective_engine is not None:
-            job_data["effective_engine"] = effective_engine
+        job_data["status"] = "reserved"
         return _job_record_from_data(job_data)
     except Exception:
         connection.execute("ROLLBACK")

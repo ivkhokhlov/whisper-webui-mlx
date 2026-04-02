@@ -135,3 +135,29 @@ def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:
     assert recovered_job.status == "failed"
     assert recovered_job.completed_at is not None
     assert recovered_job.error_message == "Recovered after crash"
+
+
+def test_recover_running_jobs_marks_reserved_failed(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobs.db"
+    init_db(db_path)
+
+    created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    job = JobRecord(
+        id="job-1",
+        filename="alpha.wav",
+        status="reserved",
+        created_at=created_at,
+        upload_path="x",
+        language="en",
+    )
+    insert_job(db_path, job)
+
+    recovered = recover_running_jobs(db_path)
+
+    assert recovered == 1
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    recovered_job = jobs[0]
+    assert recovered_job.status == "failed"
+    assert recovered_job.completed_at is not None
+    assert recovered_job.error_message == "Recovered after crash"

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import threading
 
-from mlx_ui.db import claim_next_job, update_job_status
+from mlx_ui.db import claim_next_job, mark_job_done, mark_job_failed, mark_job_running
 from mlx_ui.engine_registry import create_transcriber
 from mlx_ui.settings import (
     ResolvedTranscriberSettings,
@@ -111,33 +111,38 @@ class Worker:
             transcriber, effective_engine = self._resolve_transcriber_for_job(job)
         except Exception as exc:
             _log_transcriber_resolution_error(job.id, exc)
-            update_job_status(
+            mark_job_failed(
                 self.db_path,
                 job.id,
-                "failed",
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
-        job.effective_engine = effective_engine
-        update_job_status(
+        started_at = _now_utc()
+        if not mark_job_running(
             self.db_path,
             job.id,
-            "running",
+            started_at=started_at,
             effective_engine=effective_engine,
-        )
+        ):
+            logger.warning(
+                "Worker lost reservation for job %s before starting transcription",
+                job.id,
+            )
+            cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
+            return True
+        job.started_at = started_at
+        job.effective_engine = effective_engine
         try:
             result_path = transcriber.transcribe(job, self.results_dir)
         except Exception as exc:
             logger.exception("Worker failed to transcribe job %s", job.id)
-            update_job_status(
+            mark_job_failed(
                 self.db_path,
                 job.id,
-                "failed",
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
-                effective_engine=effective_engine,
             )
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
@@ -147,12 +152,10 @@ class Worker:
             logger.exception(
                 "Worker failed to deliver Telegram message for job %s", job.id
             )
-        update_job_status(
+        mark_job_done(
             self.db_path,
             job.id,
-            "done",
             completed_at=_now_utc(),
-            effective_engine=effective_engine,
         )
         cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
         return True
@@ -235,9 +238,16 @@ def _cached_transcriber(
 ) -> Transcriber:
     transcriber = cache.get(resolved.cache_key)
     if transcriber is None:
-        transcriber = create_transcriber(
-            resolved.engine_id,
-            options=resolved.options,
-        )
+        if resolved.implementation_id:
+            transcriber = create_transcriber(
+                resolved.engine_id,
+                implementation_id=resolved.implementation_id,
+                options=resolved.options,
+            )
+        else:
+            transcriber = create_transcriber(
+                resolved.engine_id,
+                options=resolved.options,
+            )
         cache[resolved.cache_key] = transcriber
     return transcriber
