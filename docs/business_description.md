@@ -60,6 +60,8 @@ preview rather than a production capture workflow.
 - Local data storage under data/ for easy retention and cleanup.
 - Settings panel for default model selection (defaults to large-v3-turbo) and
   WTM quick mode, persisted in data/settings.json.
+- Settings -> About reflects the app version from `pyproject.toml`, so the UI
+  stays in sync with the current local build/version bump.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.
