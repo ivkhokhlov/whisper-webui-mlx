@@ -62,6 +62,10 @@ preview rather than a production capture workflow.
   WTM quick mode, persisted in data/settings.json.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
+- Settings and the transcriber resolver now keep the selected engine
+  (`Whisper (MLX / Metal)` vs `Whisper (CPU)`), effective backend, log level,
+  and update-check preference aligned between saved settings, environment
+  overrides, and the About/runtime snapshot.
 - Local settings API endpoints for automation (read, update, and clear storage).
 - Optional Telegram delivery of results without blocking the queue, configured
   via saved tokens or environment variables.

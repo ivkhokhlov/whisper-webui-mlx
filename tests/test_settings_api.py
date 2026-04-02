@@ -20,6 +20,7 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("DISABLE_UPDATE_CHECK", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("WTM_QUICK", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_BACKEND", raising=False)
 
     with TestClient(app) as client:
         response = client.get("/api/settings")
@@ -29,11 +30,13 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     settings = payload["settings"]
     sources = payload["sources"]
 
+    assert settings["engine"] == "whisper_mlx"
     assert settings["update_check_enabled"] is True
     assert settings["log_level"] == "INFO"
     assert settings["wtm_quick"] is False
     assert settings["output_formats"] == ["txt"]
 
+    assert sources["engine"] == "default"
     assert sources["update_check_enabled"] == "default"
     assert sources["log_level"] == "default"
     assert sources["wtm_quick"] == "default"
@@ -51,6 +54,7 @@ def test_settings_update_persists(tmp_path: Path, monkeypatch) -> None:
         response = client.post(
             "/api/settings",
             json={
+                "engine": "whisper_cpu",
                 "wtm_quick": True,
                 "log_level": "DEBUG",
                 "output_formats": ["txt", "srt"],
@@ -61,13 +65,16 @@ def test_settings_update_persists(tmp_path: Path, monkeypatch) -> None:
     payload = response.json()
     settings = payload["settings"]
 
+    assert settings["engine"] == "whisper_cpu"
     assert settings["wtm_quick"] is True
     assert settings["log_level"] == "DEBUG"
     assert "srt" in settings["output_formats"]
+    assert payload["sources"]["engine"] == "file"
     assert payload["sources"]["wtm_quick"] == "file"
 
     settings_path = tmp_path / "data" / "settings.json"
     persisted = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert persisted["engine"] == "whisper_cpu"
     assert persisted["wtm_quick"] is True
     assert persisted["log_level"] == "DEBUG"
 
@@ -76,6 +83,7 @@ def test_settings_env_override(tmp_path: Path, monkeypatch) -> None:
     _configure_app(tmp_path)
     monkeypatch.setenv("WTM_QUICK", "1")
     monkeypatch.setenv("LOG_LEVEL", "ERROR")
+    monkeypatch.setenv("TRANSCRIBER_BACKEND", "whisper")
 
     with TestClient(app) as client:
         response = client.get("/api/settings")
@@ -85,8 +93,10 @@ def test_settings_env_override(tmp_path: Path, monkeypatch) -> None:
     settings = payload["settings"]
     sources = payload["sources"]
 
+    assert settings["engine"] == "whisper_cpu"
     assert settings["wtm_quick"] is True
     assert settings["log_level"] == "ERROR"
+    assert sources["engine"] == "env"
     assert sources["wtm_quick"] == "env"
     assert sources["log_level"] == "env"
 
@@ -118,3 +128,35 @@ def test_clear_storage_paths(tmp_path: Path) -> None:
     assert results_resp.status_code == 200
     assert list(uploads_dir.iterdir()) == []
     assert list(results_dir.iterdir()) == []
+
+
+def test_settings_api_includes_masked_telegram_snapshot(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    token = "123456:ABCDEFSECRET"
+    chat_id = "-1001234567890"
+    settings_path.write_text(
+        json.dumps({"telegram_token": token, "telegram_chat_id": chat_id}),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "telegram_snapshot" in payload
+    assert "telegram_token" not in payload["settings"]
+    assert "telegram_chat_id" not in payload["settings"]
+
+    telegram = payload["telegram_snapshot"]
+    assert telegram["configured"] is True
+    assert telegram["source"] == "file"
+    assert telegram["token_masked"] != token
+    assert telegram["chat_id_masked"] != chat_id

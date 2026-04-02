@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+from mlx_ui.settings import compute_effective_settings
+
 
 def configure_logging(base_dir: Path | None = None) -> None:
     root_logger = logging.getLogger()
@@ -17,7 +19,8 @@ def configure_logging(base_dir: Path | None = None) -> None:
     log_dir = Path(os.getenv("LOG_DIR", base_dir / "data" / "logs"))
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    effective, _sources, _file_settings = compute_effective_settings(base_dir=base_dir)
+    level_name = str(effective.get("log_level") or "INFO").upper()
     level = logging.getLevelName(level_name)
     if isinstance(level, str):
         level = logging.INFO
