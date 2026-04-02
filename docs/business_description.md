@@ -7,11 +7,13 @@ easy, localhost UI that lets users upload files in batches, process them
 sequentially, and download text results from a queue/history view. Uploads
 support files or folders with a preflight summary (count, size, estimate) and
 basic filtering before queueing. After initial setup and model download, it runs
-fully offline. Recent UI work focuses on a compact, scannable History view with
-details-on-demand and transcript previews, aligned queue status metadata for
-clearer scanning, a stable Worker status card (single-line filename truncation,
-no duplicated status text), plus a dedicated Settings panel for default model
-selection, WTM quick mode, and Telegram delivery configuration.
+fully offline. Recent UI work focuses on a compact Queue/History/Settings shell
+with a mobile-friendly tab rail, a calmer Queue first screen for batch uploads,
+a stable Worker status card that only shows current-file metadata while work is
+active, a denser History list for high-volume datasets, and a clearer Settings
+panel for default model selection, WTM quick mode, Telegram delivery, storage
+management, and local diagnostics. The `/live` route remains an honest beta
+preview rather than a production capture workflow.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -39,10 +41,16 @@ selection, WTM quick mode, and Telegram delivery configuration.
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
-- Worker status card that surfaces the current job filename (truncated with
-  ellipsis to avoid layout shifts) and elapsed time.
+- Worker status card that surfaces queue depth, mode, and current job metadata
+  only when the worker is actively processing.
+- Compact top-level navigation for Queue, History, and Settings that stays
+  usable on mobile while `/live` remains a direct beta-preview route.
+- Queue-first onboarding that keeps one dominant “Select files…” action above
+  the fold while preserving folder batch upload and drag-and-drop as secondary
+  affordances.
 - Compact History view with status, filename, time, output labels, and one-click
-  primary actions (download or view log).
+  primary actions, plus overflow actions that stay inside the viewport near
+  screen edges.
 - Details-on-demand panel for full timestamps, outputs list, and error logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
@@ -57,8 +65,8 @@ selection, WTM quick mode, and Telegram delivery configuration.
   via saved tokens or environment variables.
 - Telegram delivery sends a single message with the transcript file attached
   and the original filename as the caption.
-- (Planned/available) Live mode for recording and chunked transcription in the
-  browser.
+- Beta preview route for Live mode that communicates the intended future flow
+  without implying microphone/browser capture is already implemented.
 - Branded favicon in the browser tab for quick visual recognition of the local UI.
 
 ## Value proposition
