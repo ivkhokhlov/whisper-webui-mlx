@@ -7,6 +7,32 @@ VENV_DIR="$ROOT_DIR/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 VENV_PIP="$VENV_DIR/bin/pip"
 STEP_COUNT=0
+WITH_COHERE="${WHISPER_WEBUI_WITH_COHERE:-0}"
+WITH_WHISPER_CPU="${WHISPER_WEBUI_WITH_WHISPER_CPU:-0}"
+MACOS_ARCH=""
+INSTALL_MLX_DEFAULT=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/setup_and_run.sh [--with-cohere] [--with-whisper-cpu]
+
+Default engine bootstrap:
+  macOS arm64   -> Whisper MLX (best-supported local path)
+  macOS x86_64  -> Whisper CPU
+
+Optional profiles:
+  --with-cohere       Install the Cohere SDK for the cloud backend
+  --with-whisper-cpu  On Apple Silicon, also install the Whisper CPU fallback
+
+Environment variables:
+  WHISPER_WEBUI_WITH_COHERE=1
+  WHISPER_WEBUI_WITH_WHISPER_CPU=1
+
+Notes:
+  - This bootstrap script supports macOS only.
+  - Parakeet is not installed here; the local Parakeet backend currently requires Linux + CUDA.
+EOF
+}
 
 log() {
   printf '%s\n' "==> $*"
@@ -26,13 +52,74 @@ step() {
   log "Step ${STEP_COUNT}: $*"
 }
 
-require_macos_arm64() {
+normalize_bool() {
+  local value="${1:-}"
+  # macOS ships bash 3.2 which doesn't support ${var,,}
+  local value_lc
+  value_lc="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+  case "$value_lc" in
+    1|true|yes|on) printf '1\n' ;;
+    0|false|no|off|'') printf '0\n' ;;
+    *)
+      fail "Expected a boolean value, got '$value'."
+      ;;
+  esac
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --with-cohere)
+        WITH_COHERE=1
+        shift
+        ;;
+      --with-whisper-cpu)
+        WITH_WHISPER_CPU=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown argument: $1"
+        ;;
+    esac
+  done
+}
+
+require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
     fail "This script supports macOS only."
   fi
-  if [[ "$(uname -m)" != "arm64" ]]; then
-    fail "Apple Silicon (arm64) is required."
+}
+
+detect_macos_arch() {
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+    arm64|x86_64)
+      printf '%s\n' "$arch"
+      ;;
+    *)
+      fail "Unsupported macOS architecture '$arch'."
+      ;;
+  esac
+}
+
+print_engine_expectations() {
+  local arch="$1"
+  if [[ "$arch" == "arm64" ]]; then
+    log "Detected Apple Silicon macOS."
+    log "Expected local engine after bootstrap: Whisper MLX."
+    log "Optional engines on this machine: Whisper CPU (--with-whisper-cpu), Cohere (--with-cohere)."
+  else
+    log "Detected Intel macOS."
+    log "Expected local engine after bootstrap: Whisper CPU."
+    log "Optional engines on this machine: Cohere (--with-cohere)."
+    log "Whisper MLX is not installed on Intel."
   fi
+  log "Parakeet local backend is not installed by the macOS bootstrap path; it currently requires Linux + CUDA."
 }
 
 ensure_xcode_cli_tools() {
@@ -158,7 +245,7 @@ ensure_git() {
   fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
 }
 
-ensure_python_deps() {
+ensure_base_python_deps() {
   local python_bin="$1"
   if [[ ! -f "$ROOT_DIR/requirements.txt" ]]; then
     fail "requirements.txt not found in repo root."
@@ -178,23 +265,68 @@ ensure_python_deps() {
     fail "Virtual environment missing python at $VENV_PYTHON"
   fi
   export PATH="$VENV_DIR/bin:$PATH"
-  log "Installing Python dependencies..."
+  log "Installing base Python dependencies..."
   "$VENV_PIP" install --upgrade pip
   "$VENV_PIP" install -r "$ROOT_DIR/requirements.txt"
 }
 
-ensure_wtm() {
-  if "$VENV_PYTHON" - <<'PY'
+install_requirements_profile() {
+  local file="$1"
+  local label="$2"
+  local path="$ROOT_DIR/$file"
+  if [[ ! -f "$path" ]]; then
+    fail "$file not found in repo root."
+  fi
+  log "Installing ${label} dependencies..."
+  "$VENV_PIP" install -r "$path"
+}
+
+python_modules_installed() {
+  "$VENV_PYTHON" - "$@" <<'PY'
 import importlib.util
-raise SystemExit(0 if importlib.util.find_spec("whisper_turbo") else 1)
+import sys
+
+modules = sys.argv[1:]
+for name in modules:
+    if importlib.util.find_spec(name) is None:
+        raise SystemExit(1)
+raise SystemExit(0)
 PY
-  then
-    return 0
+}
+
+install_engine_profiles() {
+  local arch="$1"
+
+  INSTALL_MLX_DEFAULT=0
+  if [[ "$arch" == "arm64" ]]; then
+    if python_modules_installed "whisper_turbo" "huggingface_hub"; then
+      log "Whisper MLX dependencies already installed."
+    else
+      install_requirements_profile "requirements-whisper-mlx.txt" "Whisper MLX"
+    fi
+    INSTALL_MLX_DEFAULT=1
+    if [[ "$WITH_WHISPER_CPU" == "1" ]]; then
+      if python_modules_installed "whisper"; then
+        log "Whisper CPU fallback dependencies already installed."
+      else
+        install_requirements_profile "requirements-whisper-cpu.txt" "Whisper CPU fallback"
+      fi
+    fi
+  else
+    if python_modules_installed "whisper"; then
+      log "Whisper CPU dependencies already installed."
+    else
+      install_requirements_profile "requirements-whisper-cpu.txt" "Whisper CPU"
+    fi
   fi
 
-  log "Installing whisper-turbo-mlx (wtm)..."
-  "$VENV_PIP" install --upgrade \
-    "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"
+  if [[ "$WITH_COHERE" == "1" ]]; then
+    if python_modules_installed "cohere"; then
+      log "Cohere SDK already installed."
+    else
+      install_requirements_profile "requirements-cohere.txt" "Cohere"
+    fi
+  fi
 }
 
 download_model() {
@@ -276,8 +408,14 @@ start_server() {
   wait "$server_pid"
 }
 
+parse_args "$@"
+WITH_COHERE="$(normalize_bool "$WITH_COHERE")"
+WITH_WHISPER_CPU="$(normalize_bool "$WITH_WHISPER_CPU")"
+
 step "Checking platform compatibility"
-require_macos_arm64
+require_macos
+MACOS_ARCH="$(detect_macos_arch)"
+print_engine_expectations "$MACOS_ARCH"
 ensure_xcode_cli_tools
 ensure_git
 step "Checking Homebrew"
@@ -286,11 +424,16 @@ step "Selecting Python"
 PYTHON_BIN="$(ensure_python)"
 step "Installing dependencies"
 ensure_ffmpeg
-ensure_python_deps "$PYTHON_BIN"
-step "Installing whisper-turbo-mlx"
-ensure_wtm
-step "Downloading model weights (if needed)"
-download_model
+ensure_base_python_deps "$PYTHON_BIN"
+step "Installing engine profiles"
+install_engine_profiles "$MACOS_ARCH"
+if [[ "$INSTALL_MLX_DEFAULT" == "1" ]]; then
+  step "Downloading Whisper MLX model weights (if needed)"
+  download_model
+else
+  step "Skipping Whisper MLX model predownload"
+  log "Whisper CPU will download its configured model on first use if it is not already cached."
+fi
 step "Preparing local data directories"
 prepare_data_dirs
 

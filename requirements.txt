@@ -1,3 +1,9 @@
+# Base web app dependencies only.
+# Engine-specific optional dependency profiles live in:
+#   - requirements-whisper-mlx.txt
+#   - requirements-whisper-cpu.txt
+#   - requirements-cohere.txt
+# The bootstrap scripts choose the right profile for the current machine.
 fastapi>=0.115.6,<0.116
 jinja2>=3.1.4,<4.0
 uvicorn>=0.32.1,<0.33

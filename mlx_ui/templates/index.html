@@ -880,6 +880,26 @@
         margin-top: -2px;
       }
 
+      .upload-config {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 16px;
+        align-items: end;
+      }
+
+      .upload-config-field {
+        flex: 0 1 240px;
+        display: grid;
+        gap: 8px;
+      }
+
+      .upload-config-note {
+        flex: 1 1 280px;
+        margin: 0;
+        font-size: 0.82rem;
+        color: var(--ink-muted);
+      }
+
       .dropzone {
         border: 1px dashed #ebcdb8;
         border-radius: 16px;
@@ -1324,6 +1344,54 @@
         gap: 8px;
         flex-wrap: wrap;
         min-width: 0;
+      }
+
+      .meta-chips {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .meta-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid #f1e2d2;
+        background: #fff8f2;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: var(--ink-muted);
+        white-space: nowrap;
+      }
+
+      .meta-chip.is-language {
+        background: #fff;
+      }
+
+      .meta-chip.is-engine,
+      .meta-chip.is-effective {
+        background: #fff0e1;
+        border-color: #f0c7b1;
+        color: var(--accent-strong);
+      }
+
+      .meta-chip.is-requested {
+        background: #fff8f2;
+      }
+
+      .meta-chip.is-cloud {
+        background: #f2f7ff;
+        border-color: #d4e1f5;
+        color: #2e5e98;
+      }
+
+      .meta-chip.is-language.is-cloud,
+      .meta-chip.is-language.is-local {
+        background: #fff;
+        color: var(--ink-muted);
       }
 
       .history-time {
@@ -1811,6 +1879,12 @@
         background: #fff0e1;
         border-color: #f0c7b1;
         color: var(--accent-strong);
+      }
+
+      .preview-meta-note {
+        font-size: 0.78rem;
+        color: var(--ink-muted);
+        margin-bottom: 8px;
       }
 
       .job-actions {
@@ -2745,9 +2819,9 @@
     <main id="main" tabindex="-1">
       <header class="hero">
         <div class="hero-copy">
-          <div class="eyebrow">Local-only transcription</div>
+          <div class="eyebrow">Local-first transcription</div>
           <h1>Whisper WebUI (MLX)</h1>
-          <p>Add files, then download transcripts from History — files stay on this device.</p>
+          <p>Add files, then download transcripts from History. Files are stored here locally; cloud engines can send audio to their provider.</p>
         </div>
         <div class="status-card" aria-live="polite">
           <div class="status-label">Worker</div>
@@ -2778,6 +2852,20 @@
               {% if worker.status != "Running" or not worker.started_at %}hidden{% endif %}
             >
               Elapsed …
+            </span>
+            <span
+              class="worker-pill"
+              id="worker-engine"
+              {% if not worker.current_job_ui or not worker.current_job_ui.engine_summary %}hidden{% endif %}
+            >
+              {{ worker.current_job_ui.engine_summary if worker.current_job_ui else "" }}
+            </span>
+            <span
+              class="worker-pill"
+              id="worker-language"
+              {% if not worker.current_job_ui %}hidden{% endif %}
+            >
+              {% if worker.current_job_ui %}Language: {{ worker.current_job_ui.language.label }}{% endif %}
             </span>
             <span class="worker-pill is-muted" id="worker-mode">One file at a time</span>
           </div>
@@ -2918,6 +3006,25 @@
               </div>
               <div class="file-list" id="file-list" aria-live="polite"></div>
               <button class="file-toggle" id="file-list-toggle" type="button">Show all</button>
+              <div class="upload-config">
+                <div class="upload-config-field">
+                  <label class="settings-label" for="upload-language">Language</label>
+                  <select class="settings-input" id="upload-language" name="language">
+                    {% for language_option in settings_snapshot.options.languages %}
+                      <option
+                        value="{{ language_option.id }}"
+                        {% if settings_snapshot.settings.default_language == language_option.id %}selected{% endif %}
+                      >
+                        {{ language_option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <p class="upload-config-note">
+                  Saved on each job. Use automatic detection for local engines, or choose a fixed
+                  language before queueing jobs for providers that require one.
+                </p>
+              </div>
               <div class="upload-actions">
                 <div class="upload-actions-buttons">
                   <button class="cta" id="upload-submit" type="submit">Queue uploads</button>
@@ -2925,13 +3032,20 @@
                     Clear selection
                   </button>
                 </div>
-                <span class="hint">Processed locally. Nothing is uploaded.</span>
+                <span class="hint">
+                  {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
+                    Cloud engine selected. It requires network access and is not local/offline.
+                  {% else %}
+                    Processed locally. Nothing is uploaded.
+                  {% endif %}
+                </span>
               </div>
             </form>
             <div class="job-list" aria-live="polite" id="queue-list">
               {% set offset = 1 if queue_jobs | selectattr("status", "equalto", "running") | list | length > 0 else 0 %}
               {% set queue_index = namespace(value=0) %}
               {% for job in queue_jobs %}
+                {% set job_view = job_views.get(job.id, {}) %}
                 {% set is_running = job.status == "running" %}
                 {% if job.status == "queued" %}
                   {% set queue_index.value = queue_index.value + 1 %}
@@ -2968,6 +3082,26 @@
                           data-started-at="{{ job.started_at }}"
                         >
                           Elapsed …
+                        </span>
+                      {% endif %}
+                      {% if job_view.engine_badges %}
+                        <span class="meta-chips" aria-label="Engine">
+                          {% for badge in job_view.engine_badges %}
+                            <span
+                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
+                              title="{{ badge.title }}"
+                            >
+                              {{ badge.label }}
+                            </span>
+                          {% endfor %}
+                        </span>
+                      {% endif %}
+                      {% if job_view.language %}
+                        <span
+                          class="meta-chip is-language"
+                          title="Language: {{ job_view.language.label }}"
+                        >
+                          {{ job_view.language.short_label }}
                         </span>
                       {% endif %}
                     </div>
@@ -3047,6 +3181,7 @@
             <div class="history-view-summary" id="history-view-summary" aria-live="polite" hidden></div>
             <div class="job-list" aria-live="polite" id="history-list">
               {% for job in history_jobs %}
+                {% set job_view = job_views.get(job.id, {}) %}
                 {% set results = results_by_job.get(job.id, []) %}
                 {% set result_ns = namespace(default=None) %}
                 {% for result in results %}
@@ -3057,7 +3192,11 @@
                 {% if result_ns.default is none and results %}
                   {% set result_ns.default = results[0] %}
                 {% endif %}
-                <div class="history-row" data-job-id="{{ job.id }}">
+                <div
+                  class="history-row"
+                  data-job-id="{{ job.id }}"
+                  data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
+                >
                   <div class="history-main">
                     <div class="history-title">
                       <div class="history-filename" title="{{ job.filename }}">{{ job.filename }}</div>
@@ -3088,6 +3227,26 @@
                         {% if job.started_at %}data-started-at="{{ job.started_at }}"{% endif %}
                         {% if job.completed_at %}data-completed-at="{{ job.completed_at }}"{% endif %}
                       ></div>
+                      {% if job_view.engine_badges %}
+                        <div class="meta-chips" aria-label="Engine">
+                          {% for badge in job_view.engine_badges %}
+                            <span
+                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
+                              title="{{ badge.title }}"
+                            >
+                              {{ badge.label }}
+                            </span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {% if job_view.language %}
+                        <span
+                          class="meta-chip is-language"
+                          title="Language: {{ job_view.language.label }}"
+                        >
+                          {{ job_view.language.short_label }}
+                        </span>
+                      {% endif %}
                       {% if job.status == "failed" and job.error_message %}
                         {% set error_summary = job.error_message.splitlines()[0] %}
                         <div class="history-error-summary" title="{{ error_summary }}">{{ error_summary }}</div>
@@ -3105,6 +3264,7 @@
                           data-preview-url="/api/jobs/{{ job.id }}/preview?chars=1200"
                           data-default-url="/results/{{ job.id }}/{{ result_ns.default }}"
                           data-default-filename="{{ result_ns.default }}"
+                          data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
                           aria-haspopup="dialog"
                         >
                           Preview
@@ -3202,6 +3362,9 @@
                           data-preview-url="/api/jobs/{{ job.id }}/preview?chars=300"
                         >
                           <div class="detail-label">Preview</div>
+                          {% if job_view.preview_meta %}
+                            <div class="preview-meta-note">{{ job_view.preview_meta }}</div>
+                          {% endif %}
                           <div class="preview-snippet is-loading" data-preview-snippet>
                             Preview will load when expanded.
                           </div>
@@ -3282,7 +3445,7 @@
                   <div class="empty-kicker">History</div>
                   <h3 class="empty-title" id="history-empty-title">No completed jobs yet</h3>
                   <p class="empty-body">
-                    When a queued file finishes, it will appear here with download links. Your files stay on this device.
+                    When a queued file finishes, it will appear here with download links. Results stay stored locally here, even when a cloud engine was used.
                   </p>
                 </div>
                 <div class="empty-actions">
@@ -3323,8 +3486,7 @@
                   </header>
                   {% set engine_source = settings_snapshot.sources.engine %}
                   {% set engine_locked = engine_source == "env" %}
-                  {% set mlx_available = settings_snapshot.compat.wtm_available %}
-                  {% set cpu_available = settings_snapshot.compat.whisper_available %}
+                  {% set configured_engine = settings_snapshot.engine.configured %}
                   <div class="settings-field">
                     <div class="settings-label-row">
                       <label class="settings-label" for="engine-select">Engine</label>
@@ -3342,29 +3504,22 @@
                       name="engine"
                       {% if engine_locked %}disabled{% endif %}
                     >
+                      {% for engine_option in settings_snapshot.options.engines %}
                       <option
-                        value="whisper_mlx"
-                        {% if settings_snapshot.settings.engine == "whisper_mlx" %}selected{% endif %}
-                        {% if not mlx_available %}disabled{% endif %}
+                        value="{{ engine_option.id }}"
+                        {% if settings_snapshot.settings.engine == engine_option.id %}selected{% endif %}
+                        {% if engine_option.disabled %}disabled{% endif %}
                       >
-                        Whisper (MLX / Metal){% if not mlx_available %} (Not installed){% endif %}
+                        {{ engine_option.label }}{% if engine_option.disabled and engine_option.disabled_label %} ({{ engine_option.disabled_label }}){% endif %}
                       </option>
-                      <option
-                        value="whisper_cpu"
-                        {% if settings_snapshot.settings.engine == "whisper_cpu" %}selected{% endif %}
-                        {% if not cpu_available %}disabled{% endif %}
-                      >
-                        Whisper (CPU){% if not cpu_available %} (Requires install){% endif %}
-                      </option>
-                      <option value="cohere" disabled>Cohere (Coming soon)</option>
-                      <option value="parakeet_tdt_v3" disabled>Parakeet TDT v3 (Coming soon)</option>
+                      {% endfor %}
                     </select>
                     <p class="settings-hint">
                       MLX / Metal is recommended for Apple Silicon (M1/M2/M3). Use CPU for Intel Macs or as a fallback.
                     </p>
                     <p class="settings-hint">
                       Active now:
-                      {% if runtime_snapshot.about.engine_active == "whisper_cpu" %}Whisper (CPU){% else %}Whisper (MLX / Metal){% endif %}.
+                      {{ runtime_snapshot.about.active_engine.label }}.
                       Changes apply after restarting the app.
                     </p>
                     {% if runtime_snapshot.about.engine_note %}
@@ -3378,10 +3533,9 @@
                         variable to change it here.
                       </p>
                     {% endif %}
-                    {% if settings_snapshot.settings.engine == "whisper_cpu" and not cpu_available %}
+                    {% if configured_engine and configured_engine.reason %}
                       <p class="settings-hint">
-                        <strong>Whisper (CPU) isn’t installed.</strong> Install the optional
-                        <code>openai-whisper</code> dependency to enable it.
+                        <strong>{{ configured_engine.label }} is unavailable.</strong> {{ configured_engine.reason }}
                       </p>
                     {% endif %}
                   </div>
@@ -3401,6 +3555,33 @@
                     <h3 id="settings-transcription-title">Transcription</h3>
                     <p class="settings-section-desc">Defaults applied to new jobs (saved locally).</p>
                   </header>
+                  {% set default_language_source = settings_snapshot.sources.default_language %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="default-language">Default language</label>
+                      <span
+                        class="source-pill is-{{ default_language_source }}"
+                        data-settings-source-pill="default_language"
+                        title="Value source: {{ default_language_source }}"
+                      >
+                        {{ default_language_source }}
+                      </span>
+                    </div>
+                    <select class="settings-input" id="default-language" name="default_language">
+                      {% for language_option in settings_snapshot.options.languages %}
+                        <option
+                          value="{{ language_option.id }}"
+                          {% if settings_snapshot.settings.default_language == language_option.id %}selected{% endif %}
+                        >
+                          {{ language_option.label }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                    <p class="settings-hint">
+                      Used for new queue jobs. Auto works for local engines that support detection.
+                      Choose a fixed language before queueing jobs for providers that require one.
+                    </p>
+                  </div>
                   {% set whisper_source = settings_snapshot.sources.whisper_model %}
                   <div class="settings-field">
                     <div class="settings-label-row">
@@ -3472,6 +3653,108 @@
                     </p>
                   </div>
                   <p class="settings-hint">Changes apply after restarting the app/worker.</p>
+                </section>
+
+                <section class="settings-card" aria-labelledby="settings-cloud-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-cloud-title">Cohere</h3>
+                    <p class="settings-section-desc">Optional cloud engine configuration.</p>
+                  </header>
+                  {% set cohere_source = cohere_snapshot.source %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <span class="settings-label" data-cohere-status>
+                        {% if cohere_snapshot.configured %}Cohere is configured{% else %}Cohere is not configured{% endif %}
+                      </span>
+                      <span
+                        class="source-pill is-{{ cohere_source if cohere_source in ['env', 'file', 'default'] else 'missing' }}"
+                        data-cohere-source-pill
+                        title="Value source: {{ cohere_source }}"
+                      >
+                        {{ cohere_source }}
+                      </span>
+                    </div>
+                    <p class="settings-hint">{{ cohere_snapshot.product_note }}</p>
+                    {% if cohere_snapshot.selected and cohere_snapshot.reason %}
+                      <p class="settings-hint">
+                        <strong>Cohere is selected.</strong> {{ cohere_snapshot.reason }}
+                      </p>
+                    {% elif cohere_snapshot.reason %}
+                      <p class="settings-hint">
+                        <strong>Availability:</strong> {{ cohere_snapshot.reason }}
+                      </p>
+                    {% endif %}
+                  </div>
+                  {% set cohere_key_locked = cohere_snapshot.api_key_source == "env" %}
+                  <div class="settings-field">
+                    <div class="settings-label-row is-field-meta">
+                      <label class="settings-label" for="cohere-api-key">API key</label>
+                      <span
+                        class="settings-current-meta"
+                        data-cohere-key-mask
+                        {% if cohere_snapshot.source == "missing" %}hidden{% endif %}
+                      >
+                        <span class="settings-current-meta-label">Current</span>
+                        <span class="settings-current-meta-value" data-cohere-key-mask-value>
+                          {{ cohere_snapshot.api_key_masked }}
+                        </span>
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="cohere-api-key"
+                      name="cohere_api_key"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="Paste your Cohere API key"
+                      {% if cohere_key_locked %}disabled{% endif %}
+                    >
+                    <p class="settings-hint">
+                      {% if cohere_snapshot.source != "missing" %}
+                        Source: {{ cohere_snapshot.source }}.
+                      {% else %}
+                        Add a key only if you plan to use Cohere later.
+                      {% endif %}
+                      {% if cohere_key_locked %}
+                        Managed by <code>{{ settings_snapshot.meta.env_vars.cohere_api_key }}</code>.
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        name="clear_cohere_api_key"
+                        value="1"
+                        {% if cohere_key_locked %}disabled{% endif %}
+                      >
+                      Forget saved API key
+                    </label>
+                  </div>
+                  {% set cohere_model_source = settings_snapshot.sources.cohere_model %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="cohere-model">Model ID</label>
+                      <span
+                        class="source-pill is-{{ cohere_model_source }}"
+                        data-settings-source-pill="cohere_model"
+                        title="Value source: {{ cohere_model_source }}"
+                      >
+                        {{ cohere_model_source }}
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="cohere-model"
+                      name="cohere_model"
+                      type="text"
+                      value="{{ settings_snapshot.settings.cohere_model }}"
+                      placeholder="Set a Cohere model ID"
+                      {% if cohere_model_source == "env" %}disabled{% endif %}
+                    >
+                    <p class="settings-hint">
+                      Used only for the Cohere engine. {% if cohere_model_source == "env" %}Managed by
+                      <code>{{ settings_snapshot.meta.env_vars.cohere_model }}</code>.{% endif %}
+                    </p>
+                  </div>
                 </section>
 
                 <section class="settings-card" aria-labelledby="settings-notifications-title">
@@ -3698,8 +3981,14 @@
                       <div class="settings-meta-value">{{ runtime_snapshot.about.build_date }}</div>
                     </div>
                     <div class="settings-meta-item">
-                      <div class="settings-meta-label">Local-only</div>
-                      <div class="settings-meta-value">Files stay on this device.</div>
+                      <div class="settings-meta-label">Processing</div>
+                      <div class="settings-meta-value">
+                        {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
+                          Local storage, cloud transcription available.
+                        {% else %}
+                          Local storage and local transcription by default.
+                        {% endif %}
+                      </div>
                     </div>
                   </div>
                   {% set update_source = settings_snapshot.sources.update_check_enabled %}
@@ -3997,6 +4286,10 @@
         const settingsBannerSuccess = document.getElementById("settings-banner-success");
         const settingsBannerError = document.getElementById("settings-banner-error");
         const whisperModelError = document.getElementById("settings-error-whisper-model");
+        const cohereStatusLabel = document.querySelector("[data-cohere-status]");
+        const cohereSourcePill = document.querySelector("[data-cohere-source-pill]");
+        const cohereKeyMask = document.querySelector("[data-cohere-key-mask]");
+        const cohereKeyMaskValue = document.querySelector("[data-cohere-key-mask-value]");
         const telegramStatusLabel = document.querySelector("[data-telegram-status]");
         const telegramSourcePill = document.querySelector("[data-telegram-source-pill]");
         const telegramTokenMask = document.querySelector("[data-telegram-token-mask]");
@@ -4010,6 +4303,8 @@
         const workerFilename = document.getElementById("worker-filename");
         const workerQueued = document.getElementById("worker-queued");
         const workerElapsed = document.getElementById("worker-elapsed");
+        const workerEngine = document.getElementById("worker-engine");
+        const workerLanguage = document.getElementById("worker-language");
         const queueCountEls = document.querySelectorAll("[data-queue-count]");
         const toastStack = document.getElementById("toast-stack");
         const previewModal = document.getElementById("preview-modal");
@@ -4391,6 +4686,19 @@
             workerElapsed.dataset.startedAt = workerStartedAt;
             workerElapsed.hidden = !workerStartedAt;
             updateWorkerElapsed();
+          }
+
+          const currentJobUi = worker.current_job_ui || null;
+          if (workerEngine) {
+            const engineSummary = currentJobUi ? currentJobUi.engine_summary || "" : "";
+            workerEngine.textContent = engineSummary;
+            workerEngine.hidden = !engineSummary;
+          }
+          if (workerLanguage) {
+            const languageLabel =
+              currentJobUi && currentJobUi.language ? currentJobUi.language.label || "" : "";
+            workerLanguage.textContent = languageLabel ? `Language: ${languageLabel}` : "";
+            workerLanguage.hidden = !languageLabel;
           }
         }
         const ICON_CHECK = `
@@ -5383,6 +5691,48 @@
           return lines.join("");
         }
 
+        function buildJobMetaChips(job) {
+          const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+          if (!ui) {
+            return "";
+          }
+          const chips = [];
+          const engineBadges = Array.isArray(ui.engine_badges) ? ui.engine_badges : [];
+          if (engineBadges.length > 0) {
+            const engineMarkup = engineBadges
+              .map((badge) => {
+                const kind = escapeHtml(badge.kind || "engine");
+                const mode = escapeHtml(badge.mode || "unknown");
+                const title = escapeHtml(badge.title || badge.label || "");
+                const label = escapeHtml(badge.label || "");
+                return `
+                  <span class="meta-chip is-${kind} is-${mode}" title="${title}">
+                    ${label}
+                  </span>
+                `;
+              })
+              .join("");
+            chips.push(`<span class="meta-chips" aria-label="Engine">${engineMarkup}</span>`);
+          }
+          const language = ui.language && typeof ui.language === "object" ? ui.language : null;
+          if (language && language.short_label) {
+            chips.push(`
+              <span
+                class="meta-chip is-language"
+                title="Language: ${escapeHtml(language.label || language.short_label)}"
+              >
+                ${escapeHtml(language.short_label)}
+              </span>
+            `);
+          }
+          return chips.join("");
+        }
+
+        function buildPreviewMetaText(job) {
+          const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+          return ui && ui.preview_meta ? String(ui.preview_meta) : "";
+        }
+
         function buildQueueActions(job) {
           const canDelete = job.status === "queued";
           if (!canDelete) {
@@ -5431,6 +5781,7 @@
           const icon = isRunning ? '<div class="job-icon" aria-hidden="true">⏳</div>' : "";
           const metaLines = buildMetaLines(job);
           const queueLine = buildQueueLine(queuePosition);
+          const metaChips = buildJobMetaChips(job);
           const elapsed =
             isRunning && job.started_at
               ? `
@@ -5455,6 +5806,7 @@
                   ${metaLines}
                   ${queueLine}
                   ${elapsed}
+                  ${metaChips}
                 </div>
               </div>
               ${actions}
@@ -5544,6 +5896,7 @@
           const encodedJobId = encodeURIComponent(job.id);
           const safeFilename = escapeHtml(job.filename || "Untitled file");
           const openAttr = isOpen ? " open" : "";
+          const previewMeta = escapeHtml(buildPreviewMetaText(job));
           const timelineLines = [
             buildMetaLine("Added", job.created_at, "detail-line"),
             job.started_at ? buildMetaLine("Started", job.started_at, "detail-line") : "",
@@ -5561,6 +5914,7 @@
                   data-preview-url="/api/jobs/${encodedJobId}/preview?chars=300"
                 >
                   <div class="detail-label">Preview</div>
+                  ${previewMeta ? `<div class="preview-meta-note">${previewMeta}</div>` : ""}
                   <div class="preview-snippet is-loading" data-preview-snippet>
                     Preview will load when expanded.
                   </div>
@@ -5645,7 +5999,9 @@
                 </div>
               `
               : "";
+          const metaChips = buildJobMetaChips(job);
           const chips = buildOutputChips(job.id, results);
+          const previewMeta = escapeHtml(buildPreviewMetaText(job));
           const defaultHref =
             status === "done" && defaultResult
               ? `/results/${encodedJobId}/${encodeURIComponent(defaultResult)}`
@@ -5661,6 +6017,7 @@
                   data-preview-url="/api/jobs/${encodedJobId}/preview?chars=1200"
                   data-default-url="${escapeHtml(defaultHref)}"
                   data-default-filename="${escapeHtml(defaultResult)}"
+                  data-preview-meta="${previewMeta}"
                   aria-haspopup="dialog"
                 >
                   Preview
@@ -5686,7 +6043,11 @@
           const primaryAction = [previewAction, downloadAction, viewLogAction].filter(Boolean).join("");
 
           return `
-            <div class="history-row" data-job-id="${escapeHtml(job.id)}">
+            <div
+              class="history-row"
+              data-job-id="${escapeHtml(job.id)}"
+              data-preview-meta="${previewMeta}"
+            >
               <div class="history-main">
                 <div class="history-title">
                   <div class="history-filename" title="${safeFilename}">${safeFilename}</div>
@@ -5697,6 +6058,7 @@
                 </div>
                 <div class="history-subline">
                   ${timeMeta}
+                  ${metaChips}
                   ${errorSummary}
                 </div>
               </div>
@@ -6455,12 +6817,18 @@
             urlFromEl || `/api/jobs/${encodeURIComponent(jobId)}/preview?chars=${PREVIEW_MODAL_CHARS}`;
           const fallbackUrl = actionEl.getAttribute("data-default-url") || "";
           const fallbackFilename = actionEl.getAttribute("data-default-filename") || "";
+          const previewMetaText =
+            actionEl.getAttribute("data-preview-meta") ||
+            row.getAttribute("data-preview-meta") ||
+            "";
 
           previewModalToken += 1;
           const token = previewModalToken;
 
           previewModalTitle.textContent = jobFilename || "Transcript preview";
-          previewModalMeta.textContent = `Loading preview snippet (up to ${PREVIEW_MODAL_CHARS} characters)…`;
+          previewModalMeta.textContent = previewMetaText
+            ? `${previewMetaText} · Loading preview snippet (up to ${PREVIEW_MODAL_CHARS} characters)…`
+            : `Loading preview snippet (up to ${PREVIEW_MODAL_CHARS} characters)…`;
           previewModalText.textContent = "Loading preview…";
           previewModalText.classList.add("is-loading");
           previewModalCurrentText = "";
@@ -6494,6 +6862,9 @@
             } else {
               setPreviewModalLinks("", "");
             }
+            previewModalMeta.textContent = previewMetaText
+              ? `${previewMetaText} · Preview snippet (up to ${PREVIEW_MODAL_CHARS} characters). Use Open or Download for the full file.`
+              : `Preview snippet (up to ${PREVIEW_MODAL_CHARS} characters). Use Open or Download for the full file.`;
 
             if (!shownText) {
               previewModalText.textContent = "No preview available.";
@@ -6968,6 +7339,34 @@
           }
         }
 
+        function updateCohereSnapshot(snapshot) {
+          if (!snapshot) {
+            return;
+          }
+          const configured = Boolean(snapshot.configured);
+          const source = typeof snapshot.source === "string" ? snapshot.source : "missing";
+          const normalized = ["env", "file", "default"].includes(source) ? source : "missing";
+
+          if (cohereStatusLabel) {
+            cohereStatusLabel.textContent = configured ? "Cohere is configured" : "Cohere is not configured";
+          }
+          if (cohereSourcePill) {
+            cohereSourcePill.textContent = source;
+            cohereSourcePill.setAttribute("title", `Value source: ${source}`);
+            cohereSourcePill.classList.remove("is-env", "is-file", "is-default", "is-missing");
+            cohereSourcePill.classList.add(`is-${normalized}`);
+          }
+          if (cohereKeyMask) {
+            const masked = snapshot.api_key_masked ? String(snapshot.api_key_masked) : "";
+            if (cohereKeyMaskValue) {
+              cohereKeyMaskValue.textContent = masked || "••••";
+            } else {
+              cohereKeyMask.textContent = masked ? `Current: ${masked}` : "Current: ••••";
+            }
+            cohereKeyMask.hidden = !masked;
+          }
+        }
+
         function setSettingsBanner(element, message) {
           if (!element) {
             return;
@@ -6992,6 +7391,9 @@
           let savingSettings = false;
           let hasSavedOnce = settingsBannerSuccess ? !settingsBannerSuccess.hidden : false;
           const saveLabel = settingsSaveButton.textContent;
+          const cohereKeyInput = settingsForm.querySelector("#cohere-api-key");
+          const cohereModelInput = settingsForm.querySelector("#cohere-model");
+          const clearCohereKey = settingsForm.querySelector("input[name='clear_cohere_api_key']");
           const whisperModelInput = settingsForm.querySelector("#whisper-model");
           const telegramTokenInput = settingsForm.querySelector("#telegram-token");
           const telegramChatInput = settingsForm.querySelector("#telegram-chat-id");
@@ -7078,6 +7480,15 @@
               updates.wtm_quick = current.wtm_quick;
             }
             if (
+              "default_language" in current &&
+              current.default_language !== baselineState.default_language
+            ) {
+              updates.default_language = current.default_language;
+            }
+            if ("cohere_model" in current && current.cohere_model !== baselineState.cohere_model) {
+              updates.cohere_model = current.cohere_model;
+            }
+            if (
               "update_check_enabled" in current &&
               current.update_check_enabled !== baselineState.update_check_enabled
             ) {
@@ -7088,6 +7499,12 @@
             }
             if ("whisper_model" in current && current.whisper_model !== baselineState.whisper_model) {
               updates.whisper_model = current.whisper_model;
+            }
+
+            if (current.clear_cohere_api_key) {
+              updates.cohere_api_key = "";
+            } else if (current.cohere_api_key && current.cohere_api_key !== baselineState.cohere_api_key) {
+              updates.cohere_api_key = current.cohere_api_key;
             }
 
             if (current.clear_telegram_token) {
@@ -7203,10 +7620,22 @@
 
               hasSavedOnce = true;
               updateSettingsSourcePills(payload);
+              if (payload && payload.cohere_snapshot) {
+                updateCohereSnapshot(payload.cohere_snapshot);
+              }
               if (payload && payload.telegram_snapshot) {
                 updateTelegramSnapshot(payload.telegram_snapshot);
               }
 
+              if (cohereKeyInput) {
+                cohereKeyInput.value = "";
+              }
+              if (clearCohereKey instanceof HTMLInputElement) {
+                clearCohereKey.checked = false;
+              }
+              if (cohereModelInput && payload && payload.settings) {
+                cohereModelInput.value = payload.settings.cohere_model || "";
+              }
               if (telegramTokenInput) {
                 telegramTokenInput.value = "";
               }

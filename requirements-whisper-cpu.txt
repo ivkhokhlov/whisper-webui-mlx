@@ -1,0 +1,3 @@
+# Cross-architecture CPU fallback profile.
+# This is the default local path on macOS Intel.
+openai-whisper

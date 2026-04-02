@@ -20,6 +20,13 @@ After installation, ensure that your bin-dir (e.g. $HOME/.local/bin) is on your 
 then you can run:
 
   whisper-webui-mlx
+  whisper-webui-mlx --with-cohere
+
+Bootstrap expectations:
+  - macOS arm64: installs Whisper MLX as the default local backend
+  - macOS Intel: installs Whisper CPU as the default local backend
+  - --with-cohere: adds the optional Cohere SDK on either architecture
+  - Parakeet is not installed by the macOS bootstrap path
 EOF
 }
 
@@ -57,6 +64,21 @@ printf 'Installing Whisper WebUI (MLX)\n'
 printf '  Repo:   %s\n' "$REPO_URL"
 printf '  Target: %s\n' "$INSTALL_DIR"
 printf '  Bin:    %s\n' "$BIN_DIR"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    case "$(uname -m)" in
+        arm64)
+            printf '  Engine: Apple Silicon detected; first run defaults to Whisper MLX.\n'
+            ;;
+        x86_64)
+            printf '  Engine: Intel macOS detected; first run defaults to Whisper CPU.\n'
+            ;;
+        *)
+            printf '  Engine: macOS detected; architecture-specific bootstrap will run on first launch.\n'
+            ;;
+    esac
+else
+    printf '  Engine: bootstrap is architecture-aware and will explain local engine support on first launch.\n'
+fi
 
 mkdir -p "$(dirname "$INSTALL_DIR")"
 
@@ -85,5 +107,5 @@ printf '\nInstallation complete.\n'
 printf 'Launcher created at: %s\n' "$LAUNCHER"
 printf '\nMake sure %s is on your PATH.\n' "$BIN_DIR"
 printf 'Then run:\n\n  whisper-webui-mlx\n\n'
-
+printf 'Optional cloud backend:\n\n  whisper-webui-mlx --with-cohere\n\n'
 

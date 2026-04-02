@@ -37,11 +37,77 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "started_at" in columns
         assert "completed_at" in columns
         assert "error_message" in columns
+        assert "requested_engine" in columns
+        assert "effective_engine" in columns
+        row = connection.execute(
+            """
+            SELECT language, requested_engine, effective_engine
+            FROM jobs
+            WHERE id = 'job-1'
+            """
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "auto"
+        assert row[1] is None
+        assert row[2] is None
+
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].language == "auto"
+    assert jobs[0].requested_engine is None
+    assert jobs[0].effective_engine is None
+
+
+def test_init_db_normalizes_legacy_any_language(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobs.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                upload_path TEXT NOT NULL,
+                language TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO jobs (id, filename, status, created_at, upload_path, language)
+            VALUES ('job-1', 'alpha.wav', 'queued', '2024-01-01T00:00:00Z', 'x', 'any')
+            """
+        )
+        connection.commit()
+
+    init_db(db_path)
+
+    with sqlite3.connect(db_path) as connection:
         row = connection.execute(
             "SELECT language FROM jobs WHERE id = 'job-1'"
         ).fetchone()
         assert row is not None
-        assert row[0] == "en"
+        assert row[0] == "auto"
+
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].language == "auto"
+
+
+def test_init_db_is_idempotent_on_current_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "jobs.db"
+
+    init_db(db_path)
+    init_db(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+        }
+
+    assert "requested_engine" in columns
+    assert "effective_engine" in columns
 
 
 def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:

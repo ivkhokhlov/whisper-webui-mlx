@@ -449,6 +449,20 @@
       .live-transcript__line:nth-child(4) { width: 88%; }
       .live-transcript__line:nth-child(5) { width: 60%; }
 
+      .live-transcript__content {
+        margin: 0;
+        min-height: 120px;
+        font: 500 0.96rem/1.55 ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+        color: var(--ink);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .live-transcript__meta {
+        font-size: 0.78rem;
+        color: var(--ink-muted);
+      }
+
       .live-stage__actions {
         display: grid;
         gap: 10px;
@@ -696,12 +710,27 @@
         <div class="hero-copy">
           <div class="eyebrow">Live beta</div>
           <h1>Live capture preview</h1>
-          <p>A deliberate preview of the future local-only capture workflow. Recording is not available yet.</p>
+          <p>
+            {% if live_snapshot.active %}
+              Experimental Parakeet live transcription is enabled on this machine. Browser microphone capture and
+              partial updates are still beta-quality, and Queue remains the stable path.
+            {% else %}
+              Experimental Parakeet live transcription is not active here yet. The page stays honest about the flag
+              and environment requirements instead of pretending microphone capture is production-ready.
+            {% endif %}
+          </p>
         </div>
         <div class="status-card" aria-live="polite">
           <div class="status-label">Availability</div>
-          <div class="status">Preview only</div>
-          <p>Use Queue and History today while microphone and browser audio capture are still being wired.</p>
+          <div class="status">{{ "Experimental beta" if live_snapshot.active else "Preview only" }}</div>
+          <p>
+            {% if live_snapshot.active %}
+              {{ live_snapshot.engine_label }} is ready with model <strong>{{ live_snapshot.configured_model }}</strong>
+              and about {{ "%.1f"|format(live_snapshot.latency_secs) }}s theoretical latency.
+            {% else %}
+              {{ live_snapshot.reason }}
+            {% endif %}
+          </p>
           <a class="status-link" href="/?tab=queue">← Back to Queue</a>
         </div>
       </header>
@@ -717,11 +746,11 @@
           <section class="panel">
             <div class="live-shell">
               <div class="live-lead">
-                <h2>Live mode (beta preview)</h2>
+                <h2>Live mode (experimental Parakeet beta)</h2>
                 <p>
-                  This page shows where live capture is heading without pretending it already works. The target is a
-                  local-first surface for short rolling chunks, then saved transcripts in the same History flow you use
-                  now.
+                  This path uses the Parakeet streaming interface with short rolling browser-recorded chunks and
+                  in-memory partial transcript updates. It does not touch the batch queue or save sessions back into
+                  History yet, so Queue remains the stable workflow for production use.
                 </p>
               </div>
 
@@ -729,22 +758,34 @@
                 <section class="live-stage" aria-labelledby="live-stage-title">
                   <div class="live-stage__header">
                     <div>
-                      <div class="live-stage__kicker">Future capture surface</div>
-                      <h3 class="live-stage__title" id="live-stage-title">One focused place to start, watch, and save a live session.</h3>
+                      <div class="live-stage__kicker">Experimental capture surface</div>
+                      <h3 class="live-stage__title" id="live-stage-title">One focused place to start, watch, and stop a local beta session.</h3>
                     </div>
-                    <span class="live-stage__pill">Beta preview</span>
+                    <span class="live-stage__pill">{{ "Experimental beta" if live_snapshot.active else "Beta preview" }}</span>
                   </div>
 
                   <div class="live-stage__actions">
                     <div class="live-stage__controls">
-                      <button class="cta is-disabled" type="button" disabled aria-disabled="true">
+                      <button
+                        class="cta{% if not live_snapshot.active %} is-disabled{% endif %}"
+                        id="live-start"
+                        type="button"
+                        {% if not live_snapshot.active %}disabled aria-disabled="true"{% endif %}
+                      >
                         Start live capture
+                      </button>
+                      <button class="cta is-secondary is-disabled" id="live-stop" type="button" disabled aria-disabled="true">
+                        Stop capture
                       </button>
                       <a class="cta is-secondary" href="/?tab=queue">Use Queue instead</a>
                     </div>
-                    <p class="live-stage__note">
-                      Disabled on purpose: microphone input, browser/tab audio capture, and rolling transcript updates
-                      are not implemented yet.
+                    <p class="live-stage__note" id="live-note">
+                      {% if live_snapshot.active %}
+                        {{ live_snapshot.note }} First partial text usually appears after about
+                        {{ "%.1f"|format(live_snapshot.latency_secs) }} seconds.
+                      {% else %}
+                        {{ live_snapshot.reason }}
+                      {% endif %}
                     </p>
                   </div>
 
@@ -757,9 +798,10 @@
 
                     <div class="live-stage__monitor">
                       <div class="live-stage__status">
-                        <strong>Live capture is still disabled.</strong>
-                        <span class="live-stage__chip">Queue-style chunking</span>
-                        <span class="live-stage__chip">History output</span>
+                        <strong id="live-status">{{ "Ready for experimental capture." if live_snapshot.active else "Live capture is unavailable here." }}</strong>
+                        <span class="live-stage__chip">{{ live_snapshot.engine_label }} local</span>
+                        <span class="live-stage__chip">Auto language</span>
+                        <span class="live-stage__chip">~{{ "%.1f"|format(live_snapshot.latency_secs) }}s latency</span>
                       </div>
 
                       <div class="live-meter" aria-hidden="true">
@@ -773,12 +815,12 @@
                         <span></span>
                       </div>
 
-                      <div class="live-transcript" aria-hidden="true">
-                        <div class="live-transcript__label">Planned transcript area</div>
-                        <div class="live-transcript__line"></div>
-                        <div class="live-transcript__line"></div>
-                        <div class="live-transcript__line"></div>
-                        <div class="live-transcript__line"></div>
+                      <div class="live-transcript">
+                        <div class="live-transcript__label">Partial transcript</div>
+                        <pre class="live-transcript__content" id="live-transcript-output">{% if live_snapshot.active %}Waiting for microphone input. This beta does not save to History yet.{% else %}Experimental Parakeet live capture is not active on this machine. Use Queue for the stable saved workflow.{% endif %}</pre>
+                        <div class="live-transcript__meta" id="live-session-meta">
+                          Engine: {{ live_snapshot.engine_label }} · Model: {{ live_snapshot.configured_model }}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -787,11 +829,11 @@
                 <div class="live-side">
                   <section class="live-side-card" aria-labelledby="live-now-title">
                     <h3 id="live-now-title">What works now</h3>
-                    <p>The working flow stays the same today:</p>
+                    <p>The stable path is still intentionally simple:</p>
                     <ul class="live-now-list">
                       <li>Upload recordings and clips in Queue.</li>
                       <li>Preview, copy, and download saved transcripts in History.</li>
-                      <li>Keep the entire workflow local on this Mac.</li>
+                      <li>Use this page only for the experimental local Parakeet live beta.</li>
                     </ul>
                     <div class="live-link-row">
                       <a class="cta" href="/?tab=queue">Open Queue</a>
@@ -800,12 +842,12 @@
                   </section>
 
                   <section class="live-side-card" aria-labelledby="live-next-title">
-                    <h3 id="live-next-title">What comes next</h3>
-                    <p>The beta target is intentionally narrow:</p>
+                    <h3 id="live-next-title">Current beta scope</h3>
+                    <p>The experimental surface stays narrow on purpose:</p>
                     <ol class="live-next-list">
-                      <li>Pick a live source such as microphone or browser audio.</li>
-                      <li>Process short local chunks one at a time with the existing worker model.</li>
-                      <li>Show partial text here, then save the final session back into History.</li>
+                      <li>Capture microphone audio from the browser with localhost permissions.</li>
+                      <li>Send short chunks to the Parakeet streaming backend and show partial text here.</li>
+                      <li>Keep batch Queue separate until live capture proves stable enough to save sessions.</li>
                     </ol>
                   </section>
                 </div>
@@ -815,5 +857,174 @@
         </div>
       </section>
     </main>
+    <script>
+      (() => {
+        const liveConfig = {{ live_snapshot | tojson }};
+        const startButton = document.getElementById("live-start");
+        const stopButton = document.getElementById("live-stop");
+        const statusEl = document.getElementById("live-status");
+        const noteEl = document.getElementById("live-note");
+        const transcriptEl = document.getElementById("live-transcript-output");
+        const metaEl = document.getElementById("live-session-meta");
+
+        if (!startButton || !stopButton || !statusEl || !noteEl || !transcriptEl || !metaEl) {
+          return;
+        }
+
+        let recorder = null;
+        let stream = null;
+        let sessionId = null;
+        let sendQueue = Promise.resolve();
+
+        const setButtonState = (button, disabled) => {
+          button.disabled = disabled;
+          button.setAttribute("aria-disabled", disabled ? "true" : "false");
+          button.classList.toggle("is-disabled", disabled);
+        };
+
+        const updateSession = (session) => {
+          transcriptEl.textContent = session.transcript || "Listening for speech...";
+          metaEl.textContent =
+            `Chunks: ${session.received_chunks} · Windows: ${session.processed_windows} · Engine: ${session.engine_label}`;
+          if (session.error) {
+            statusEl.textContent = "Live beta hit an error.";
+            noteEl.textContent = session.error;
+            return;
+          }
+          if (session.status === "stopped") {
+            statusEl.textContent = "Experimental capture stopped.";
+            noteEl.textContent = "This beta session stayed in memory only. Use Queue for saved transcripts.";
+            return;
+          }
+          if (session.processed_windows > 0) {
+            statusEl.textContent = "Streaming experimental partial transcript.";
+          } else {
+            statusEl.textContent = "Listening. Waiting for the first streaming window.";
+          }
+        };
+
+        const cleanupStream = () => {
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            stream = null;
+          }
+          recorder = null;
+        };
+
+        const handleError = (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = "Live beta unavailable.";
+          noteEl.textContent = message;
+          cleanupStream();
+          sessionId = null;
+          setButtonState(startButton, !liveConfig.active);
+          setButtonState(stopButton, true);
+        };
+
+        const supportedMimeType = () => {
+          const candidates = [
+            "audio/webm;codecs=opus",
+            "audio/webm",
+            "audio/ogg;codecs=opus",
+            "audio/ogg",
+          ];
+          return candidates.find((candidate) => window.MediaRecorder && MediaRecorder.isTypeSupported(candidate)) || "";
+        };
+
+        const uploadChunk = async (blob) => {
+          if (!sessionId || !blob || blob.size === 0) {
+            return;
+          }
+          const formData = new FormData();
+          const filename = blob.type.includes("ogg") ? "chunk.ogg" : "chunk.webm";
+          formData.append("file", blob, filename);
+          const response = await fetch(`/api/live/session/${sessionId}/chunk`, {
+            method: "POST",
+            body: formData,
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || "Failed to stream a live audio chunk.");
+          }
+          updateSession(payload.session);
+        };
+
+        const stopSession = async () => {
+          if (!sessionId) {
+            return;
+          }
+          const response = await fetch(`/api/live/session/${sessionId}/stop`, {
+            method: "POST",
+          });
+          const payload = await response.json();
+          sessionId = null;
+          if (!response.ok) {
+            throw new Error(payload.detail || "Failed to stop the live session.");
+          }
+          updateSession(payload.session);
+        };
+
+        if (!liveConfig.active) {
+          return;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+          setButtonState(startButton, true);
+          noteEl.textContent =
+            "This browser does not expose the MediaRecorder microphone path required for the live beta.";
+          return;
+        }
+
+        startButton.addEventListener("click", async () => {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const response = await fetch("/api/live/session", { method: "POST" });
+            const payload = await response.json();
+            if (!response.ok) {
+              throw new Error(payload.detail || "Failed to start the live session.");
+            }
+            sessionId = payload.session.session_id;
+            updateSession(payload.session);
+
+            const mimeType = supportedMimeType();
+            recorder = mimeType
+              ? new MediaRecorder(stream, { mimeType })
+              : new MediaRecorder(stream);
+            recorder.addEventListener("dataavailable", (event) => {
+              sendQueue = sendQueue.then(() => uploadChunk(event.data)).catch(handleError);
+            });
+            recorder.addEventListener("stop", async () => {
+              try {
+                await sendQueue;
+                await stopSession();
+              } catch (error) {
+                handleError(error);
+              } finally {
+                cleanupStream();
+                setButtonState(startButton, false);
+                setButtonState(stopButton, true);
+              }
+            });
+            recorder.start(liveConfig.timeslice_ms);
+            statusEl.textContent = "Microphone capture is live.";
+            noteEl.textContent =
+              "Experimental beta in progress. Keep this tab active and expect first partials after the initial buffer fills.";
+            setButtonState(startButton, true);
+            setButtonState(stopButton, false);
+          } catch (error) {
+            handleError(error);
+          }
+        });
+
+        stopButton.addEventListener("click", () => {
+          if (!recorder || recorder.state === "inactive") {
+            return;
+          }
+          statusEl.textContent = "Stopping experimental capture...";
+          setButtonState(stopButton, true);
+          recorder.stop();
+        });
+      })();
+    </script>
   </body>
 </html>
