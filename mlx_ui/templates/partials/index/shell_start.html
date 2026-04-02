@@ -1,0 +1,88 @@
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <main id="main" tabindex="-1">
+      <header class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Local-first transcription</div>
+          <h1>Whisper WebUI (MLX)</h1>
+          <p>Add files, then download transcripts from History. Files are stored here locally; cloud engines can send audio to their provider.</p>
+        </div>
+        <div class="status-card" aria-live="polite">
+          <div class="status-label">Worker</div>
+          <div class="status" id="worker-status">{{ worker.status }}</div>
+          <div
+            class="worker-current"
+            id="worker-current"
+            {% if worker.status != "Running" or not worker.filename %}hidden{% endif %}
+            role="group"
+            aria-label="Current file"
+          >
+            <div class="worker-current-label">Current file</div>
+            <div
+              class="worker-current-name"
+              id="worker-filename"
+              title="{{ worker.filename or '' }}"
+              aria-label="{{ worker.filename or '' }}"
+            >{{ worker.filename or '' }}</div>
+          </div>
+          <div class="worker-pills" aria-label="Worker summary">
+            <span class="worker-pill is-strong" id="worker-queued">
+              {{ worker.queue_length }} queued
+            </span>
+            <span
+              class="worker-pill"
+              id="worker-elapsed"
+              data-started-at="{{ worker.started_at or '' }}"
+              {% if worker.status != "Running" or not worker.started_at %}hidden{% endif %}
+            >
+              Elapsed …
+            </span>
+            <span
+              class="worker-pill"
+              id="worker-engine"
+              {% if not worker.current_job_ui or not worker.current_job_ui.engine_summary %}hidden{% endif %}
+            >
+              {{ worker.current_job_ui.engine_summary if worker.current_job_ui else "" }}
+            </span>
+            <span
+              class="worker-pill"
+              id="worker-language"
+              {% if not worker.current_job_ui %}hidden{% endif %}
+            >
+              {% if worker.current_job_ui %}Language: {{ worker.current_job_ui.language.label }}{% endif %}
+            </span>
+            <span class="worker-pill is-muted" id="worker-mode">One file at a time</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="tabs" aria-label="Main sections">
+        <div class="tabbar">
+          <nav class="tablist" aria-label="Main sections">
+            <a
+              class="tab{% if active_tab == 'queue' %} is-active{% endif %}"
+              data-tab="queue"
+              href="/?tab=queue"
+              {% if active_tab == 'queue' %}aria-current="page"{% endif %}
+            >
+              Queue
+            </a>
+            <a
+              class="tab{% if active_tab == 'history' %} is-active{% endif %}"
+              data-tab="history"
+              href="/?tab=history"
+              {% if active_tab == 'history' %}aria-current="page"{% endif %}
+            >
+              History
+            </a>
+            <a
+              class="tab{% if active_tab == 'settings' %} is-active{% endif %}"
+              data-tab="settings"
+              href="/?tab=settings"
+              {% if active_tab == 'settings' %}aria-current="page"{% endif %}
+            >
+              Settings
+            </a>
+          </nav>
+        </div>
+
+        <div class="panels">

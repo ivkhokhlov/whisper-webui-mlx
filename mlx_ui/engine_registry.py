@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+from pathlib import Path
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 import sys
@@ -18,6 +21,7 @@ PARAKEET_TDT_V3_ENGINE = "parakeet_tdt_v3"
 WTM_BACKEND = "wtm"
 WHISPER_BACKEND = "whisper"
 FAKE_BACKEND = "fake"
+PARAKEET_TDT_V3_NEMO_CUDA_BACKEND = "parakeet_tdt_v3_nemo_cuda"
 
 DEFAULT_ENGINE_ID = WHISPER_MLX_ENGINE
 DEFAULT_BACKEND = WTM_BACKEND
@@ -38,20 +42,14 @@ class EngineFactoryOptions:
 
 
 @dataclass(frozen=True)
-class EngineProvider:
+class EngineImplementation:
     id: str
-    label: str
-    mode: Literal["local", "cloud"]
     availability_probe: Callable[[], bool]
     factory: Callable[[EngineFactoryOptions], Transcriber] | None
     compatibility_note: str | None = None
     availability_reason: Callable[[], str | None] | None = None
     disabled_label: str | None = None
-    backend: str | None = None
     backend_aliases: tuple[str, ...] = ()
-    fallback_engine_id: str | None = None
-    selectable: bool = True
-    visible_in_settings: bool = True
 
     def is_available(self) -> bool:
         return self.availability_probe()
@@ -67,12 +65,106 @@ class EngineProvider:
         return self.compatibility_note
 
 
+@dataclass(frozen=True)
+class EngineProvider:
+    id: str
+    label: str
+    mode: Literal["local", "cloud"]
+    implementations: tuple[EngineImplementation, ...]
+    fallback_engine_id: str | None = None
+    selectable: bool = True
+    visible_in_settings: bool = True
+
+    def is_available(self) -> bool:
+        return any(implementation.is_available() for implementation in self.implementations)
+
+    def is_implemented(self) -> bool:
+        return any(implementation.is_implemented() for implementation in self.implementations)
+
+    def unavailable_reason(self) -> str | None:
+        if self.is_available():
+            return None
+        implementation = self.display_implementation()
+        if implementation is None:
+            return None
+        return implementation.unavailable_reason()
+
+    def display_implementation(self) -> EngineImplementation | None:
+        if not self.implementations:
+            return None
+        for implementation in self.implementations:
+            if implementation.is_implemented():
+                return implementation
+        return self.implementations[0]
+
+    def resolve_implementation(
+        self,
+        implementation_id: str | None = None,
+        *,
+        require_available: bool = False,
+    ) -> EngineImplementation:
+        if implementation_id is not None:
+            normalized = implementation_id.strip().lower()
+            for implementation in self.implementations:
+                aliases = (implementation.id,) + implementation.backend_aliases
+                if any(alias.strip().lower() == normalized for alias in aliases if alias):
+                    if require_available and not implementation.is_available():
+                        raise ValueError(
+                            f"Backend '{implementation_id}' is not available for engine '{self.id}'."
+                        )
+                    if implementation.factory is None:
+                        raise ValueError(
+                            f"Backend '{implementation_id}' is not implemented for engine '{self.id}'."
+                        )
+                    return implementation
+            raise ValueError(
+                f"Unknown backend '{implementation_id}' for engine '{self.id}'."
+            )
+        if require_available:
+            for implementation in self.implementations:
+                if implementation.factory is not None and implementation.is_available():
+                    return implementation
+            raise ValueError(f"Engine '{self.id}' has no available backends.")
+        for implementation in self.implementations:
+            if implementation.factory is not None and implementation.is_available():
+                return implementation
+        for implementation in self.implementations:
+            if implementation.factory is not None:
+                return implementation
+        raise ValueError(f"Engine '{self.id}' is not implemented.")
+
+    @property
+    def disabled_label(self) -> str | None:
+        implementation = self.display_implementation()
+        if implementation is None:
+            return None
+        return implementation.disabled_label
+
+
+@dataclass(frozen=True)
+class ResolvedEngine:
+    provider: EngineProvider
+    implementation: EngineImplementation
+    note: str | None = None
+
+
 def is_whisper_available() -> bool:
     return importlib.util.find_spec("whisper") is not None
 
 
 def is_wtm_available() -> bool:
-    return importlib.util.find_spec("whisper_turbo") is not None
+    wtm_path = os.getenv("WTM_PATH", "").strip()
+    if wtm_path:
+        candidate = Path(wtm_path)
+        if candidate.is_file():
+            return os.access(candidate, os.X_OK)
+        return shutil.which(wtm_path) is not None
+
+    venv_candidate = Path(sys.executable).resolve().parent / "wtm"
+    if venv_candidate.is_file():
+        return os.access(venv_candidate, os.X_OK)
+
+    return shutil.which("wtm") is not None
 
 
 def cohere_availability_reason() -> str | None:
@@ -158,37 +250,49 @@ _ENGINE_PROVIDERS: tuple[EngineProvider, ...] = (
         id=WHISPER_MLX_ENGINE,
         label="Whisper (MLX / Metal)",
         mode="local",
-        availability_probe=lambda: is_wtm_available(),
-        factory=_create_wtm_transcriber,
-        compatibility_note="WTM is not installed.",
-        disabled_label="Not installed",
-        backend=WTM_BACKEND,
-        backend_aliases=(WTM_BACKEND, "mlx", "wtm-cli"),
+        implementations=(
+            EngineImplementation(
+                id=WTM_BACKEND,
+                availability_probe=lambda: is_wtm_available(),
+                factory=_create_wtm_transcriber,
+                compatibility_note="the 'wtm' CLI is not installed.",
+                disabled_label="Not installed",
+                backend_aliases=(WTM_BACKEND, "mlx", "wtm-cli"),
+            ),
+        ),
         fallback_engine_id=WHISPER_CPU_ENGINE,
     ),
     EngineProvider(
         id=WHISPER_CPU_ENGINE,
         label="Whisper (CPU)",
         mode="local",
-        availability_probe=lambda: is_whisper_available(),
-        factory=_create_whisper_transcriber,
-        compatibility_note=(
-            "the optional 'openai-whisper' dependency is not installed."
+        implementations=(
+            EngineImplementation(
+                id=WHISPER_BACKEND,
+                availability_probe=lambda: is_whisper_available(),
+                factory=_create_whisper_transcriber,
+                compatibility_note=(
+                    "the optional 'openai-whisper' dependency is not installed."
+                ),
+                disabled_label="Requires install",
+                backend_aliases=(WHISPER_BACKEND, "openai-whisper", "openai"),
+            ),
         ),
-        disabled_label="Requires install",
-        backend=WHISPER_BACKEND,
-        backend_aliases=(WHISPER_BACKEND, "openai-whisper", "openai"),
         fallback_engine_id=WHISPER_MLX_ENGINE,
     ),
     EngineProvider(
         id=FAKE_ENGINE,
         label="Fake",
         mode="local",
-        availability_probe=lambda: True,
-        factory=_create_fake_transcriber,
-        compatibility_note="test backend",
-        backend=FAKE_BACKEND,
-        backend_aliases=(FAKE_BACKEND, "noop", "test"),
+        implementations=(
+            EngineImplementation(
+                id=FAKE_BACKEND,
+                availability_probe=lambda: True,
+                factory=_create_fake_transcriber,
+                compatibility_note="test backend",
+                backend_aliases=(FAKE_BACKEND, "noop", "test"),
+            ),
+        ),
         selectable=False,
         visible_in_settings=False,
     ),
@@ -196,35 +300,48 @@ _ENGINE_PROVIDERS: tuple[EngineProvider, ...] = (
         id=COHERE_ENGINE,
         label="Cohere",
         mode="cloud",
-        availability_probe=lambda: is_cohere_available(),
-        factory=_create_cohere_transcriber,
-        compatibility_note="the optional 'cohere' Python SDK is not installed.",
-        availability_reason=lambda: cohere_availability_reason(),
-        disabled_label="Requires install",
-        backend=COHERE_ENGINE,
+        implementations=(
+            EngineImplementation(
+                id=COHERE_ENGINE,
+                availability_probe=lambda: is_cohere_available(),
+                factory=_create_cohere_transcriber,
+                compatibility_note="the optional 'cohere' Python SDK is not installed.",
+                availability_reason=lambda: cohere_availability_reason(),
+                disabled_label="Requires install",
+                backend_aliases=(COHERE_ENGINE,),
+            ),
+        ),
         selectable=True,
     ),
     EngineProvider(
         id=PARAKEET_TDT_V3_ENGINE,
         label="Parakeet TDT v3",
         mode="local",
-        availability_probe=lambda: is_parakeet_available(),
-        factory=_create_parakeet_transcriber,
-        compatibility_note="Parakeet requires Linux with CUDA, PyTorch, and NVIDIA NeMo ASR.",
-        availability_reason=lambda: parakeet_availability_reason(),
-        disabled_label="Requires CUDA",
-        backend=PARAKEET_TDT_V3_ENGINE,
-        backend_aliases=(PARAKEET_TDT_V3_ENGINE, "parakeet"),
+        implementations=(
+            EngineImplementation(
+                id=PARAKEET_TDT_V3_NEMO_CUDA_BACKEND,
+                availability_probe=lambda: is_parakeet_available(),
+                factory=_create_parakeet_transcriber,
+                compatibility_note=(
+                    "Parakeet requires Linux with CUDA, PyTorch, and NVIDIA NeMo ASR."
+                ),
+                availability_reason=lambda: parakeet_availability_reason(),
+                disabled_label="Requires CUDA",
+                backend_aliases=(PARAKEET_TDT_V3_ENGINE, "parakeet"),
+            ),
+        ),
         selectable=True,
     ),
 )
 
 _PROVIDERS_BY_ID = {provider.id: provider for provider in _ENGINE_PROVIDERS}
-_PROVIDERS_BY_BACKEND = {
-    alias: provider
-    for provider in _ENGINE_PROVIDERS
-    for alias in ((provider.backend,) if provider.backend else ()) + provider.backend_aliases
-}
+_IMPLEMENTATIONS_BY_BACKEND: dict[str, tuple[EngineProvider, EngineImplementation]] = {}
+for provider in _ENGINE_PROVIDERS:
+    for implementation in provider.implementations:
+        for alias in (implementation.id,) + implementation.backend_aliases:
+            normalized = (alias or "").strip().lower()
+            if normalized:
+                _IMPLEMENTATIONS_BY_BACKEND[normalized] = (provider, implementation)
 
 
 def list_engine_providers(*, visible_only: bool = False) -> tuple[EngineProvider, ...]:
@@ -250,15 +367,31 @@ def resolve_backend_provider(
     *,
     include_hidden: bool = True,
 ) -> EngineProvider | None:
+    resolved = resolve_backend_implementation(
+        backend,
+        include_hidden=include_hidden,
+    )
+    if resolved is None:
+        return None
+    provider, _implementation = resolved
+    return provider
+
+
+def resolve_backend_implementation(
+    backend: str | None,
+    *,
+    include_hidden: bool = True,
+) -> tuple[EngineProvider, EngineImplementation] | None:
     normalized = (backend or "").strip().lower()
     if not normalized:
         return None
-    provider = _PROVIDERS_BY_BACKEND.get(normalized)
-    if provider is None:
+    resolved = _IMPLEMENTATIONS_BY_BACKEND.get(normalized)
+    if resolved is None:
         return None
+    provider, implementation = resolved
     if not include_hidden and not provider.selectable:
         return None
-    return provider
+    return provider, implementation
 
 
 def get_selectable_engine_ids() -> tuple[str, ...]:
@@ -268,7 +401,9 @@ def get_selectable_engine_ids() -> tuple[str, ...]:
 def build_engine_options() -> list[dict[str, object]]:
     options: list[dict[str, object]] = []
     for provider in list_engine_providers(visible_only=True):
-        available = provider.is_implemented() and provider.is_available()
+        instantiable = provider.is_implemented()
+        runtime_present = provider.is_available()
+        available = instantiable and runtime_present
         reason = provider.unavailable_reason()
         options.append(
             {
@@ -278,8 +413,10 @@ def build_engine_options() -> list[dict[str, object]]:
                 "local": provider.mode == "local",
                 "cloud": provider.mode == "cloud",
                 "available": available,
+                "runtime_present": runtime_present,
+                "instantiable": instantiable,
                 "selectable": provider.selectable,
-                "implemented": provider.is_implemented(),
+                "implemented": instantiable,
                 "disabled": (not provider.selectable) or not available,
                 "disabled_label": provider.disabled_label,
                 "compatibility_note": reason,
@@ -294,38 +431,62 @@ def resolve_runtime_engine(
     engine_id: str,
     *,
     allow_fallback: bool,
-) -> tuple[EngineProvider, str | None]:
+) -> ResolvedEngine:
     provider = require_engine_provider(engine_id)
-    if provider.is_available():
-        return provider, None
+    for implementation in provider.implementations:
+        if implementation.is_implemented() and implementation.is_available():
+            return ResolvedEngine(provider=provider, implementation=implementation)
     if allow_fallback and provider.fallback_engine_id:
         fallback = get_engine_provider(provider.fallback_engine_id)
-        if fallback is not None and fallback.is_available():
-            return (
-                fallback,
-                f"{provider.label} isn't available; using {fallback.label}.",
-            )
+        if fallback is not None:
+            for implementation in fallback.implementations:
+                if implementation.is_implemented() and implementation.is_available():
+                    return ResolvedEngine(
+                        provider=fallback,
+                        implementation=implementation,
+                        note=f"{provider.label} isn't available; using {fallback.label}.",
+                    )
     reason = provider.unavailable_reason()
+    implementation = provider.display_implementation()
+    if implementation is None:
+        raise ValueError(f"Engine '{provider.id}' has no runtime implementations.")
     if reason:
-        return provider, f"{provider.label} is selected but {reason}"
-    return provider, None
+        return ResolvedEngine(
+            provider=provider,
+            implementation=implementation,
+            note=f"{provider.label} is selected but {reason}",
+        )
+    return ResolvedEngine(provider=provider, implementation=implementation)
 
 
 def create_transcriber(
     engine_id: str,
     *,
+    implementation_id: str | None = None,
     options: EngineFactoryOptions | None = None,
 ) -> Transcriber:
     provider = require_engine_provider(engine_id)
-    if provider.factory is None:
-        raise ValueError(f"Engine '{provider.id}' is not implemented.")
-    return provider.factory(options or EngineFactoryOptions())
+    implementation = provider.resolve_implementation(implementation_id)
+    if implementation.factory is None:
+        raise ValueError(
+            f"Engine '{provider.id}' backend '{implementation.id}' is not implemented."
+        )
+    return implementation.factory(options or EngineFactoryOptions())
 
 
 def supported_backend_names() -> tuple[str, ...]:
-    names = [
-        provider.backend
-        for provider in _ENGINE_PROVIDERS
-        if provider.backend and provider.is_implemented()
-    ]
-    return tuple(names)
+    names: list[str] = []
+    for provider in _ENGINE_PROVIDERS:
+        for implementation in provider.implementations:
+            if implementation.factory is None:
+                continue
+            names.append(implementation.id)
+            if provider.id in implementation.backend_aliases:
+                names.append(provider.id)
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in names:
+        if name and name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return tuple(ordered)

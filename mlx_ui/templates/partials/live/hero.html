@@ -1,0 +1,28 @@
+      <header class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">Live beta</div>
+          <h1>Live capture preview</h1>
+          <p>
+            {% if live_snapshot.active %}
+              Experimental Parakeet live transcription is enabled on this machine. Browser microphone capture and
+              partial updates are still beta-quality, and Queue remains the stable path.
+            {% else %}
+              Experimental Parakeet live transcription is not active here yet. The page stays honest about the flag
+              and environment requirements instead of pretending microphone capture is production-ready.
+            {% endif %}
+          </p>
+        </div>
+        <div class="status-card" aria-live="polite">
+          <div class="status-label">Availability</div>
+          <div class="status">{{ "Experimental beta" if live_snapshot.active else "Preview only" }}</div>
+          <p>
+            {% if live_snapshot.active %}
+              {{ live_snapshot.engine_label }} is ready with model <strong>{{ live_snapshot.configured_model }}</strong>
+              and about {{ "%.1f"|format(live_snapshot.latency_secs) }}s theoretical latency.
+            {% else %}
+              {{ live_snapshot.reason }}
+            {% endif %}
+          </p>
+          <a class="status-link" href="/?tab=queue">← Back to Queue</a>
+        </div>
+      </header>

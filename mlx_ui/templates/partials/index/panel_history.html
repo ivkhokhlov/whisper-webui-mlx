@@ -1,0 +1,329 @@
+
+          <section
+            class="panel{% if active_tab == 'history' %} is-active{% endif %}"
+            id="panel-history"
+            data-panel="history"
+            {% if active_tab != 'history' %}hidden{% endif %}
+          >
+            <div class="history-header">
+              <div>
+                <h2>History</h2>
+                <p>Completed jobs appear here. Expand a row for timestamps, outputs, and logs.</p>
+              </div>
+              <div class="history-controls">
+                <div class="history-toolbar" role="group" aria-label="Find transcripts">
+                  <div class="history-tool is-search">
+                    <label class="history-tool-label" for="history-search">Search</label>
+                    <input
+                      class="history-input"
+                      id="history-search"
+                      type="search"
+                      placeholder="Search filenames…"
+                      autocomplete="off"
+                    >
+                  </div>
+                  <div class="history-tool is-compact">
+                    <label class="history-tool-label" for="history-status">Status</label>
+                    <select class="history-select" id="history-status">
+                      <option value="all">All</option>
+                      <option value="done">Done</option>
+                      <option value="failed">Failed</option>
+                    </select>
+                  </div>
+                  <div class="history-tool is-compact">
+                    <label class="history-tool-label" for="history-sort">Sort</label>
+                    <select class="history-select" id="history-sort">
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                      <option value="name">Name (A→Z)</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  class="job-primary is-secondary is-danger history-control-action"
+                  type="button"
+                  data-history-clear
+                  aria-label="Delete all history results"
+                  {% if not history_jobs %}disabled{% endif %}
+                >
+                  Delete all
+                </button>
+              </div>
+            </div>
+            <div class="history-view-summary" id="history-view-summary" aria-live="polite" hidden></div>
+            <div class="job-list" aria-live="polite" id="history-list">
+              {% for job in history_jobs %}
+                {% set job_view = job_views.get(job.id, {}) %}
+                {% set results = results_by_job.get(job.id, []) %}
+                {% set result_ns = namespace(default=None) %}
+                {% for result in results %}
+                  {% if result.endswith('.txt') and result_ns.default is none %}
+                    {% set result_ns.default = result %}
+                  {% endif %}
+                {% endfor %}
+                {% if result_ns.default is none and results %}
+                  {% set result_ns.default = results[0] %}
+                {% endif %}
+                <div
+                  class="history-row"
+                  data-job-id="{{ job.id }}"
+                  data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
+                >
+                  <div class="history-main">
+                    <div class="history-title">
+                      <div class="history-filename" title="{{ job.filename }}">{{ job.filename }}</div>
+                      <div class="history-badges">
+                        <div class="status-badge is-{{ job.status }}">{{ job.status }}</div>
+                        {% if results %}
+                          <div class="output-chips">
+                            {% set chip_ns = namespace(exts=[]) %}
+                            {% for result in results %}
+                              {% set ext = result.rsplit('.', 1)[-1] | upper %}
+                              {% if ext not in chip_ns.exts %}
+                                {% set chip_ns.exts = chip_ns.exts + [ext] %}
+                                <span class="output-chip">
+                                  {{ ext }}
+                                </span>
+                              {% endif %}
+                            {% endfor %}
+                          </div>
+                        {% endif %}
+                      </div>
+                    </div>
+                    <div class="history-subline">
+                      <div
+                        class="history-time"
+                        data-time-meta
+                        data-status="{{ job.status }}"
+                        data-created-at="{{ job.created_at }}"
+                        {% if job.started_at %}data-started-at="{{ job.started_at }}"{% endif %}
+                        {% if job.completed_at %}data-completed-at="{{ job.completed_at }}"{% endif %}
+                      ></div>
+                      {% if job_view.engine_badges %}
+                        <div class="meta-chips" aria-label="Engine">
+                          {% for badge in job_view.engine_badges %}
+                            <span
+                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
+                              title="{{ badge.title }}"
+                            >
+                              {{ badge.label }}
+                            </span>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                      {% if job_view.language %}
+                        <span
+                          class="meta-chip is-language"
+                          title="Language: {{ job_view.language.label }}"
+                        >
+                          {{ job_view.language.short_label }}
+                        </span>
+                      {% endif %}
+                      {% if job.status == "failed" and job.error_message %}
+                        {% set error_summary = job.error_message.splitlines()[0] %}
+                        <div class="history-error-summary" title="{{ error_summary }}">{{ error_summary }}</div>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="history-actions">
+                    <div class="history-actions-main">
+                      {% if job.status == "done" and result_ns.default %}
+                        <button
+                          class="job-primary is-secondary js-only"
+                          type="button"
+                          data-action="preview"
+                          data-job-id="{{ job.id }}"
+                          data-preview-url="/api/jobs/{{ job.id }}/preview?chars=1200"
+                          data-default-url="/results/{{ job.id }}/{{ result_ns.default }}"
+                          data-default-filename="{{ result_ns.default }}"
+                          data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
+                          aria-haspopup="dialog"
+                        >
+                          Preview
+                        </button>
+                        <a
+                          class="job-primary"
+                          href="/results/{{ job.id }}/{{ result_ns.default }}"
+                          download="{{ result_ns.default }}"
+                        >
+                          Download
+                        </a>
+                      {% elif job.status == "failed" %}
+                        <button class="job-primary is-secondary" type="button" data-action="view-log">
+                          Log
+                        </button>
+                      {% endif %}
+                    </div>
+                    <details class="job-menu">
+                      <summary aria-label="More actions">⋯</summary>
+                      <div class="job-menu-panel">
+                        {% if job.status == "done" and result_ns.default %}
+                          <a
+                            class="job-menu-item"
+                            href="/results/{{ job.id }}/{{ result_ns.default }}"
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            Open transcript
+                          </a>
+                        {% endif %}
+                        {% if results %}
+                          {% for result in results %}
+                            <a
+                              class="job-menu-item"
+                              href="/results/{{ job.id }}/{{ result }}"
+                              download="{{ result }}"
+                            >
+                              Download {{ result.rsplit('.', 1)[-1] | upper }}
+                            </a>
+                          {% endfor %}
+                        {% endif %}
+                        {% if job.status == "done" and result_ns.default %}
+                          <button
+                            class="job-menu-item"
+                            type="button"
+                            data-action="copy-preview"
+                            data-job-id="{{ job.id }}"
+                          >
+                            Copy preview
+                          </button>
+                        {% endif %}
+                        <button
+                          class="job-menu-item"
+                          type="button"
+                          data-action="copy-filename"
+                          data-filename="{{ job.filename }}"
+                        >
+                          Copy filename
+                        </button>
+                        <div class="job-menu-divider" aria-hidden="true"></div>
+                        <button
+                          class="job-menu-item is-danger"
+                          type="button"
+                          data-action="delete-history"
+                        >
+                          Delete...
+                        </button>
+                      </div>
+                    </details>
+                  </div>
+                  <details class="job-details" data-job-id="{{ job.id }}">
+                    <summary aria-label="Details for {{ job.filename }}">
+                      <span>Details</span>
+                      <span class="details-chevron" aria-hidden="true">▾</span>
+                    </summary>
+                    <div class="job-details-body">
+                      <div class="detail-block">
+                        <div class="detail-label">Timeline</div>
+                        <div class="detail-line" data-iso="{{ job.created_at }}" data-label="Added"></div>
+                        {% if job.started_at %}
+                          <div class="detail-line" data-iso="{{ job.started_at }}" data-label="Started"></div>
+                        {% endif %}
+                        {% if job.completed_at %}
+                          <div
+                            class="detail-line"
+                            data-iso="{{ job.completed_at }}"
+                            data-label="{{ 'Failed' if job.status == 'failed' else 'Completed' }}"
+                          ></div>
+                        {% endif %}
+                      </div>
+                      {% if job.status == "done" and result_ns.default %}
+                        <div
+                          class="detail-block"
+                          data-preview-block
+                          data-preview-url="/api/jobs/{{ job.id }}/preview?chars=300"
+                        >
+                          <div class="detail-label">Preview</div>
+                          {% if job_view.preview_meta %}
+                            <div class="preview-meta-note">{{ job_view.preview_meta }}</div>
+                          {% endif %}
+                          <div class="preview-snippet is-loading" data-preview-snippet>
+                            Preview will load when expanded.
+                          </div>
+                          <div class="preview-actions">
+                            <button
+                              class="preview-action"
+                              type="button"
+                              data-action="copy-preview"
+                              data-job-id="{{ job.id }}"
+                            >
+                              Copy preview
+                            </button>
+                            <a
+                              class="preview-action"
+                              href="/results/{{ job.id }}/{{ result_ns.default }}"
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              Open
+                            </a>
+                          </div>
+                        </div>
+                      {% endif %}
+                      {% if results %}
+                        <div class="detail-block">
+                          <div class="detail-label">Outputs</div>
+                          <ul class="detail-results">
+                            {% for result in results %}
+                              <li class="detail-result-item">
+                                <a
+                                  class="detail-result-link"
+                                  href="/results/{{ job.id }}/{{ result }}"
+                                  target="_blank"
+                                  rel="noopener"
+                                >
+                                  {{ result }}
+                                </a>
+                              </li>
+                            {% endfor %}
+                          </ul>
+                        </div>
+                      {% endif %}
+                      {% if job.status == "failed" and job.error_message %}
+                        <div class="detail-block">
+                          <div class="detail-label">Log</div>
+                          <div class="detail-log" data-log>{{ job.error_message }}</div>
+                        </div>
+                      {% endif %}
+                    </div>
+                  </details>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="placeholder" id="history-filter-empty" hidden>
+              <section class="empty-card" role="region" aria-labelledby="history-filter-title">
+                <div class="empty-card-header">
+                  <div class="empty-kicker">History</div>
+                  <h3 class="empty-title" id="history-filter-title">No matches</h3>
+                  <p class="empty-body" id="history-filter-body">
+                    Try a different search, or clear filters to see everything again.
+                  </p>
+                </div>
+                <div class="empty-actions">
+                  <button class="job-primary is-secondary" type="button" id="history-clear-filters">
+                    Clear filters
+                  </button>
+                </div>
+              </section>
+            </div>
+            <div
+              class="placeholder"
+              id="history-placeholder"
+              data-empty-state="history"
+              {% if history_jobs %}style="display: none;"{% endif %}
+            >
+              <section class="empty-card" role="region" aria-labelledby="history-empty-title">
+                <div class="empty-card-header">
+                  <div class="empty-kicker">History</div>
+                  <h3 class="empty-title" id="history-empty-title">No completed jobs yet</h3>
+                  <p class="empty-body">
+                    When a queued file finishes, it will appear here with download links. Results stay stored locally here, even when a cloud engine was used.
+                  </p>
+                </div>
+                <div class="empty-actions">
+                  <button class="job-primary" type="button" data-history-empty-cta>Go to Queue</button>
+                  <span class="empty-note">This list updates automatically.</span>
+                </div>
+              </section>
+            </div>
+          </section>

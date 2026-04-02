@@ -1,0 +1,615 @@
+
+          <section
+            class="panel{% if active_tab == 'settings' %} is-active{% endif %}"
+            id="panel-settings"
+            data-panel="settings"
+            {% if active_tab != 'settings' %}hidden{% endif %}
+          >
+            <div class="settings-header">
+              <h2>Settings</h2>
+              <p>
+                Preferences are saved locally on this Mac. Source badges show where a value is coming from.
+              </p>
+            </div>
+            <div
+              class="settings-banner"
+              id="settings-banner-success"
+              role="status"
+              {% if not settings_saved %}hidden{% endif %}
+            >
+              Settings saved.
+            </div>
+            <div class="settings-banner is-error" id="settings-banner-error" role="alert" hidden></div>
+            <form class="settings-form" action="/settings" method="post">
+              <div class="settings-grid">
+                <section class="settings-card" aria-labelledby="settings-engine-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-engine-title">Engine</h3>
+                    <p class="settings-section-desc">Choose how new files are transcribed on this Mac.</p>
+                  </header>
+                  {% set engine_source = settings_snapshot.sources.engine %}
+                  {% set engine_locked = engine_source == "env" %}
+                  {% set configured_engine = settings_snapshot.engine.configured %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="engine-select">Engine</label>
+                      <span
+                        class="source-pill is-{{ engine_source }}"
+                        data-settings-source-pill="engine"
+                        title="Value source: {{ engine_source }}"
+                      >
+                        {{ engine_source }}
+                      </span>
+                    </div>
+                    <select
+                      class="settings-input"
+                      id="engine-select"
+                      name="engine"
+                      {% if engine_locked %}disabled{% endif %}
+                    >
+                      {% for engine_option in settings_snapshot.options.engines %}
+                      <option
+                        value="{{ engine_option.id }}"
+                        {% if settings_snapshot.settings.engine == engine_option.id %}selected{% endif %}
+                        {% if engine_option.disabled %}disabled{% endif %}
+                      >
+                        {{ engine_option.label }}{% if engine_option.disabled and engine_option.disabled_label %} ({{ engine_option.disabled_label }}){% endif %}
+                      </option>
+                      {% endfor %}
+                    </select>
+                    <p class="settings-hint">
+                      MLX / Metal is recommended for Apple Silicon (M1/M2/M3). Use CPU for Intel Macs or as a fallback.
+                    </p>
+                    <p class="settings-hint">
+                      Active now:
+                      {{ runtime_snapshot.about.active_engine.label }}.
+                      Changes apply after restarting the app.
+                    </p>
+                    {% if runtime_snapshot.about.engine_note %}
+                      <p class="settings-hint">
+                        <strong>Note:</strong> {{ runtime_snapshot.about.engine_note }}
+                      </p>
+                    {% endif %}
+                    {% if engine_locked %}
+                      <p class="settings-hint">
+                        Managed by <code>{{ settings_snapshot.meta.env_vars.engine }}</code>. Remove that environment
+                        variable to change it here.
+                      </p>
+                    {% endif %}
+                    {% if configured_engine and configured_engine.reason %}
+                      <p class="settings-hint">
+                        <strong>{{ configured_engine.label }} is unavailable.</strong> {{ configured_engine.reason }}
+                      </p>
+                    {% endif %}
+                  </div>
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <span class="settings-label">WTM command</span>
+                    </div>
+                    <div class="settings-readonly is-mono">{{ runtime_snapshot.about.wtm_path }}</div>
+                    <p class="settings-hint">
+                      Used for Whisper (MLX / Metal). If transcription fails to start, check this path.
+                    </p>
+                  </div>
+                </section>
+
+                <section class="settings-card" aria-labelledby="settings-transcription-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-transcription-title">Transcription</h3>
+                    <p class="settings-section-desc">Defaults applied to new jobs (saved locally).</p>
+                  </header>
+                  {% set default_language_source = settings_snapshot.sources.default_language %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="default-language">Default language</label>
+                      <span
+                        class="source-pill is-{{ default_language_source }}"
+                        data-settings-source-pill="default_language"
+                        title="Value source: {{ default_language_source }}"
+                      >
+                        {{ default_language_source }}
+                      </span>
+                    </div>
+                    <select class="settings-input" id="default-language" name="default_language">
+                      {% for language_option in settings_snapshot.options.languages %}
+                        <option
+                          value="{{ language_option.id }}"
+                          {% if settings_snapshot.settings.default_language == language_option.id %}selected{% endif %}
+                        >
+                          {{ language_option.label }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                    <p class="settings-hint">
+                      Used for new queue jobs. Auto works for local engines that support detection.
+                      Choose a fixed language before queueing jobs for providers that require one.
+                    </p>
+                  </div>
+                  {% set whisper_source = settings_snapshot.sources.whisper_model %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="whisper-model">Whisper model</label>
+                      <span
+                        class="source-pill is-{{ whisper_source }}"
+                        data-settings-source-pill="whisper_model"
+                        title="Value source: {{ whisper_source }}"
+                      >
+                        {{ whisper_source }}
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="whisper-model"
+                      name="whisper_model"
+                      type="text"
+                      list="downloaded-models"
+                      value="{{ settings_snapshot.settings.whisper_model }}"
+                      {% if whisper_source == "env" %}disabled{% endif %}
+                    >
+                    <datalist id="downloaded-models">
+                      {% for model in downloaded_models %}
+                        <option value="{{ model }}"></option>
+                      {% endfor %}
+                    </datalist>
+                    <p class="settings-hint">
+                      Used only when the engine is Whisper (CPU). {% if whisper_source == "env" %}Managed by
+                      <code>{{ settings_snapshot.meta.env_vars.whisper_model }}</code>.{% endif %}
+                    </p>
+                    <p class="settings-hint">
+                      {% if downloaded_models %}
+                        Downloaded: {{ downloaded_models | join(", ") }}.
+                      {% else %}
+                        No downloaded Whisper models detected yet.
+                      {% endif %}
+                    </p>
+                    <div class="settings-error" id="settings-error-whisper-model" hidden></div>
+                  </div>
+                  {% set quick_source = settings_snapshot.sources.wtm_quick %}
+                  {% set quick_locked = quick_source == "env" %}
+                  {% if not quick_locked %}
+                    <input type="hidden" name="wtm_quick_present" value="1">
+                  {% endif %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-toggle" for="wtm-quick">
+                        <input
+                          id="wtm-quick"
+                          type="checkbox"
+                          name="wtm_quick"
+                          value="1"
+                          {% if settings_snapshot.settings.wtm_quick %}checked{% endif %}
+                          {% if quick_locked %}disabled{% endif %}
+                        >
+                        Quick mode (WTM)
+                      </label>
+                      <span
+                        class="source-pill is-{{ quick_source }}"
+                        data-settings-source-pill="wtm_quick"
+                        title="Value source: {{ quick_source }}"
+                      >
+                        {{ quick_source }}
+                      </span>
+                    </div>
+                    <p class="settings-hint">
+                      Faster runs, lower accuracy (applies to Whisper (MLX / Metal)). {% if quick_locked %}Managed by
+                      <code>{{ settings_snapshot.meta.env_vars.wtm_quick }}</code>.{% endif %}
+                    </p>
+                  </div>
+                  <p class="settings-hint">Changes apply after restarting the app/worker.</p>
+                </section>
+
+                <section class="settings-card" aria-labelledby="settings-cloud-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-cloud-title">Cohere</h3>
+                    <p class="settings-section-desc">Optional cloud engine configuration.</p>
+                  </header>
+                  {% set cohere_source = cohere_snapshot.source %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <span class="settings-label" data-cohere-status>
+                        {% if cohere_snapshot.configured %}Cohere is configured{% else %}Cohere is not configured{% endif %}
+                      </span>
+                      <span
+                        class="source-pill is-{{ cohere_source if cohere_source in ['env', 'file', 'default'] else 'missing' }}"
+                        data-cohere-source-pill
+                        title="Value source: {{ cohere_source }}"
+                      >
+                        {{ cohere_source }}
+                      </span>
+                    </div>
+                    <p class="settings-hint">{{ cohere_snapshot.product_note }}</p>
+                    {% if cohere_snapshot.selected and cohere_snapshot.reason %}
+                      <p class="settings-hint">
+                        <strong>Cohere is selected.</strong> {{ cohere_snapshot.reason }}
+                      </p>
+                    {% elif cohere_snapshot.reason %}
+                      <p class="settings-hint">
+                        <strong>Availability:</strong> {{ cohere_snapshot.reason }}
+                      </p>
+                    {% endif %}
+                  </div>
+                  {% set cohere_key_locked = cohere_snapshot.api_key_source == "env" %}
+                  <div class="settings-field">
+                    <div class="settings-label-row is-field-meta">
+                      <label class="settings-label" for="cohere-api-key">API key</label>
+                      <span
+                        class="settings-current-meta"
+                        data-cohere-key-mask
+                        {% if cohere_snapshot.source == "missing" %}hidden{% endif %}
+                      >
+                        <span class="settings-current-meta-label">Current</span>
+                        <span class="settings-current-meta-value" data-cohere-key-mask-value>
+                          {{ cohere_snapshot.api_key_masked }}
+                        </span>
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="cohere-api-key"
+                      name="cohere_api_key"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="Paste your Cohere API key"
+                      {% if cohere_key_locked %}disabled{% endif %}
+                    >
+                    <p class="settings-hint">
+                      {% if cohere_snapshot.source != "missing" %}
+                        Source: {{ cohere_snapshot.source }}.
+                      {% else %}
+                        Add a key only if you plan to use Cohere later.
+                      {% endif %}
+                      {% if cohere_key_locked %}
+                        Managed by <code>{{ settings_snapshot.meta.env_vars.cohere_api_key }}</code>.
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        name="clear_cohere_api_key"
+                        value="1"
+                        {% if cohere_key_locked %}disabled{% endif %}
+                      >
+                      Forget saved API key
+                    </label>
+                  </div>
+                  {% set cohere_model_source = settings_snapshot.sources.cohere_model %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="cohere-model">Model ID</label>
+                      <span
+                        class="source-pill is-{{ cohere_model_source }}"
+                        data-settings-source-pill="cohere_model"
+                        title="Value source: {{ cohere_model_source }}"
+                      >
+                        {{ cohere_model_source }}
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="cohere-model"
+                      name="cohere_model"
+                      type="text"
+                      value="{{ settings_snapshot.settings.cohere_model }}"
+                      placeholder="Set a Cohere model ID"
+                      {% if cohere_model_source == "env" %}disabled{% endif %}
+                    >
+                    <p class="settings-hint">
+                      Used only for the Cohere engine. {% if cohere_model_source == "env" %}Managed by
+                      <code>{{ settings_snapshot.meta.env_vars.cohere_model }}</code>.{% endif %}
+                    </p>
+                  </div>
+                </section>
+
+                <section class="settings-card" aria-labelledby="settings-notifications-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-notifications-title">Notifications</h3>
+                    <p class="settings-section-desc">Optional delivery of completed transcripts.</p>
+                  </header>
+                  {% set telegram_source = telegram_snapshot.source %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <span class="settings-label" data-telegram-status>
+                        {% if telegram_snapshot.configured %}Telegram is enabled{% else %}Telegram is off{% endif %}
+                      </span>
+                      <span
+                        class="source-pill is-{{ telegram_source if telegram_source in ['env', 'file', 'default'] else 'missing' }}"
+                        data-telegram-source-pill
+                        title="Value source: {{ telegram_source }}"
+                      >
+                        {{ telegram_source }}
+                      </span>
+                    </div>
+                    <p class="settings-hint">
+                      If enabled, transcript files are sent to your Telegram chat. Your audio/video stays on this Mac.
+                    </p>
+                  </div>
+                  {% set telegram_locked = telegram_snapshot.source == "env" %}
+                  <div class="settings-field">
+                    <div class="settings-label-row is-field-meta">
+                      <label class="settings-label" for="telegram-token">Bot token</label>
+                      <span
+                        class="settings-current-meta"
+                        data-telegram-token-mask
+                        {% if not telegram_snapshot.configured %}hidden{% endif %}
+                      >
+                        <span class="settings-current-meta-label">Current</span>
+                        <span class="settings-current-meta-value" data-telegram-token-mask-value>
+                          {{ telegram_snapshot.token_masked }}
+                        </span>
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="telegram-token"
+                      name="telegram_token"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="123456:ABC..."
+                      {% if telegram_locked %}disabled{% endif %}
+                    >
+                    <p class="settings-hint" data-telegram-token-hint>
+                      {% if telegram_snapshot.configured %}
+                        Source: {{ telegram_snapshot.source }}.
+                      {% else %}
+                        Add both fields to enable delivery.
+                      {% endif %}
+                      {% if telegram_locked %}
+                        Managed by environment variables <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code>.
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input type="checkbox" name="clear_telegram_token" value="1" {% if telegram_locked %}disabled{% endif %}>
+                      Forget saved token
+                    </label>
+                  </div>
+                  <div class="settings-field">
+                    <div class="settings-label-row is-field-meta">
+                      <label class="settings-label" for="telegram-chat-id">Chat ID</label>
+                      <span
+                        class="settings-current-meta"
+                        data-telegram-chat-mask
+                        {% if not telegram_snapshot.configured %}hidden{% endif %}
+                      >
+                        <span class="settings-current-meta-label">Current</span>
+                        <span class="settings-current-meta-value" data-telegram-chat-mask-value>
+                          {{ telegram_snapshot.chat_id_masked }}
+                        </span>
+                      </span>
+                    </div>
+                    <input
+                      class="settings-input"
+                      id="telegram-chat-id"
+                      name="telegram_chat_id"
+                      type="password"
+                      autocomplete="new-password"
+                      placeholder="-1001234567890"
+                      {% if telegram_locked %}disabled{% endif %}
+                    >
+                    <p class="settings-hint" data-telegram-chat-hint>
+                      {% if telegram_snapshot.configured %}
+                        Source: {{ telegram_snapshot.source }}.
+                      {% else %}
+                        Use a numeric chat ID (often starts with <code>-100</code>).
+                      {% endif %}
+                    </p>
+                    <label class="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        name="clear_telegram_chat_id"
+                        value="1"
+                        {% if telegram_locked %}disabled{% endif %}
+                      >
+                      Forget saved chat ID
+                    </label>
+                  </div>
+                </section>
+
+                <section class="settings-card is-storage" aria-labelledby="settings-storage-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-storage-title">Storage</h3>
+                    <p class="settings-section-desc">Manage local copies and saved transcripts.</p>
+                  </header>
+                  {% set history_count = history_jobs | length %}
+                  {% set queue_count_total = queue_jobs | length %}
+                  <div class="settings-storage-layout">
+                    <div class="settings-field">
+                      <span class="settings-label">Local folders</span>
+                      <ul class="settings-paths">
+                        <li class="settings-path">
+                          <span class="settings-path-name">Uploads</span>
+                          <code>{{ storage_snapshot.uploads_dir }}</code>
+                        </li>
+                        <li class="settings-path">
+                          <span class="settings-path-name">Results</span>
+                          <code>{{ storage_snapshot.results_dir }}</code>
+                        </li>
+                        <li class="settings-path">
+                          <span class="settings-path-name">Logs</span>
+                          <code>{{ storage_snapshot.log_dir }}</code>
+                        </li>
+                        <li class="settings-path">
+                          <span class="settings-path-name">Database</span>
+                          <code>{{ storage_snapshot.db_path }}</code>
+                        </li>
+                        <li class="settings-path">
+                          <span class="settings-path-name">Settings</span>
+                          <code>{{ settings_snapshot.file.path }}</code>
+                        </li>
+                      </ul>
+                      <p class="settings-hint">
+                        Everything is stored locally. Clearing storage deletes files from this Mac only.
+                      </p>
+                    </div>
+                    <div class="settings-danger-zone" aria-labelledby="settings-storage-danger-title">
+                      <div class="settings-danger-zone-header">
+                        <div class="settings-danger-zone-label" id="settings-storage-danger-title">
+                          Destructive actions
+                        </div>
+                        <p class="settings-hint">
+                          These remove local data from this Mac. Review labels before continuing.
+                        </p>
+                      </div>
+                      <div class="settings-danger-list">
+                        <div class="settings-danger-item">
+                          <div class="settings-danger-copy">
+                            <div class="settings-danger-title">Delete completed history</div>
+                            <p class="settings-danger-hint">
+                              Removes {{ history_count }} saved {{ "entry" if history_count == 1 else "entries" }} from History.
+                            </p>
+                          </div>
+                          <button
+                            class="job-primary is-secondary is-danger"
+                            type="button"
+                            data-storage-action="clear-history"
+                            data-item-count="{{ history_count }}"
+                            {% if history_count == 0 %}disabled{% endif %}
+                          >
+                            Delete history ({{ history_count }})
+                          </button>
+                        </div>
+                        <div class="settings-danger-item">
+                          <div class="settings-danger-copy">
+                            <div class="settings-danger-title">Clear queued uploads</div>
+                            <p class="settings-danger-hint">
+                              Deletes local processing copies. Available only when the queue is empty.
+                            </p>
+                          </div>
+                          <button
+                            class="job-primary is-secondary is-danger"
+                            type="button"
+                            data-storage-action="clear-uploads"
+                            data-item-count="{{ queue_count_total }}"
+                            {% if queue_count_total > 0 %}disabled{% endif %}
+                          >
+                            Clear queued uploads
+                          </button>
+                        </div>
+                      </div>
+                      <details class="settings-field">
+                        <summary class="settings-label">Advanced</summary>
+                        <div class="settings-field is-subfield">
+                          <div class="settings-danger-item">
+                            <div class="settings-danger-copy">
+                              <div class="settings-danger-title">Clear results folder only</div>
+                              <p class="settings-danger-hint">
+                                Removes transcript files on disk without changing job history. Use only for troubleshooting.
+                              </p>
+                            </div>
+                            <button
+                              class="job-primary is-secondary is-danger"
+                              type="button"
+                              data-storage-action="clear-results"
+                            >
+                              Clear results
+                            </button>
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="settings-card is-about" aria-labelledby="settings-about-title">
+                  <header class="settings-section-header">
+                    <h3 id="settings-about-title">About</h3>
+                    <p class="settings-section-desc">Runtime information and safe diagnostics.</p>
+                  </header>
+                  <div class="settings-meta-grid" aria-label="About this app">
+                    <div class="settings-meta-item">
+                      <div class="settings-meta-label">Version</div>
+                      <div class="settings-meta-value">{{ runtime_snapshot.about.version }}</div>
+                    </div>
+                    <div class="settings-meta-item">
+                      <div class="settings-meta-label">Build date</div>
+                      <div class="settings-meta-value">{{ runtime_snapshot.about.build_date }}</div>
+                    </div>
+                    <div class="settings-meta-item">
+                      <div class="settings-meta-label">Processing</div>
+                      <div class="settings-meta-value">
+                        {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
+                          Local storage, cloud transcription available.
+                        {% else %}
+                          Local storage and local transcription by default.
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                  {% set update_source = settings_snapshot.sources.update_check_enabled %}
+                  {% set update_locked = update_source == "env" %}
+                  {% if not update_locked %}
+                    <input type="hidden" name="update_check_enabled_present" value="1">
+                  {% endif %}
+                  <div class="settings-field is-spaced">
+                    <div class="settings-label-row">
+                      <label class="settings-toggle" for="update-check-enabled">
+                        <input
+                          id="update-check-enabled"
+                          type="checkbox"
+                          name="update_check_enabled"
+                          value="1"
+                          {% if settings_snapshot.settings.update_check_enabled %}checked{% endif %}
+                          {% if update_locked %}disabled{% endif %}
+                        >
+                        Check for updates at startup
+                      </label>
+                      <span
+                        class="source-pill is-{{ update_source }}"
+                        data-settings-source-pill="update_check_enabled"
+                        title="Value source: {{ update_source }}"
+                      >
+                        {{ update_source }}
+                      </span>
+                    </div>
+                    <p class="settings-hint">
+                      Fetches release metadata (GitHub) at startup. Changes apply after restarting. Does not upload your media.
+                      {% if update_locked %}Managed by <code>{{ settings_snapshot.meta.env_vars.update_check_enabled }}</code>.{% endif %}
+                    </p>
+                  </div>
+                  {% set log_source = settings_snapshot.sources.log_level %}
+                  <div class="settings-field">
+                    <div class="settings-label-row">
+                      <label class="settings-label" for="log-level">Log detail</label>
+                      <span
+                        class="source-pill is-{{ log_source }}"
+                        data-settings-source-pill="log_level"
+                        title="Value source: {{ log_source }}"
+                      >
+                        {{ log_source }}
+                      </span>
+                    </div>
+                    <select
+                      class="settings-input"
+                      id="log-level"
+                      name="log_level"
+                      {% if log_source == "env" %}disabled{% endif %}
+                    >
+                      {% for level in settings_snapshot.options.log_levels %}
+                        <option
+                          value="{{ level }}"
+                          {% if settings_snapshot.settings.log_level == level %}selected{% endif %}
+                        >
+                          {% if level == "DEBUG" %}Verbose (DEBUG){% elif level == "INFO" %}Normal (INFO){% elif level == "WARNING" %}Warnings (WARNING){% elif level == "ERROR" %}Errors (ERROR){% else %}{{ level }}{% endif %}
+                        </option>
+                      {% endfor %}
+                    </select>
+                    <p class="settings-hint">
+                      Helpful for troubleshooting. Changes apply after restarting.
+                      {% if log_source == "env" %}Managed by <code>{{ settings_snapshot.meta.env_vars.log_level }}</code>.{% endif %}
+                    </p>
+                  </div>
+                </section>
+              </div>
+              <div class="settings-save-bar">
+                <div class="settings-save-copy">
+                  <div class="settings-save-title">Save locally</div>
+                  <p class="settings-save-desc">
+                    Store configuration changes on this Mac. Where noted, changes apply after restart.
+                  </p>
+                </div>
+                <div class="settings-actions">
+                  <span class="settings-save-state" data-settings-save-state aria-live="polite"></span>
+                  <button class="cta" type="submit" data-settings-save>Save settings</button>
+                </div>
+              </div>
+            </form>
+          </section>

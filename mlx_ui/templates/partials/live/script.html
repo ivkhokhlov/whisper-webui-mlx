@@ -1,0 +1,169 @@
+    <script>
+      (() => {
+        const liveConfig = {{ live_snapshot | tojson }};
+        const startButton = document.getElementById("live-start");
+        const stopButton = document.getElementById("live-stop");
+        const statusEl = document.getElementById("live-status");
+        const noteEl = document.getElementById("live-note");
+        const transcriptEl = document.getElementById("live-transcript-output");
+        const metaEl = document.getElementById("live-session-meta");
+
+        if (!startButton || !stopButton || !statusEl || !noteEl || !transcriptEl || !metaEl) {
+          return;
+        }
+
+        let recorder = null;
+        let stream = null;
+        let sessionId = null;
+        let sendQueue = Promise.resolve();
+
+        const setButtonState = (button, disabled) => {
+          button.disabled = disabled;
+          button.setAttribute("aria-disabled", disabled ? "true" : "false");
+          button.classList.toggle("is-disabled", disabled);
+        };
+
+        const updateSession = (session) => {
+          transcriptEl.textContent = session.transcript || "Listening for speech...";
+          metaEl.textContent =
+            `Chunks: ${session.received_chunks} · Windows: ${session.processed_windows} · Engine: ${session.engine_label}`;
+          if (session.error) {
+            statusEl.textContent = "Live beta hit an error.";
+            noteEl.textContent = session.error;
+            return;
+          }
+          if (session.status === "stopped") {
+            statusEl.textContent = "Experimental capture stopped.";
+            noteEl.textContent = "This beta session stayed in memory only. Use Queue for saved transcripts.";
+            return;
+          }
+          if (session.processed_windows > 0) {
+            statusEl.textContent = "Streaming experimental partial transcript.";
+          } else {
+            statusEl.textContent = "Listening. Waiting for the first streaming window.";
+          }
+        };
+
+        const cleanupStream = () => {
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            stream = null;
+          }
+          recorder = null;
+        };
+
+        const handleError = (error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = "Live beta unavailable.";
+          noteEl.textContent = message;
+          cleanupStream();
+          sessionId = null;
+          setButtonState(startButton, !liveConfig.active);
+          setButtonState(stopButton, true);
+        };
+
+        const supportedMimeType = () => {
+          const candidates = [
+            "audio/webm;codecs=opus",
+            "audio/webm",
+            "audio/ogg;codecs=opus",
+            "audio/ogg",
+          ];
+          return candidates.find((candidate) => window.MediaRecorder && MediaRecorder.isTypeSupported(candidate)) || "";
+        };
+
+        const uploadChunk = async (blob) => {
+          if (!sessionId || !blob || blob.size === 0) {
+            return;
+          }
+          const formData = new FormData();
+          const filename = blob.type.includes("ogg") ? "chunk.ogg" : "chunk.webm";
+          formData.append("file", blob, filename);
+          const response = await fetch(`/api/live/session/${sessionId}/chunk`, {
+            method: "POST",
+            body: formData,
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || "Failed to stream a live audio chunk.");
+          }
+          updateSession(payload.session);
+        };
+
+        const stopSession = async () => {
+          if (!sessionId) {
+            return;
+          }
+          const response = await fetch(`/api/live/session/${sessionId}/stop`, {
+            method: "POST",
+          });
+          const payload = await response.json();
+          sessionId = null;
+          if (!response.ok) {
+            throw new Error(payload.detail || "Failed to stop the live session.");
+          }
+          updateSession(payload.session);
+        };
+
+        if (!liveConfig.active) {
+          return;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+          setButtonState(startButton, true);
+          noteEl.textContent =
+            "This browser does not expose the MediaRecorder microphone path required for the live beta.";
+          return;
+        }
+
+        startButton.addEventListener("click", async () => {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const response = await fetch("/api/live/session", { method: "POST" });
+            const payload = await response.json();
+            if (!response.ok) {
+              throw new Error(payload.detail || "Failed to start the live session.");
+            }
+            sessionId = payload.session.session_id;
+            updateSession(payload.session);
+
+            const mimeType = supportedMimeType();
+            recorder = mimeType
+              ? new MediaRecorder(stream, { mimeType })
+              : new MediaRecorder(stream);
+            recorder.addEventListener("dataavailable", (event) => {
+              sendQueue = sendQueue.then(() => uploadChunk(event.data)).catch(handleError);
+            });
+            recorder.addEventListener("stop", async () => {
+              try {
+                await sendQueue;
+                await stopSession();
+              } catch (error) {
+                handleError(error);
+              } finally {
+                cleanupStream();
+                setButtonState(startButton, false);
+                setButtonState(stopButton, true);
+              }
+            });
+            recorder.start(liveConfig.timeslice_ms);
+            statusEl.textContent = "Microphone capture is live.";
+            noteEl.textContent =
+              "Experimental beta in progress. Keep this tab active and expect first partials after the initial buffer fills.";
+            setButtonState(startButton, true);
+            setButtonState(stopButton, false);
+          } catch (error) {
+            handleError(error);
+          }
+        });
+
+        stopButton.addEventListener("click", () => {
+          if (!recorder || recorder.state === "inactive") {
+            return;
+          }
+          statusEl.textContent = "Stopping experimental capture...";
+          setButtonState(stopButton, true);
+          recorder.stop();
+        });
+      })();
+    </script>

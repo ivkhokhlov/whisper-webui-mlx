@@ -12,7 +12,7 @@ from typing import Callable, Protocol
 from uuid import uuid4
 
 from mlx_ui.engine_registry import PARAKEET_TDT_V3_ENGINE
-from mlx_ui.transcriber import _load_parakeet_runtime
+from mlx_ui.live_backend_runtime import ParakeetLiveRuntime, load_parakeet_live_runtime
 
 
 @dataclass(frozen=True)
@@ -65,7 +65,9 @@ class LiveSession(Protocol):
     def snapshot(self) -> LiveTranscriptionUpdate:
         raise NotImplementedError
 
-    def push_chunk(self, chunk_bytes: bytes, *, content_type: str | None) -> LiveTranscriptionUpdate:
+    def push_chunk(
+        self, chunk_bytes: bytes, *, content_type: str | None
+    ) -> LiveTranscriptionUpdate:
         raise NotImplementedError
 
     def finish(self) -> LiveTranscriptionUpdate:
@@ -80,43 +82,14 @@ class LiveBackend(Protocol):
         raise NotImplementedError
 
 
-@dataclass(frozen=True)
-class _ParakeetLiveRuntime:
-    torch: object
-    ContextSize: type
-    StreamingBatchedAudioBuffer: type
-    batched_hyps_to_hypotheses: Callable[..., list[object]]
-
-
-def _load_parakeet_live_runtime():
-    nemo_asr, open_dict = _load_parakeet_runtime()
-    try:
-        import torch  # type: ignore[import-not-found]
-        from nemo.collections.asr.parts.utils.rnnt_utils import (  # type: ignore[import-not-found]
-            batched_hyps_to_hypotheses,
-        )
-        from nemo.collections.asr.parts.utils.streaming_utils import (  # type: ignore[import-not-found]
-            ContextSize,
-            StreamingBatchedAudioBuffer,
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            "Parakeet live beta requires NVIDIA NeMo streaming utilities and PyTorch."
-        ) from exc
-    return nemo_asr, open_dict, _ParakeetLiveRuntime(
-        torch=torch,
-        ContextSize=ContextSize,
-        StreamingBatchedAudioBuffer=StreamingBatchedAudioBuffer,
-        batched_hyps_to_hypotheses=batched_hyps_to_hypotheses,
-    )
-
-
 class LiveTranscriptionService:
     def __init__(
         self,
         backend_factory: Callable[[ParakeetLiveConfig], LiveBackend] | None = None,
     ) -> None:
-        self._backend_factory = backend_factory or (lambda config: ParakeetLiveBackend(config))
+        self._backend_factory = backend_factory or (
+            lambda config: ParakeetLiveBackend(config)
+        )
         self._backends: dict[tuple[object, ...], LiveBackend] = {}
         self._sessions: dict[str, LiveSession] = {}
         self._lock = threading.Lock()
@@ -179,10 +152,11 @@ class ParakeetLiveBackend:
         self,
         config: ParakeetLiveConfig,
         *,
-        runtime_loader: Callable[[], tuple[object, object, _ParakeetLiveRuntime]] | None = None,
+        runtime_loader: Callable[[], tuple[object, object, ParakeetLiveRuntime]]
+        | None = None,
     ) -> None:
         self.config = config
-        self._runtime_loader = runtime_loader or _load_parakeet_live_runtime
+        self._runtime_loader = runtime_loader or load_parakeet_live_runtime
         self._infer_lock = threading.Lock()
         self._model, self._runtime = self._load_model()
         self.model_id = config.repo_id
@@ -199,9 +173,13 @@ class ParakeetLiveBackend:
             sample_rate=self.sample_rate,
             encoder_frame2audio_samples=self.encoder_frame2audio_samples,
         )
-        self.initial_window_samples = self.context_samples.chunk + self.context_samples.right
+        self.initial_window_samples = (
+            self.context_samples.chunk + self.context_samples.right
+        )
         self.increment_samples = self.context_samples.chunk
-        self.max_final_window_samples = self.context_samples.chunk + self.context_samples.right
+        self.max_final_window_samples = (
+            self.context_samples.chunk + self.context_samples.right
+        )
         self.note = (
             "Experimental Parakeet live streaming with approximately "
             f"{config.chunk_secs + config.right_context_secs:.1f}s theoretical latency."
@@ -247,16 +225,22 @@ class ParakeetLiveBackend:
     ) -> tuple[object, object, str]:
         torch = self._runtime.torch
         audio_batch = torch.tensor([samples], dtype=torch.float32, device=self.device)
-        audio_lengths = torch.tensor([len(samples)], dtype=torch.long, device=self.device)
-        is_last_chunk_batch = torch.tensor([is_final], dtype=torch.bool, device=self.device)
+        audio_lengths = torch.tensor(
+            [len(samples)], dtype=torch.long, device=self.device
+        )
+        is_last_chunk_batch = torch.tensor(
+            [is_final], dtype=torch.bool, device=self.device
+        )
         buffer.add_audio_batch_(
             audio_batch,
             audio_lengths=audio_lengths,
             is_last_chunk=is_final,
             is_last_chunk_batch=is_last_chunk_batch,
         )
-        with self._infer_lock, _optional_torch_mode(torch, "no_grad"), _optional_torch_mode(
-            torch, "inference_mode"
+        with (
+            self._infer_lock,
+            _optional_torch_mode(torch, "no_grad"),
+            _optional_torch_mode(torch, "inference_mode"),
         ):
             encoder_output, encoder_output_len = self._model(
                 input_signal=buffer.samples,
@@ -432,12 +416,14 @@ class ParakeetLiveSession:
         return self._take_samples(len(self._pending_samples))
 
     def _process_window(self, samples: list[float], *, is_final: bool) -> None:
-        self._current_hyps, self._state, self.transcript = self.backend.transcribe_window(
-            self._buffer,
-            samples=samples,
-            is_final=is_final,
-            state=self._state,
-            current_hyps=self._current_hyps,
+        self._current_hyps, self._state, self.transcript = (
+            self.backend.transcribe_window(
+                self._buffer,
+                samples=samples,
+                is_final=is_final,
+                state=self._state,
+                current_hyps=self._current_hyps,
+            )
         )
         self.processed_windows += 1
 
@@ -506,7 +492,7 @@ def _parakeet_encoder_frame_span(model, *, sample_rate: int) -> int:
 
 def _parakeet_context_samples(
     *,
-    runtime: _ParakeetLiveRuntime,
+    runtime: ParakeetLiveRuntime,
     model,
     config: ParakeetLiveConfig,
     sample_rate: int,
@@ -546,9 +532,7 @@ def _decode_browser_audio_chunk(
         return []
     ffmpeg_path = shutil.which("ffmpeg")
     if ffmpeg_path is None:
-        raise LiveTranscriptionError(
-            "ffmpeg is required to decode live audio chunks."
-        )
+        raise LiveTranscriptionError("ffmpeg is required to decode live audio chunks.")
     suffix = _content_type_suffix(content_type)
     with tempfile.TemporaryDirectory(prefix="mlx-ui-live-") as tmp_dir:
         input_path = Path(tmp_dir) / f"chunk{suffix}"
@@ -585,7 +569,9 @@ def _decode_browser_audio_chunk(
     pcm_samples = array("h")
     pcm_samples.frombytes(pcm_bytes)
     if pcm_samples.itemsize != 2:
-        raise LiveTranscriptionError("Decoded live audio chunk used an unexpected sample format.")
+        raise LiveTranscriptionError(
+            "Decoded live audio chunk used an unexpected sample format."
+        )
     return [sample / 32768.0 for sample in pcm_samples]
 
 
@@ -609,7 +595,7 @@ def _make_divisible_by(num: int, factor: int) -> int:
     return max((num // factor) * factor, factor)
 
 
-def _coalesce_device(model, runtime: _ParakeetLiveRuntime):
+def _coalesce_device(model, runtime: ParakeetLiveRuntime):
     device = getattr(model, "device", None)
     if device is not None:
         return device
