@@ -103,6 +103,9 @@ shared project history while preserving the same user-facing data flow.
 - Task status colors now follow semantic design-system tokens, so running work
   reads as active/success, failed work stays clearly error-coded, and idle or
   queued states remain visually neutral.
+- The Queue intake area now scales with workload: it stays prominent when idle
+  and collapses into a tighter banner once jobs are queued or running, giving
+  the worker and queue list more vertical priority without removing drag/drop.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.

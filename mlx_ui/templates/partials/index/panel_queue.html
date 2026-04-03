@@ -15,7 +15,12 @@
                 </div>
               </div>
             </div>
-            <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
+            <form
+              class="upload-card{% if upload_is_busy %} is-compact{% endif %}"
+              action="/upload"
+              method="post"
+              enctype="multipart/form-data"
+            >
               <div class="upload-header">
                 <div class="upload-header-main">
                   <h3 class="upload-title" id="upload-title">Add files</h3>
@@ -38,7 +43,7 @@
                 accept="audio/*,video/*"
               >
               <label
-                class="dropzone"
+                class="dropzone{% if upload_is_busy %} is-compact{% endif %}"
                 id="dropzone"
                 tabindex="0"
                 role="button"

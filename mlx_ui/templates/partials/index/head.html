@@ -982,7 +982,8 @@
         display: grid;
         gap: 12px;
         position: relative;
-        transition: border-color 0.2s ease, background 0.2s ease;
+        transition: border-color 0.24s ease, background 0.24s ease, padding 0.24s ease,
+          gap 0.24s ease;
       }
 
       .upload-card::before {
@@ -996,11 +997,13 @@
       .upload-header {
         display: grid;
         gap: 8px;
+        transition: gap 0.24s ease;
       }
 
       .upload-header-main {
         display: grid;
         gap: 4px;
+        transition: gap 0.24s ease;
       }
 
       .upload-title {
@@ -1008,6 +1011,7 @@
         font-size: 1.15rem;
         font-weight: 800;
         letter-spacing: -0.01em;
+        transition: font-size 0.24s ease;
       }
 
       .upload-subtitle {
@@ -1015,6 +1019,7 @@
         font-size: 0.92rem;
         color: var(--ink-muted);
         max-width: 70ch;
+        transition: font-size 0.24s ease, max-width 0.24s ease;
       }
 
       .upload-label {
@@ -1109,6 +1114,7 @@
         flex-wrap: wrap;
         gap: 12px 16px;
         align-items: end;
+        transition: gap 0.24s ease;
       }
 
       .upload-config-field {
@@ -1122,6 +1128,7 @@
         margin: 0;
         font-size: 0.82rem;
         color: var(--ink-muted);
+        transition: font-size 0.24s ease;
       }
 
       .dropzone {
@@ -1134,7 +1141,8 @@
         gap: 3px;
         align-content: center;
         cursor: pointer;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        transition: border-color 0.24s ease, box-shadow 0.24s ease, background 0.24s ease,
+          min-height 0.24s ease, padding 0.24s ease, gap 0.24s ease;
       }
 
       .dropzone:focus-visible {
@@ -1155,16 +1163,72 @@
       .dropzone-title {
         font-weight: 600;
         font-size: 0.84rem;
+        transition: font-size 0.24s ease;
       }
 
       .dropzone-subtitle {
         font-size: 0.8rem;
         color: var(--ink-muted);
+        transition: font-size 0.24s ease;
       }
 
       .dropzone-helper {
         font-size: 0.75rem;
         color: var(--ink-muted);
+        transition: font-size 0.24s ease, opacity 0.24s ease;
+      }
+
+      .upload-card.is-compact {
+        padding: 14px 16px;
+        gap: 10px;
+      }
+
+      .upload-card.is-compact .upload-header {
+        gap: 4px;
+      }
+
+      .upload-card.is-compact .upload-title {
+        font-size: 1.02rem;
+      }
+
+      .upload-card.is-compact .upload-subtitle {
+        font-size: 0.84rem;
+        max-width: 56ch;
+      }
+
+      .upload-card.is-compact .upload-config {
+        gap: 10px 14px;
+      }
+
+      .upload-card.is-compact .upload-config-note {
+        font-size: 0.78rem;
+      }
+
+      .dropzone.is-compact {
+        min-height: 72px;
+        padding: 12px 14px;
+        gap: 2px 10px;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-content: center;
+        align-items: center;
+      }
+
+      .dropzone.is-compact .dropzone-title {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        font-size: 0.8rem;
+      }
+
+      .dropzone.is-compact .dropzone-subtitle {
+        grid-column: 2;
+        grid-row: 1;
+        font-size: 0.76rem;
+      }
+
+      .dropzone.is-compact .dropzone-helper {
+        grid-column: 2;
+        grid-row: 2;
+        font-size: 0.72rem;
       }
 
       .file-summary {
@@ -1315,12 +1379,17 @@
         gap: 12px;
         align-items: center;
         justify-content: space-between;
+        transition: gap 0.24s ease;
       }
 
       .upload-actions-buttons {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
+        gap: 10px;
+      }
+
+      .upload-card.is-compact .upload-actions {
         gap: 10px;
       }
 
@@ -2854,6 +2923,29 @@
           padding: 16px;
         }
 
+        .upload-card.is-compact {
+          padding: 14px;
+          gap: 9px;
+        }
+
+        .upload-card.is-compact .upload-subtitle {
+          font-size: 0.82rem;
+        }
+
+        .dropzone.is-compact {
+          min-height: 68px;
+          padding: 10px 12px;
+          grid-template-columns: 1fr;
+          gap: 2px;
+        }
+
+        .dropzone.is-compact .dropzone-title,
+        .dropzone.is-compact .dropzone-subtitle,
+        .dropzone.is-compact .dropzone-helper {
+          grid-column: auto;
+          grid-row: auto;
+        }
+
         .upload-select {
           gap: 8px;
         }
@@ -2984,6 +3076,11 @@
         .dropzone {
           min-height: 120px;
           padding: 18px 14px;
+        }
+
+        .dropzone.is-compact {
+          min-height: 64px;
+          padding: 10px 12px;
         }
 
         .job-row,

@@ -54,6 +54,12 @@
     "3gp",
   ]);
   const SKIP_PATH_PARTS = new Set(["__MACOSX"]);
+  let queueBusy = Boolean(
+    uploadForm &&
+      dropzone &&
+      uploadForm.classList.contains("is-compact") &&
+      dropzone.classList.contains("is-compact")
+  );
 
   function guideToUpload(options = {}) {
     if (!uploadForm) {
@@ -282,6 +288,16 @@
     renderFileItems();
   }
 
+  function setQueueBusy(isBusy) {
+    queueBusy = Boolean(isBusy);
+    if (uploadForm) {
+      uploadForm.classList.toggle("is-compact", queueBusy);
+    }
+    if (dropzone) {
+      dropzone.classList.toggle("is-compact", queueBusy);
+    }
+  }
+
   function setPendingItems(nextItems, nextSkipped = 0) {
     pendingItems.splice(0, pendingItems.length, ...nextItems);
     skippedCount = nextSkipped;
@@ -417,6 +433,7 @@
       clearSelectionButton
     ) {
       renderFileList();
+      setQueueBusy(queueBusy);
 
       if (pickFilesButton) {
         pickFilesButton.addEventListener("click", () => fileInput.click());
@@ -615,12 +632,13 @@
       });
     }
 
-    app.uploads = {
-      __initialized: true,
-      guideToUpload,
-    };
+    app.uploads = app.uploads || {};
+    app.uploads.__initialized = true;
+    app.uploads.guideToUpload = guideToUpload;
+    app.uploads.setQueueBusy = setQueueBusy;
   }
 
   app.uploads = app.uploads || {};
   app.uploads.init = initUploads;
+  app.uploads.setQueueBusy = setQueueBusy;
 })();

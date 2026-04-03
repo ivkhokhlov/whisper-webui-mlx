@@ -28,6 +28,16 @@
     historyClearButton.disabled = !count;
   }
 
+  function updateUploadDensity(queue, worker) {
+    if (!app.uploads || typeof app.uploads.setQueueBusy !== "function") {
+      return;
+    }
+    const queueCount = Array.isArray(queue) ? queue.length : 0;
+    const workerStatus = worker && worker.status ? String(worker.status) : "";
+    const isBusy = queueCount > 0 || workerStatus === "Running";
+    app.uploads.setQueueBusy(isBusy);
+  }
+
   function updateSettingsStorageState(queue, history) {
     const historyButton = document.querySelector("[data-storage-action='clear-history']");
     const historyHint = document.querySelector("[data-storage-history-hint]");
@@ -159,6 +169,7 @@
       }
       updateSettingsStorageState(queue, payload.history || []);
       updateQueueCount(queue.filter((job) => job.status === "queued").length);
+      updateUploadDensity(queue, payload.worker || null);
       if (payload.worker && workerStatus && app.workerCard) {
         app.workerCard.setState(payload.worker);
       } else if (workerStatus) {
@@ -182,6 +193,7 @@
       updateQueueCount,
       updateHistoryClearState,
       updateSettingsStorageState,
+      updateUploadDensity,
     };
   }
 

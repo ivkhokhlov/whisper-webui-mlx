@@ -116,6 +116,8 @@ def test_root_empty_states_visible_when_no_jobs(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
     assert "Add files" in response.text
+    assert re.search(r'class="upload-card(?![^"]*is-compact)', response.text)
+    assert re.search(r'class="dropzone(?![^"]*is-compact)', response.text)
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text
@@ -186,6 +188,8 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
     assert "Detect automatically" in response.text
     assert 'id="upload-submit"' in response.text
     assert 'id="clear-selection"' in response.text
+    assert re.search(r'class="upload-card(?![^"]*is-compact)', response.text)
+    assert re.search(r'class="dropzone(?![^"]*is-compact)', response.text)
 
 
 def test_root_worker_card_is_quiet_when_idle(tmp_path: Path) -> None:
@@ -243,6 +247,8 @@ def test_root_running_worker_card_shows_filename_elapsed_and_context(
     assert 'id="worker-elapsed"' in response.text
     assert "Elapsed …" in response.text
     assert "Cohere cloud · English" in response.text
+    assert re.search(r'class="upload-card[^"]*is-compact', response.text)
+    assert re.search(r'class="dropzone[^"]*is-compact', response.text)
 
 
 def test_root_history_filter_controls_present(tmp_path: Path) -> None:
@@ -434,6 +440,8 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
     assert "Add files" in response.text
+    assert re.search(r'class="upload-card[^"]*is-compact', response.text)
+    assert re.search(r'class="dropzone[^"]*is-compact', response.text)
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text

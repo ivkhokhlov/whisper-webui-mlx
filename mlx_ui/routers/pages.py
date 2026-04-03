@@ -54,6 +54,7 @@ def read_root(request: Request):
     jobs = list_jobs(get_db_path())
     queue_jobs, history_jobs = split_jobs(jobs)
     queued_count = sum(1 for job in queue_jobs if job.status == "queued")
+    upload_is_busy = any(job.status in {"queued", "running"} for job in queue_jobs)
     job_views = {job.id: build_job_ui(job) for job in jobs}
     base_dir = get_base_dir()
     settings_snapshot = build_settings_snapshot(base_dir=base_dir)
@@ -89,6 +90,7 @@ def read_root(request: Request):
         {
             "queue_jobs": queue_jobs,
             "queued_count": queued_count,
+            "upload_is_busy": upload_is_busy,
             "history_jobs": history_jobs,
             "job_views": job_views,
             "results_by_job": _build_results_index([job.id for job in history_jobs]),
