@@ -268,9 +268,9 @@
     if (scanningFolder) {
       uploadSubmit.textContent = "Please wait…";
     } else if (validCount === 0) {
-      uploadSubmit.textContent = "Queue uploads";
+      uploadSubmit.textContent = "Add to queue";
     } else {
-      uploadSubmit.textContent = `Queue ${validCount} ${fileLabel}`;
+      uploadSubmit.textContent = `Add ${validCount} ${fileLabel}`;
     }
 
     if (validCount === 0) {
@@ -582,7 +582,7 @@
             if (app.toasts) {
               app.toasts.storePendingToast({
                 title: "Queue",
-                message: `Queued ${count} ${label}.`,
+                message: `Added ${count} ${label} to queue.`,
                 kind: "success",
                 key: "queue:queued",
                 cooldown: 0,
@@ -595,7 +595,7 @@
           const message = await response.text();
           console.error("Upload failed", response.status, message);
           if (app.toasts) {
-            app.toasts.notifySystem("Queue", "Couldn’t queue uploads. Try again.", "error", {
+            app.toasts.notifySystem("Queue", "Can’t add files to queue. Try again.", "error", {
               key: "queue:queued:error",
               cooldown: 1500,
             });
@@ -603,7 +603,7 @@
         } catch (error) {
           console.error("Upload failed", error);
           if (app.toasts) {
-            app.toasts.notifySystem("Queue", "Couldn’t queue uploads. Try again.", "error", {
+            app.toasts.notifySystem("Queue", "Can’t add files to queue. Try again.", "error", {
               key: "queue:queued:error",
               cooldown: 1500,
             });

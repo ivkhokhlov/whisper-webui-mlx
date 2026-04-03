@@ -3,7 +3,7 @@
       <header class="hero">
         <div class="hero-copy">
           <h1>Whisper WebUI (MLX)</h1>
-          <p>Queue files, monitor the worker, and download results; files stay local unless you choose a cloud engine.</p>
+          <p>Queue files, watch the worker, and get results; cloud engines upload audio.</p>
         </div>
         {% set worker_context = namespace(value="") %}
         {% if worker.status == "Running" and worker.current_job_ui %}

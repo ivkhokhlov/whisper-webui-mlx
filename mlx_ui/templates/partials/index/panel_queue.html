@@ -7,7 +7,7 @@
             <div class="queue-header">
               <div>
                 <h2>Queue</h2>
-                <p>Upload files to start transcription (one at a time).</p>
+                <p>Add files to start.</p>
               </div>
               <div class="queue-summary">
                 <div class="queue-count" data-queue-count>
@@ -18,18 +18,15 @@
             <form class="upload-card" action="/upload" method="post" enctype="multipart/form-data">
               <div class="upload-header">
                 <div class="upload-header-main">
-                  <h3 class="upload-title" id="upload-title">
-                    {% if not queue_jobs %}Add files to start{% else %}Add more files{% endif %}
-                  </h3>
+                  <h3 class="upload-title" id="upload-title">Add files</h3>
                   <p class="upload-subtitle" id="upload-subtitle">
-                    {% if not queue_jobs %}
-                      Select files first. Use a folder when you need a batch.
-                    {% else %}
-                      Select files to queue more work. Use a folder for larger batches.
-                    {% endif %}
+                    Select files. Use a folder for batches.
                   </p>
                 </div>
               </div>
+              {% if queue_error_message %}
+                <div class="settings-banner is-error" role="alert">{{ queue_error_message }}</div>
+              {% endif %}
               <label class="sr-only" for="file-input">Select audio or video files</label>
               <input
                 id="file-input"
@@ -55,9 +52,7 @@
                   <button class="select-button is-secondary" type="button" data-upload-pick="folder">
                     Select folder…
                   </button>
-                  <span class="upload-note">
-                    Folder upload scans subfolders for batch work.
-                  </span>
+                  <span class="upload-note">Scans subfolders.</span>
                 </div>
               </div>
               <label
@@ -68,9 +63,9 @@
                 for="file-input"
                 aria-describedby="dropzone-hint dropzone-helper"
               >
-                <div class="dropzone-title">Or drag files here</div>
+                <div class="dropzone-title">Drag files here</div>
                 <div class="dropzone-subtitle" id="dropzone-hint">
-                  Audio and video files only.
+                  Audio and video only.
                 </div>
                 <div class="dropzone-helper" id="dropzone-helper">Unsupported items are skipped.</div>
               </label>
@@ -94,33 +89,35 @@
               <div class="upload-config">
                 <div class="upload-config-field">
                   <label class="settings-label" for="upload-language">Language</label>
+                  {% set upload_default_language = settings_snapshot.settings.default_language %}
+                  {% if settings_snapshot.settings.engine == "parakeet_tdt_v3" %}
+                    {% set upload_default_language = "auto" %}
+                  {% endif %}
                   <select class="settings-input" id="upload-language" name="language">
                     {% for language_option in settings_snapshot.options.languages %}
                       <option
                         value="{{ language_option.id }}"
-                        {% if settings_snapshot.settings.default_language == language_option.id %}selected{% endif %}
+                        {% if upload_default_language == language_option.id %}selected{% endif %}
                       >
                         {{ language_option.label }}
                       </option>
                     {% endfor %}
                   </select>
                 </div>
-                <p class="upload-config-note">
-                  Saved per job. Choose a fixed language only when your provider requires one.
-                </p>
+                <p class="upload-config-note">Saved with each job. Set a language only when needed.</p>
               </div>
               <div class="upload-actions">
                 <div class="upload-actions-buttons">
-                  <button class="cta" id="upload-submit" type="submit">Queue uploads</button>
+                  <button class="cta" id="upload-submit" type="submit">Add to queue</button>
                   <button class="job-primary is-secondary" id="clear-selection" type="button" disabled>
                     Clear selection
                   </button>
                 </div>
                 <span class="hint">
                   {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
-                    Cloud engine selected. Audio uploads to the provider.
+                    Audio uploads to the provider.
                   {% else %}
-                    Local by default. Cloud engines upload only when selected.
+                    Cloud engines upload audio only when selected.
                   {% endif %}
                 </span>
               </div>
@@ -163,7 +160,7 @@
                           Elapsed …
                         </span>
                       {% elif is_running %}
-                        <span class="job-summary-text">Running now</span>
+                        <span class="job-summary-text">Running</span>
                       {% elif job.status == "queued" %}
                         <span class="job-summary-text">
                           {% if queue_position <= 1 %}Next{% else %}{{ queue_position - 1 }} ahead{% endif %}

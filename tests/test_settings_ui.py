@@ -53,7 +53,7 @@ def test_settings_moves_low_frequency_controls_into_disclosures(
     assert 'data-telegram-setup' in response.text
     assert 'data-storage-paths' in response.text
     assert "Local engine options" in response.text
-    assert "More cleanup tools" in response.text
+    assert "More actions" in response.text
     assert "View local paths" in response.text
 
     advanced = re.search(
@@ -136,8 +136,8 @@ def test_settings_demotes_source_metadata_in_default_view(tmp_path: Path) -> Non
     assert "data-settings-source-pill" not in response.text
     assert "data-cohere-source-pill" not in response.text
     assert "data-telegram-source-pill" not in response.text
-    assert "Engine changes take effect after restart." in response.text
-    assert "These changes apply after restart." in response.text
+    assert "Restart after changing the engine." in response.text
+    assert "Applies after restart." in response.text
 
 
 def test_settings_env_locked_fields_explain_why_controls_are_disabled(

@@ -8,7 +8,7 @@
             <div class="history-header">
               <div>
                 <h2>History</h2>
-                <p>Completed jobs appear here. Expand a row for timestamps, outputs, and logs.</p>
+                <p>Finished jobs. Open a row for files, times, and logs.</p>
               </div>
               <div class="history-controls">
                 <div class="history-toolbar" role="group" aria-label="Find transcripts">
@@ -130,7 +130,7 @@
                             target="_blank"
                             rel="noopener"
                           >
-                            Open transcript
+                            Open file
                           </a>
                         {% endif %}
                         {% if results %}
@@ -168,14 +168,14 @@
                           type="button"
                           data-action="delete-history"
                         >
-                          Delete...
+                          Delete
                         </button>
                       </div>
                     </details>
                   </div>
                   <details class="job-details" data-job-id="{{ job.id }}">
                     <summary aria-label="View details for {{ job.filename }}">
-                      <span>View details</span>
+                      <span>Details</span>
                       <span class="details-chevron" aria-hidden="true">▾</span>
                     </summary>
                     <div class="job-details-body">
@@ -187,7 +187,7 @@
                         >
                           <div class="detail-label">Preview</div>
                           <div class="preview-snippet is-loading" data-preview-snippet>
-                            Preview will load when expanded.
+                            Loads on open.
                           </div>
                           <div class="preview-actions">
                             <button
@@ -286,7 +286,7 @@
                   <div class="empty-kicker">History</div>
                   <h3 class="empty-title" id="history-filter-title">No matches</h3>
                   <p class="empty-body" id="history-filter-body">
-                    Try a different search, or clear filters to see everything again.
+                    Try another search or clear filters.
                   </p>
                 </div>
                 <div class="empty-actions">
@@ -305,14 +305,12 @@
               <section class="empty-card" role="region" aria-labelledby="history-empty-title">
                 <div class="empty-card-header">
                   <div class="empty-kicker">History</div>
-                  <h3 class="empty-title" id="history-empty-title">No completed jobs yet</h3>
-                  <p class="empty-body">
-                    When a queued file finishes, it will appear here with download links. Results stay stored locally here, even when a cloud engine was used.
-                  </p>
+                  <h3 class="empty-title" id="history-empty-title">No finished jobs yet</h3>
+                  <p class="empty-body">Finished jobs show up here with downloads.</p>
                 </div>
                 <div class="empty-actions">
                   <button class="job-primary" type="button" data-history-empty-cta>Go to Queue</button>
-                  <span class="empty-note">This list updates automatically.</span>
+                  <span class="empty-note">Updates automatically.</span>
                 </div>
               </section>
             </div>

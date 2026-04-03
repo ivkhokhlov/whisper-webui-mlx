@@ -114,7 +114,7 @@ def test_root_empty_states_visible_when_no_jobs(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
-    assert "Add files to start" in response.text
+    assert "Add files" in response.text
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text
@@ -122,8 +122,8 @@ def test_root_empty_states_visible_when_no_jobs(tmp_path: Path) -> None:
     assert history_placeholder is not None
     assert "display: none" not in history_placeholder.group(0)
 
-    assert "Add files to start" in response.text
-    assert "No completed jobs yet" in response.text
+    assert "Add files" in response.text
+    assert "No finished jobs yet" in response.text
 
 
 def test_root_queue_empty_state_onboarding_copy(tmp_path: Path) -> None:
@@ -134,8 +134,8 @@ def test_root_queue_empty_state_onboarding_copy(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "Select files" in response.text
     assert "Select folder" in response.text
-    assert "Select files first. Use a folder when you need a batch." in response.text
-    assert "Folder upload scans subfolders for batch work." in response.text
+    assert "Select files. Use a folder for batches." in response.text
+    assert "Scans subfolders." in response.text
     assert "Your queue is empty" not in response.text
     assert 'aria-label="How queue works"' not in response.text
 
@@ -146,7 +146,7 @@ def test_root_history_empty_state_has_queue_cta(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "No completed jobs yet" in response.text
+    assert "No finished jobs yet" in response.text
     assert "Go to Queue" in response.text
     assert "data-history-empty-cta" in response.text
 
@@ -174,8 +174,8 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
 
     assert 'id="dropzone"' in response.text
     assert 'role="button"' in response.text
-    assert "Or drag files here" in response.text
-    assert "Audio and video files only." in response.text
+    assert "Drag files here" in response.text
+    assert "Audio and video only." in response.text
 
     assert 'id="selection-summary"' in response.text
     assert 'id="selection-valid"' in response.text
@@ -313,7 +313,7 @@ def test_root_queue_hint_stays_local_by_default(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Local by default. Cloud engines upload only when selected." in response.text
+    assert "Cloud engines upload audio only when selected." in response.text
 
 
 def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> None:
@@ -326,7 +326,7 @@ def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> 
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Cloud engine selected. Audio uploads to the provider." in response.text
+    assert "Audio uploads to the provider." in response.text
 
 
 def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
@@ -337,12 +337,12 @@ def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert (
-        "Queue files, monitor the worker, and download results; files stay local unless you choose a cloud engine."
+        "Queue files, watch the worker, and get results; cloud engines upload audio."
         in response.text
     )
     assert "Local-first transcription" not in response.text
     assert "Local-only transcription" not in response.text
-    assert "Local storage and local transcription by default." in response.text
+    assert "Local transcription." in response.text
 
 
 def test_engine_setting_reflects_in_settings_form(tmp_path: Path) -> None:
@@ -405,7 +405,7 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
-    assert "Add more files" in response.text
+    assert "Add files" in response.text
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text
@@ -524,11 +524,12 @@ def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert "experimental Parakeet beta" in response.text
+    assert "Live preview" in response.text
     assert "Preview only" in response.text
     assert "Start live capture" in response.text
-    assert "Use Queue instead" in response.text
+    assert "Open Queue" in response.text
     assert "Experimental flag is off" in response.text
+    assert "Not saved to History yet." in response.text
 
 
 def test_live_page_shows_active_beta_when_enabled(tmp_path: Path, monkeypatch) -> None:
@@ -552,9 +553,11 @@ def test_live_page_shows_active_beta_when_enabled(tmp_path: Path, monkeypatch) -
         response = client.get("/live")
 
     assert response.status_code == 200
-    assert "Experimental beta" in response.text
-    assert "Ready for experimental capture." in response.text
+    assert "Ready locally" in response.text
+    assert "Ready for live capture." in response.text
     assert "Stop capture" in response.text
+    assert "theoretical latency" not in response.text
+    assert "~4.0s latency" not in response.text
 
 
 def test_live_api_uses_injected_service(tmp_path: Path, monkeypatch) -> None:

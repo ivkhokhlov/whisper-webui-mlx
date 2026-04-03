@@ -75,22 +75,21 @@
     const timeText = timeParts.length ? ` (${timeParts.join(" · ")})` : "";
     const lines = [
       `Delete "${summary.filename}"${timeText}?`,
-      "This removes the job from History and deletes its stored outputs (transcripts/logs) from disk.",
+      "Removes the job and its saved outputs from this Mac.",
     ];
     if (summary.outputs.length) {
       lines.push(`Outputs: ${summary.outputs.join(", ")}`);
     }
-    lines.push("Downloaded files, clipboard contents, and Telegram copies aren't removed.");
+    lines.push("Downloads, clipboard copies, and Telegram copies stay as-is.");
     return lines.join("\n");
   }
 
   function buildHistoryClearMessage(count) {
     const label = count === 1 ? "item" : "items";
     return [
-      "Delete all results?",
-      `This will delete ${count} completed ${label} and remove their stored outputs (transcripts/logs) from disk.`,
-      "This can't be undone.",
-      "Downloaded files, clipboard contents, and Telegram copies aren't removed.",
+      "Delete all history?",
+      `Deletes ${count} completed ${label} and their saved outputs from this Mac.`,
+      "Downloads, clipboard copies, and Telegram copies stay as-is.",
     ].join("\n");
   }
 
@@ -113,7 +112,7 @@
         }
         const confirmed = app.modals
           ? await app.modals.openConfirmModal({
-              title: "Delete completed history",
+              title: "Delete history",
               message: buildHistoryClearMessage(count),
               confirmText: "Delete all",
               cancelText: "Cancel",
@@ -154,7 +153,7 @@
         } catch (error) {
           console.warn("Failed to clear history", error);
           if (app.toasts) {
-            app.toasts.notifySystem("History", "Couldn’t delete history. Try again.", "error", {
+            app.toasts.notifySystem("History", "Can’t delete history. Try again.", "error", {
               key: "history:clear:error",
               cooldown: 1500,
             });
@@ -210,7 +209,7 @@
               });
             }
           } else if (app.toasts) {
-            app.toasts.notifySystem("Clipboard", "Couldn’t copy filename. Try again.", "error", {
+            app.toasts.notifySystem("Clipboard", "Can’t copy filename. Try again.", "error", {
               key: "clipboard:filename:error",
               cooldown: 1500,
             });
@@ -238,7 +237,7 @@
           const summary = getHistoryRowSummary(row);
           const confirmed = app.modals
             ? await app.modals.openConfirmModal({
-                title: "Delete history item",
+                title: "Delete history",
                 message: buildHistoryDeleteMessage(summary),
                 confirmText: "Delete",
                 cancelText: "Cancel",
@@ -263,8 +262,8 @@
               app.toasts.notifySystem(
                 "History",
                 summary.filename
-                  ? `Couldn’t delete “${summary.filename}”. Try again.`
-                  : "Couldn’t delete history item. Try again.",
+                  ? `Can’t delete “${summary.filename}”. Try again.`
+                  : "Can’t delete history. Try again.",
                 "error",
                 {
                   key: "history:delete:error",

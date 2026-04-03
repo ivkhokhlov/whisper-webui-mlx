@@ -38,8 +38,8 @@
       historyButton.textContent = "Delete history";
       if (historyHint) {
         historyHint.textContent = count
-          ? `Removes ${count} saved ${count === 1 ? "entry" : "entries"} from History.`
-          : "No saved history to remove.";
+          ? `Deletes ${count} saved ${count === 1 ? "entry" : "entries"}.`
+          : "No saved history.";
       }
     }
 
@@ -51,8 +51,8 @@
       uploadsButton.setAttribute("data-item-count", String(count));
       if (uploadsHint) {
         uploadsHint.textContent = count
-          ? `Unavailable while ${count} ${count === 1 ? "item is" : "items are"} still in Queue.`
-          : "Deletes local processing copies after the queue is empty.";
+          ? "Queue must be empty first."
+          : "Deletes local processing copies.";
       }
     }
   }

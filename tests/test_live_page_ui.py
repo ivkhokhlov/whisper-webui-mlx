@@ -40,8 +40,8 @@ def test_live_page_uses_one_clear_beta_notice_without_extra_metrics(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "Live preview" in response.text
-    assert "does not save sessions to History yet" in response.text
-    assert "Live preview only runs on supported local setups." in response.text
+    assert "Not saved to History yet." in response.text
+    assert "Supported local setups only." in response.text
     assert "Set PARAKEET_LIVE_BETA=1" in response.text
     assert "Chunks:" not in response.text
     assert "Windows:" not in response.text
@@ -74,10 +74,10 @@ def test_live_page_active_state_keeps_one_status_action_and_transcript_area(
     assert response.status_code == 200
     assert "Ready locally" in response.text
     assert "Ready for live capture." in response.text
-    assert "Allow microphone access, then speak normally." in response.text
+    assert "Allow microphone access, then speak." in response.text
     assert "Waiting for microphone input." in response.text
     assert "Parakeet TDT v3 · Local session only" in response.text
-    assert "Use Queue for saved transcripts" in response.text
+    assert "Saved transcripts" in response.text
     assert "Current beta scope" not in response.text
     assert "theoretical latency" not in response.text
     assert "~4.0s latency" not in response.text

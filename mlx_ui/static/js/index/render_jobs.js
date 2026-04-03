@@ -286,7 +286,7 @@
           </span>
         `);
       } else {
-        parts.push('<span class="job-summary-text">Running now</span>');
+        parts.push('<span class="job-summary-text">Running</span>');
       }
     } else {
       parts.push(`<span class="job-summary-text">${escapeHtml(buildQueueLabel(queuePosition))}</span>`);
@@ -358,7 +358,7 @@
           target="_blank"
           rel="noopener"
         >
-          Open transcript
+          Open file
         </a>
       `);
     }
@@ -407,7 +407,7 @@
         type="button"
         data-action="delete-history"
       >
-        Delete...
+        Delete
       </button>
     `);
     return `
@@ -438,7 +438,7 @@
           >
             <div class="detail-label">Preview</div>
             <div class="preview-snippet is-loading" data-preview-snippet>
-              Preview will load when expanded.
+              Loads on open.
             </div>
             <div class="preview-actions">
               <button
@@ -476,7 +476,7 @@
     return `
       <details class="job-details" data-job-id="${escapeHtml(job.id)}"${openAttr}>
         <summary aria-label="View details for ${safeFilename}">
-          <span>View details</span>
+          <span>Details</span>
           <span class="details-chevron" aria-hidden="true">▾</span>
         </summary>
         <div class="job-details-body">

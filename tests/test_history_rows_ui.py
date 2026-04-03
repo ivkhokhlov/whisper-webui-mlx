@@ -160,7 +160,7 @@ def test_root_history_details_group_secondary_metadata_on_demand(tmp_path: Path)
     failed_row = _extract_history_row(response.text, failed_id)
 
     assert 'aria-label="View details for customer-call.wav"' in done_row
-    assert ">View details<" in done_row
+    assert ">Details<" in done_row
     assert 'class="detail-label">Preview<' in done_row
     assert 'class="detail-label">Outputs<' in done_row
     assert 'class="detail-label">Processing<' in done_row
