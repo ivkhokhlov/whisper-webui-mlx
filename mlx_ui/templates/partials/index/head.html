@@ -1083,10 +1083,12 @@
       .dropzone {
         border: 1px dashed var(--line-strong);
         border-radius: var(--radius-lg);
-        padding: 11px 14px;
+        min-height: 128px;
+        padding: 20px 16px;
         background: rgba(255, 255, 255, 0.2);
         display: grid;
         gap: 3px;
+        align-content: center;
         cursor: pointer;
         transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
       }
@@ -2928,7 +2930,8 @@
         }
 
         .dropzone {
-          padding: 14px;
+          min-height: 120px;
+          padding: 18px 14px;
         }
 
         .job-row,

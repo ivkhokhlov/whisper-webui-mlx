@@ -133,10 +133,11 @@ def test_root_queue_empty_state_onboarding_copy(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Select files" in response.text
-    assert "Select folder" in response.text
-    assert "Select files. Use a folder for batches." in response.text
-    assert "Scans subfolders." in response.text
+    assert "Drag files here or click to choose." in response.text
+    assert "Drag files here" in response.text
+    assert "Click to choose files." in response.text
+    assert "Select files" not in response.text
+    assert "Select folder" not in response.text
     assert "Your queue is empty" not in response.text
     assert 'aria-label="How queue works"' not in response.text
 
@@ -165,18 +166,15 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
     assert 'id="file-input"' in response.text
     assert 'name="files"' in response.text
     assert 'accept="audio/*,video/*"' in response.text
-    assert 'id="folder-input"' in response.text
-    assert "webkitdirectory" in response.text
-
-    assert 'data-upload-pick="files"' in response.text
-    assert "Select files" in response.text
-    assert 'data-upload-pick="folder"' in response.text
-    assert "Select folder" in response.text
+    assert 'id="folder-input"' not in response.text
+    assert "webkitdirectory" not in response.text
+    assert "data-upload-pick" not in response.text
 
     assert 'id="dropzone"' in response.text
     assert 'role="button"' in response.text
     assert "Drag files here" in response.text
     assert "Audio and video only." in response.text
+    assert "Click to choose files." in response.text
 
     assert 'id="selection-summary"' in response.text
     assert 'id="selection-valid"' in response.text
