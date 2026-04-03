@@ -18,6 +18,7 @@ dist/
 *.egg-info/
 .vscode/
 .idea/
+.agent/
 *.swp
 *.swo
 *.swn

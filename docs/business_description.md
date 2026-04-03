@@ -24,7 +24,9 @@ which engine and language each job used. The `/live` route remains an honest
 beta preview rather than a production capture workflow. Ongoing refactors keep
 the app maintainable while preserving the same UI/API contract, including an
 app-factory bootstrap path, focused routers, provider modules per engine, and
-template partials.
+template partials. Repo/dev mode also treats transient workspace automation
+artifacts as untracked local state, keeping operational traces out of the
+shared project history while preserving the same user-facing data flow.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
