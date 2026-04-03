@@ -71,7 +71,8 @@ template partials.
 - Optional “hot folder” ingestion: watch an input folder, move detected
   audio/video files into the queue for processing, and export `.txt`
   transcripts into a configured output folder (mirrors subfolders; restores the
-  input file on failed jobs).
+  input file on failed jobs). In repo/dev mode, hot folder defaults to
+  `./input` → `./output` and is enabled automatically.
 - Batch-level language selector plus a persisted default language setting.
 - Requested/effective engine tracking per job, exposed in the worker shell,
   queue, history, and preview metadata.

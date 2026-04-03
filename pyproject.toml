@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mlx-ui"
-version = "0.1.22"
+version = "0.1.23"
 description = ""
 authors = ["Ivan Khokhlov <ivan.s.khokhlov@rt.ru>"]
 readme = "README.md"
