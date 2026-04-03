@@ -9,6 +9,11 @@ import threading
 
 from mlx_ui.db import claim_next_job, mark_job_done, mark_job_failed, mark_job_running
 from mlx_ui.engine_registry import create_transcriber
+from mlx_ui.hot_folder import (
+    export_hot_folder_transcript,
+    resolve_hot_folder_output_dir,
+    restore_failed_hot_folder_upload,
+)
 from mlx_ui.settings import (
     ResolvedTranscriberSettings,
     resolve_job_transcriber_spec_with_settings,
@@ -32,6 +37,7 @@ class Worker:
         poll_interval: float = 0.5,
         transcriber: Transcriber | None = None,
         effective_engine: str | None = None,
+        effective_implementation_id: str | None = None,
         base_dir: Path | None = None,
         env: Mapping[str, str] | None = None,
     ) -> None:
@@ -47,6 +53,9 @@ class Worker:
         self.effective_engine = _normalize_engine_id(
             effective_engine
         ) or _transcriber_engine_id(transcriber)
+        self.effective_implementation_id = _normalize_engine_id(
+            effective_implementation_id
+        )
         self._transcriber_cache: dict[tuple[object, ...], Transcriber] = {}
         self._stop_event = threading.Event()
         self._paused_event = threading.Event()
@@ -84,16 +93,20 @@ class Worker:
     def _resolve_transcriber_for_job(
         self,
         job,
-    ) -> tuple[Transcriber, str | None]:
+    ) -> tuple[Transcriber, str | None, str | None]:
         if self.transcriber is not None:
-            return self.transcriber, self.effective_engine
+            return (
+                self.transcriber,
+                self.effective_engine,
+                self.effective_implementation_id,
+            )
         resolved = resolve_job_transcriber_spec_with_settings(
             job.requested_engine,
             base_dir=self.base_dir,
             env=self.env,
         )
         transcriber = _cached_transcriber(self._transcriber_cache, resolved)
-        return transcriber, resolved.engine_id
+        return transcriber, resolved.engine_id, resolved.implementation_id
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -108,7 +121,11 @@ class Worker:
         if job is None:
             return False
         try:
-            transcriber, effective_engine = self._resolve_transcriber_for_job(job)
+            (
+                transcriber,
+                effective_engine,
+                effective_implementation_id,
+            ) = self._resolve_transcriber_for_job(job)
         except Exception as exc:
             _log_transcriber_resolution_error(job.id, exc)
             mark_job_failed(
@@ -117,6 +134,7 @@ class Worker:
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
+            restore_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         started_at = _now_utc()
@@ -125,15 +143,18 @@ class Worker:
             job.id,
             started_at=started_at,
             effective_engine=effective_engine,
+            effective_implementation_id=effective_implementation_id,
         ):
             logger.warning(
                 "Worker lost reservation for job %s before starting transcription",
                 job.id,
             )
+            restore_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         job.started_at = started_at
         job.effective_engine = effective_engine
+        job.effective_implementation_id = effective_implementation_id
         try:
             result_path = transcriber.transcribe(job, self.results_dir)
         except Exception as exc:
@@ -144,6 +165,7 @@ class Worker:
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
+            restore_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         try:
@@ -152,6 +174,17 @@ class Worker:
             logger.exception(
                 "Worker failed to deliver Telegram message for job %s", job.id
             )
+        if job.source_path:
+            output_dir = resolve_hot_folder_output_dir(
+                base_dir=self.base_dir,
+                env=self.env,
+            )
+            if output_dir is not None:
+                export_hot_folder_transcript(
+                    job=job,
+                    result_path=result_path,
+                    output_dir=output_dir,
+                )
         mark_job_done(
             self.db_path,
             job.id,
@@ -168,6 +201,7 @@ def start_worker(
     poll_interval: float = 0.5,
     transcriber: Transcriber | None = None,
     effective_engine: str | None = None,
+    effective_implementation_id: str | None = None,
     base_dir: Path | None = None,
     env: Mapping[str, str] | None = None,
 ) -> Worker:
@@ -182,6 +216,7 @@ def start_worker(
             poll_interval=poll_interval,
             transcriber=transcriber,
             effective_engine=effective_engine,
+            effective_implementation_id=effective_implementation_id,
             base_dir=base_dir,
             env=env,
         )

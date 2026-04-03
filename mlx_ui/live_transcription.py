@@ -8,11 +8,24 @@ import shutil
 import subprocess
 import tempfile
 import threading
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 from uuid import uuid4
 
-from mlx_ui.engine_registry import PARAKEET_TDT_V3_ENGINE
-from mlx_ui.live_backend_runtime import ParakeetLiveRuntime, load_parakeet_live_runtime
+from mlx_ui.engine_registry import (
+    PARAKEET_MLX_BACKEND,
+    PARAKEET_NEMO_CUDA_BACKEND,
+    PARAKEET_TDT_V3_ENGINE,
+)
+from mlx_ui.engines.parakeet_mlx_live_runtime import (
+    ParakeetMlxLiveRuntime,
+    load_parakeet_mlx_live_runtime,
+)
+from mlx_ui.live_backend_runtime import resolve_parakeet_live_backend
+
+if TYPE_CHECKING:
+    from mlx_ui.engines.parakeet_nemo_cuda_live_runtime_experimental import (
+        ParakeetNemoCudaLiveRuntime,
+    )
 
 
 @dataclass(frozen=True)
@@ -82,14 +95,28 @@ class LiveBackend(Protocol):
         raise NotImplementedError
 
 
+def _default_backend_factory(config: ParakeetLiveConfig) -> LiveBackend:
+    resolved = resolve_parakeet_live_backend()
+    if resolved.implementation_id == PARAKEET_MLX_BACKEND:
+        if resolved.reason:
+            raise RuntimeError(resolved.reason)
+        return ParakeetMlxLiveBackend(config)
+    if resolved.implementation_id == PARAKEET_NEMO_CUDA_BACKEND:
+        if resolved.reason:
+            raise RuntimeError(resolved.reason)
+        return ParakeetNemoCudaLiveBackend(config)
+    raise RuntimeError(
+        resolved.reason
+        or "Parakeet live beta is not available in the current environment."
+    )
+
+
 class LiveTranscriptionService:
     def __init__(
         self,
         backend_factory: Callable[[ParakeetLiveConfig], LiveBackend] | None = None,
     ) -> None:
-        self._backend_factory = backend_factory or (
-            lambda config: ParakeetLiveBackend(config)
-        )
+        self._backend_factory = backend_factory or _default_backend_factory
         self._backends: dict[tuple[object, ...], LiveBackend] = {}
         self._sessions: dict[str, LiveSession] = {}
         self._lock = threading.Lock()
@@ -144,7 +171,7 @@ class LiveTranscriptionService:
         return session
 
 
-class ParakeetLiveBackend:
+class ParakeetMlxLiveBackend:
     engine_id = PARAKEET_TDT_V3_ENGINE
     engine_label = "Parakeet TDT v3"
 
@@ -152,11 +179,161 @@ class ParakeetLiveBackend:
         self,
         config: ParakeetLiveConfig,
         *,
-        runtime_loader: Callable[[], tuple[object, object, ParakeetLiveRuntime]]
+        runtime_loader: Callable[[], ParakeetMlxLiveRuntime] | None = None,
+    ) -> None:
+        self.config = config
+        self._runtime_loader = runtime_loader or load_parakeet_mlx_live_runtime
+        self._infer_lock = threading.Lock()
+        self._runtime = self._runtime_loader()
+        self._model = self._load_model()
+        self.model_id = config.repo_id
+        self.sample_rate = 16_000
+        self.note = (
+            "Experimental Parakeet MLX live streaming with approximately "
+            f"{config.chunk_secs + config.right_context_secs:.1f}s theoretical latency."
+        )
+
+    def create_session(self, session_id: str) -> "ParakeetMlxLiveSession":
+        return ParakeetMlxLiveSession(session_id=session_id, backend=self)
+
+    def create_streamer(self):
+        cls = self._runtime.StreamingParakeet
+        model = self._model
+        for args, kwargs in (
+            ((model,), {}),
+            ((), {"model": model}),
+        ):
+            try:
+                return cls(*args, **kwargs)
+            except TypeError:
+                continue
+        raise RuntimeError(
+            "The installed Parakeet MLX runtime could not construct a streaming helper."
+        )
+
+    def decode_chunk(
+        self,
+        chunk_bytes: bytes,
+        *,
+        content_type: str | None,
+    ) -> list[float]:
+        return _decode_browser_audio_chunk(
+            chunk_bytes,
+            content_type=content_type,
+            sample_rate=self.sample_rate,
+        )
+
+    def stream_text(self, streamer) -> str:
+        result = getattr(streamer, "result", None)
+        if callable(result):
+            result = result()
+        text = getattr(result, "text", None)
+        if isinstance(text, str):
+            return text.strip()
+        if isinstance(result, str):
+            return result.strip()
+        return ""
+
+    def add_audio(self, streamer, samples: list[float]) -> str:
+        mx = self._runtime.mx
+        dtype = getattr(mx, "float32", None)
+        audio = (
+            mx.array(samples, dtype=dtype) if dtype is not None else mx.array(samples)
+        )
+        with self._infer_lock:
+            streamer.add_audio(audio)
+            return self.stream_text(streamer)
+
+    def _load_model(self):
+        from_pretrained = self._runtime.from_pretrained
+        try:
+            return from_pretrained(self.config.repo_id)
+        except Exception as exc:  # pragma: no cover - optional dep passthrough
+            raise RuntimeError(
+                f"Failed to load Parakeet MLX model '{self.config.repo_id}': {exc}"
+            ) from exc
+
+
+class ParakeetMlxLiveSession:
+    def __init__(self, *, session_id: str, backend: ParakeetMlxLiveBackend) -> None:
+        self.session_id = session_id
+        self.backend = backend
+        self.status = "ready"
+        self.transcript = ""
+        self.received_chunks = 0
+        self.processed_windows = 0
+        self.error: str | None = None
+        self._streamer = backend.create_streamer()
+        self._lock = threading.Lock()
+
+    def snapshot(self) -> LiveTranscriptionUpdate:
+        return LiveTranscriptionUpdate(
+            session_id=self.session_id,
+            status=self.status,
+            transcript=self.transcript,
+            received_chunks=self.received_chunks,
+            processed_windows=self.processed_windows,
+            engine_id=self.backend.engine_id,
+            engine_label=self.backend.engine_label,
+            model_id=self.backend.model_id,
+            note=self.backend.note,
+            error=self.error,
+        )
+
+    def push_chunk(
+        self,
+        chunk_bytes: bytes,
+        *,
+        content_type: str | None,
+    ) -> LiveTranscriptionUpdate:
+        samples = self.backend.decode_chunk(chunk_bytes, content_type=content_type)
+        with self._lock:
+            self.status = "running"
+            self.received_chunks += 1
+            if samples:
+                self.transcript = self.backend.add_audio(self._streamer, samples)
+                self.processed_windows += 1
+            return self.snapshot()
+
+    def finish(self) -> LiveTranscriptionUpdate:
+        with self._lock:
+            if self.status != "error":
+                finalize = getattr(self._streamer, "finalize", None)
+                if callable(finalize):
+                    try:
+                        finalize()
+                    except Exception:
+                        pass
+                self.status = "stopped"
+            return self.snapshot()
+
+    def mark_error(self, message: str) -> None:
+        with self._lock:
+            self.status = "error"
+            self.error = message
+
+
+class ParakeetNemoCudaLiveBackend:
+    engine_id = PARAKEET_TDT_V3_ENGINE
+    engine_label = "Parakeet TDT v3"
+
+    def __init__(
+        self,
+        config: ParakeetLiveConfig,
+        *,
+        runtime_loader: Callable[
+            [], tuple[object, object, "ParakeetNemoCudaLiveRuntime"]
+        ]
         | None = None,
     ) -> None:
         self.config = config
-        self._runtime_loader = runtime_loader or load_parakeet_live_runtime
+        if runtime_loader is None:
+            from mlx_ui.engines.parakeet_nemo_cuda_live_runtime_experimental import (
+                load_parakeet_nemo_cuda_live_runtime,
+            )
+
+            runtime_loader = load_parakeet_nemo_cuda_live_runtime
+        self._runtime_loader = runtime_loader
         self._infer_lock = threading.Lock()
         self._model, self._runtime = self._load_model()
         self.model_id = config.repo_id
@@ -181,7 +358,7 @@ class ParakeetLiveBackend:
             self.context_samples.chunk + self.context_samples.right
         )
         self.note = (
-            "Experimental Parakeet live streaming with approximately "
+            "Internal experimental Parakeet NeMo/CUDA live streaming with approximately "
             f"{config.chunk_secs + config.right_context_secs:.1f}s theoretical latency."
         )
         decoding = getattr(getattr(self._model, "decoding", None), "decoding", None)
@@ -191,8 +368,8 @@ class ParakeetLiveBackend:
                 "Parakeet live beta could not access the streaming decoding computer."
             )
 
-    def create_session(self, session_id: str) -> "ParakeetLiveSession":
-        return ParakeetLiveSession(session_id=session_id, backend=self)
+    def create_session(self, session_id: str) -> "ParakeetNemoCudaLiveSession":
+        return ParakeetNemoCudaLiveSession(session_id=session_id, backend=self)
 
     def create_buffer(self):
         return self._runtime.StreamingBatchedAudioBuffer(
@@ -320,8 +497,10 @@ class ParakeetLiveBackend:
         return model, runtime
 
 
-class ParakeetLiveSession:
-    def __init__(self, *, session_id: str, backend: ParakeetLiveBackend) -> None:
+class ParakeetNemoCudaLiveSession:
+    def __init__(
+        self, *, session_id: str, backend: ParakeetNemoCudaLiveBackend
+    ) -> None:
         self.session_id = session_id
         self.backend = backend
         self.status = "ready"
@@ -492,7 +671,7 @@ def _parakeet_encoder_frame_span(model, *, sample_rate: int) -> int:
 
 def _parakeet_context_samples(
     *,
-    runtime: ParakeetLiveRuntime,
+    runtime: "ParakeetNemoCudaLiveRuntime",
     model,
     config: ParakeetLiveConfig,
     sample_rate: int,
@@ -595,7 +774,7 @@ def _make_divisible_by(num: int, factor: int) -> int:
     return max((num // factor) * factor, factor)
 
 
-def _coalesce_device(model, runtime: ParakeetLiveRuntime):
+def _coalesce_device(model, runtime: "ParakeetNemoCudaLiveRuntime"):
     device = getattr(model, "device", None)
     if device is not None:
         return device

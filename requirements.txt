@@ -2,6 +2,7 @@
 # Engine-specific optional dependency profiles live in:
 #   - requirements-whisper-mlx.txt
 #   - requirements-whisper-cpu.txt
+#   - requirements-parakeet-mlx.txt
 #   - requirements-cohere.txt
 # The bootstrap scripts choose the right profile for the current machine.
 fastapi>=0.115.6,<0.116

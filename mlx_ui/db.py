@@ -20,6 +20,9 @@ class JobRecord:
     queue_position: int | None = None
     requested_engine: str | None = None
     effective_engine: str | None = None
+    effective_implementation_id: str | None = None
+    source_path: str | None = None
+    source_relpath: str | None = None
 
 
 SCHEMA = """
@@ -35,7 +38,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     error_message TEXT,
     queue_position INTEGER,
     requested_engine TEXT,
-    effective_engine TEXT
+    effective_engine TEXT,
+    effective_implementation_id TEXT,
+    source_path TEXT,
+    source_relpath TEXT
 );
 """
 
@@ -82,6 +88,14 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE jobs ADD COLUMN requested_engine TEXT")
     if not _table_has_column(connection, "jobs", "effective_engine"):
         connection.execute("ALTER TABLE jobs ADD COLUMN effective_engine TEXT")
+    if not _table_has_column(connection, "jobs", "effective_implementation_id"):
+        connection.execute(
+            "ALTER TABLE jobs ADD COLUMN effective_implementation_id TEXT"
+        )
+    if not _table_has_column(connection, "jobs", "source_path"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN source_path TEXT")
+    if not _table_has_column(connection, "jobs", "source_relpath"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN source_relpath TEXT")
     connection.execute(
         """
         UPDATE jobs
@@ -92,7 +106,57 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         """,
         (AUTO_LANGUAGE, LEGACY_AUTO_LANGUAGE),
     )
+    _backfill_effective_implementation_ids(connection)
     _backfill_queue_positions(connection)
+
+
+def _backfill_effective_implementation_ids(connection: sqlite3.Connection) -> None:
+    if not _table_has_column(connection, "jobs", "effective_implementation_id"):
+        return
+    if not _table_has_column(connection, "jobs", "effective_engine"):
+        return
+    rows = connection.execute(
+        """
+        SELECT id, effective_engine
+        FROM jobs
+        WHERE effective_implementation_id IS NULL
+          AND effective_engine IS NOT NULL
+          AND TRIM(effective_engine) != ''
+        """
+    ).fetchall()
+    if not rows:
+        return
+    from mlx_ui.engine_registry import (
+        get_engine_provider,
+        resolve_backend_implementation,
+    )
+
+    for row in rows:
+        job_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+        raw = row["effective_engine"] if isinstance(row, sqlite3.Row) else row[1]
+        normalized = (str(raw) if raw is not None else "").strip().lower()
+        if not normalized:
+            continue
+        if get_engine_provider(normalized) is not None:
+            continue
+        resolved = resolve_backend_implementation(normalized)
+        if resolved is None:
+            continue
+        provider, implementation = resolved
+        aliases = (implementation.id,) + tuple(implementation.backend_aliases)
+        if not any(
+            (alias or "").strip().lower() == normalized for alias in aliases if alias
+        ):
+            continue
+        connection.execute(
+            """
+            UPDATE jobs
+            SET effective_engine = ?,
+                effective_implementation_id = ?
+            WHERE id = ?
+            """,
+            (provider.id, implementation.id, job_id),
+        )
 
 
 def _table_has_column(
@@ -162,9 +226,12 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 error_message,
                 queue_position,
                 requested_engine,
-                effective_engine
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -179,6 +246,9 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 queue_position,
                 job.requested_engine,
                 job.effective_engine,
+                job.effective_implementation_id,
+                job.source_path,
+                job.source_relpath,
             ),
         )
         connection.commit()
@@ -200,7 +270,10 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
                 error_message,
                 queue_position,
                 requested_engine,
-                effective_engine
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             FROM jobs
             ORDER BY
                 CASE
@@ -239,7 +312,10 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
                 error_message,
                 queue_position,
                 requested_engine,
-                effective_engine
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             FROM jobs
             WHERE id = ?
             """,
@@ -292,7 +368,10 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
                 error_message,
                 queue_position,
                 requested_engine,
-                effective_engine
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             FROM jobs
             WHERE status IN ('done', 'failed')
             """
@@ -374,6 +453,7 @@ def update_job_status(
     completed_at: str | None = None,
     error_message: str | None = None,
     effective_engine: str | None = None,
+    effective_implementation_id: str | None = None,
 ) -> None:
     updates: dict[str, str | None] = {"status": status}
     if started_at is not None:
@@ -384,6 +464,8 @@ def update_job_status(
         updates["error_message"] = error_message
     if effective_engine is not None:
         updates["effective_engine"] = effective_engine
+    if effective_implementation_id is not None:
+        updates["effective_implementation_id"] = effective_implementation_id
     set_clause = ", ".join(f"{column} = ?" for column in updates)
     values = list(updates.values()) + [job_id]
     with _connect(db_path) as connection:
@@ -429,6 +511,7 @@ def mark_job_running(
     *,
     started_at: str | None = None,
     effective_engine: str | None = None,
+    effective_implementation_id: str | None = None,
 ) -> bool:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     started_at_value = started_at or _now_utc()
@@ -438,10 +521,16 @@ def mark_job_running(
             UPDATE jobs
             SET status = 'running',
                 started_at = ?,
-                effective_engine = ?
+                effective_engine = ?,
+                effective_implementation_id = ?
             WHERE id = ? AND status = 'reserved'
             """,
-            (started_at_value, effective_engine, job_id),
+            (
+                started_at_value,
+                effective_engine,
+                effective_implementation_id,
+                job_id,
+            ),
         )
         connection.commit()
     return cursor.rowcount > 0
@@ -528,7 +617,10 @@ def claim_next_job(
                 error_message,
                 queue_position,
                 requested_engine,
-                effective_engine
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             FROM jobs
             WHERE status = 'queued'
             ORDER BY

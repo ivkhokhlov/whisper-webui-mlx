@@ -121,6 +121,7 @@ def build_stage(
         "requirements.txt",
         "requirements-whisper-mlx.txt",
         "requirements-whisper-cpu.txt",
+        "requirements-parakeet-mlx.txt",
         "requirements-cohere.txt",
         "mel_filters.npz",
     ):

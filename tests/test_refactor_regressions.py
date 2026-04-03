@@ -219,7 +219,7 @@ def test_settings_facade_reexports_new_modules() -> None:
     )
 
 
-def test_engine_registry_factories_return_provider_package_classes() -> None:
+def test_engine_registry_factories_return_provider_package_classes(monkeypatch) -> None:
     wtm = engine_registry.create_transcriber(
         engine_registry.WHISPER_MLX_ENGINE,
         implementation_id=engine_registry.WTM_BACKEND,
@@ -238,16 +238,28 @@ def test_engine_registry_factories_return_provider_package_classes() -> None:
     )
     assert cohere.__class__.__module__ == "mlx_ui.engines.cohere"
 
+    monkeypatch.setenv(engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, "1")
     parakeet = engine_registry.create_transcriber(
         engine_registry.PARAKEET_TDT_V3_ENGINE,
-        implementation_id=engine_registry.PARAKEET_TDT_V3_NEMO_CUDA_BACKEND,
+        implementation_id=engine_registry.PARAKEET_NEMO_CUDA_BACKEND,
     )
-    assert parakeet.__class__.__module__ == "mlx_ui.engines.parakeet_nemo"
+    assert (
+        parakeet.__class__.__module__
+        == "mlx_ui.engines.parakeet_nemo_cuda_experimental"
+    )
+
+    parakeet_mlx = engine_registry.create_transcriber(
+        engine_registry.PARAKEET_TDT_V3_ENGINE,
+        implementation_id=engine_registry.PARAKEET_MLX_BACKEND,
+    )
+    assert parakeet_mlx.__class__.__module__ == "mlx_ui.engines.parakeet_mlx"
 
     assert transcriber_facade.WtmTranscriber is wtm.__class__
     assert transcriber_facade.WhisperTranscriber is whisper_cpu.__class__
     assert transcriber_facade.CohereTranscriber is cohere.__class__
+    assert transcriber_facade.ParakeetNemoCudaTranscriber is parakeet.__class__
     assert transcriber_facade.ParakeetTranscriber is parakeet.__class__
+    assert transcriber_facade.ParakeetMlxTranscriber is parakeet_mlx.__class__
 
 
 def test_claim_next_job_reserves_without_setting_started_at(tmp_path: Path) -> None:
@@ -274,13 +286,18 @@ def test_claim_next_job_reserves_without_setting_started_at(tmp_path: Path) -> N
     assert claimed.status == "running"  # mapped from reserved for UI compatibility
     assert claimed.started_at is None
     assert claimed.effective_engine is None
+    assert claimed.effective_implementation_id is None
 
     with sqlite3.connect(db_path) as connection:
         row = connection.execute(
-            "SELECT status, started_at, effective_engine FROM jobs WHERE id = ?",
+            """
+            SELECT status, started_at, effective_engine, effective_implementation_id
+            FROM jobs
+            WHERE id = ?
+            """,
             ("job-1",),
         ).fetchone()
-    assert row == ("reserved", None, None)
+    assert row == ("reserved", None, None, None)
 
     started_at = "2024-01-01T00:00:00+00:00"
     assert mark_job_running(
@@ -288,14 +305,19 @@ def test_claim_next_job_reserves_without_setting_started_at(tmp_path: Path) -> N
         "job-1",
         started_at=started_at,
         effective_engine="whisper_mlx",
+        effective_implementation_id="wtm",
     )
 
     with sqlite3.connect(db_path) as connection:
         row = connection.execute(
-            "SELECT status, started_at, effective_engine FROM jobs WHERE id = ?",
+            """
+            SELECT status, started_at, effective_engine, effective_implementation_id
+            FROM jobs
+            WHERE id = ?
+            """,
             ("job-1",),
         ).fetchone()
-    assert row == ("running", started_at, "whisper_mlx")
+    assert row == ("running", started_at, "whisper_mlx", "wtm")
 
 
 def test_claim_next_job_blocks_when_reserved_exists(tmp_path: Path) -> None:

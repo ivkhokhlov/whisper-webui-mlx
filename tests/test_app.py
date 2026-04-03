@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from mlx_ui.app import app
+import mlx_ui.engine_registry as engine_registry
 from mlx_ui.storage import sanitize_display_path
 from mlx_ui.db import JobRecord, init_db, insert_job, list_jobs
 
@@ -306,6 +307,35 @@ def test_root_settings_masks_cohere_api_key(tmp_path: Path) -> None:
     assert "*************3456" in response.text
 
 
+def test_root_settings_shows_parakeet_model_cache_readiness(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr(engine_registry, "_is_apple_silicon", lambda: True)
+    cache_root = tmp_path / "cache"
+    hf_cache = cache_root / "huggingface" / "hub"
+    (
+        hf_cache / "models--mlx-community--parakeet-tdt-0.6b-v3" / "snapshots" / "abc"
+    ).mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"engine": "parakeet_tdt_v3"}), encoding="utf-8"
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    assert "Parakeet model cache:" in response.text
+    assert "mlx-community/parakeet-tdt-0.6b-v3" in response.text
+    assert "Ready locally." in response.text
+
+
 def test_root_queue_hint_stays_local_by_default(tmp_path: Path) -> None:
     _configure_app(tmp_path)
 
@@ -462,6 +492,7 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
             language="en",
             requested_engine="cohere",
             effective_engine="cohere",
+            effective_implementation_id="cohere",
         ),
     )
 
@@ -501,6 +532,126 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
         'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French · Backend: whisper"'
         in response.text
     )
+
+
+def test_root_queue_rows_use_compact_summary(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr("mlx_ui.app.recover_running_jobs", lambda _db_path: 0)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    running_id = "job-running-row"
+    running_dir = Path(app.state.uploads_dir) / running_id
+    running_dir.mkdir(parents=True, exist_ok=True)
+    running_path = running_dir / "alpha.wav"
+    running_path.write_text("data", encoding="utf-8")
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=running_id,
+            filename="alpha.wav",
+            status="running",
+            created_at=started_at,
+            started_at=started_at,
+            upload_path=str(running_path),
+            language="en",
+            requested_engine="cohere",
+            effective_engine="cohere",
+        ),
+    )
+
+    queued_local_id = "job-queued-local"
+    queued_local_dir = Path(app.state.uploads_dir) / queued_local_id
+    queued_local_dir.mkdir(parents=True, exist_ok=True)
+    queued_local_path = queued_local_dir / "bravo.wav"
+    queued_local_path.write_text("data", encoding="utf-8")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=queued_local_id,
+            filename="bravo.wav",
+            status="queued",
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(queued_local_path),
+            language="auto",
+            requested_engine="whisper_mlx",
+        ),
+    )
+
+    queued_cloud_id = "job-queued-cloud"
+    queued_cloud_dir = Path(app.state.uploads_dir) / queued_cloud_id
+    queued_cloud_dir.mkdir(parents=True, exist_ok=True)
+    queued_cloud_path = queued_cloud_dir / "charlie.wav"
+    queued_cloud_path.write_text("data", encoding="utf-8")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=queued_cloud_id,
+            filename="charlie.wav",
+            status="queued",
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(queued_cloud_path),
+            language="fr",
+            requested_engine="cohere",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Queue #" not in response.text
+    assert "items ahead" not in response.text
+    assert 'data-started-at="' in response.text
+    assert "Elapsed …" in response.text
+    assert "1 ahead" in response.text
+    assert "2 ahead" in response.text
+    assert "Cohere cloud · EN" in response.text
+    assert "Cohere cloud · FR" in response.text
+    assert "job-icon" not in response.text
+    assert "job-chip" not in response.text
+    assert 'data-job-id="job-queued-local"' in response.text
+    assert 'data-job-id="job-queued-cloud"' in response.text
+
+
+def test_api_state_includes_effective_implementation_metadata(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-impl"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "delta.wav"
+    upload_path.write_text("data", encoding="utf-8")
+    completed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=job_id,
+            filename="delta.wav",
+            status="done",
+            created_at=completed_at,
+            completed_at=completed_at,
+            upload_path=str(upload_path),
+            language="en",
+            requested_engine="parakeet_tdt_v3",
+            effective_engine="parakeet_tdt_v3",
+            effective_implementation_id="parakeet_mlx",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/state")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["history"]) == 1
+    job_payload = payload["history"][0]
+    assert job_payload["effective_engine"] == "parakeet_tdt_v3"
+    assert job_payload["effective_implementation_id"] == "parakeet_mlx"
+    assert job_payload["ui"]["effective_implementation"]["id"] == "parakeet_mlx"
 
 
 def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
@@ -558,6 +709,30 @@ def test_live_page_shows_active_beta_when_enabled(tmp_path: Path, monkeypatch) -
     assert "Stop capture" in response.text
     assert "theoretical latency" not in response.text
     assert "~4.0s latency" not in response.text
+
+
+def test_live_page_renders_without_nemo_runtime_imports(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.delenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", raising=False)
+    monkeypatch.delenv("PARAKEET_LIVE_BETA", raising=False)
+
+    import builtins
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
+        if name.startswith("nemo") or name.startswith("torch"):
+            raise ImportError(f"Blocked import: {name}")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    with TestClient(app) as client:
+        response = client.get("/live")
+
+    assert response.status_code == 200
 
 
 def test_live_api_uses_injected_service(tmp_path: Path, monkeypatch) -> None:
@@ -815,6 +990,76 @@ def test_upload_uses_saved_default_language_when_form_omits_it(tmp_path: Path) -
     jobs = list_jobs(Path(app.state.db_path))
     assert len(jobs) == 1
     assert jobs[0].language == "fr"
+
+
+def test_upload_parakeet_defaults_to_auto_even_when_saved_default_language_is_explicit(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"engine": "parakeet_tdt_v3", "default_language": "fr"}),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/upload",
+            files=[("files", ("alpha.txt", b"one", "text/plain"))],
+        )
+
+    assert response.status_code == 200
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    assert jobs[0].language == "auto"
+
+
+def test_queue_language_select_defaults_to_auto_for_parakeet_engine(
+    tmp_path: Path,
+) -> None:
+    import re
+
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"engine": "parakeet_tdt_v3", "default_language": "fr"}),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert re.search(
+        r'id="upload-language".*?value="auto"[^>]*selected',
+        response.text,
+        re.DOTALL,
+    )
+
+
+def test_upload_parakeet_rejects_incompatible_explicit_language(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"engine": "parakeet_tdt_v3"}), encoding="utf-8"
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/upload",
+            data={"language": "zh"},
+            files=[("files", ("alpha.txt", b"one", "text/plain"))],
+        )
+
+    assert response.status_code == 200
+    assert "Parakeet TDT v3 supports automatic language detection" in response.text
+    assert "Chinese" in response.text
+    assert list_jobs(Path(app.state.db_path)) == []
 
 
 def test_delete_queued_job_removes_upload(tmp_path: Path) -> None:

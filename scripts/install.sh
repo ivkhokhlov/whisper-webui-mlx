@@ -21,12 +21,16 @@ then you can run:
 
   whisper-webui-mlx
   whisper-webui-mlx --with-cohere
+  whisper-webui-mlx --with-whisper-cpu
+  whisper-webui-mlx --with-parakeet-mlx
 
 Bootstrap expectations:
-  - macOS arm64: installs Whisper MLX as the default local backend
-  - macOS Intel: installs Whisper CPU as the default local backend
-  - --with-cohere: adds the optional Cohere SDK on either architecture
-  - Parakeet is not installed by the macOS bootstrap path
+  - macOS arm64: installs Whisper MLX as the default local backend (Parakeet MLX is an optional local engine via --with-parakeet-mlx)
+  - macOS Intel: installs Whisper CPU as the default local backend (Parakeet MLX is not supported)
+  - --with-cohere: adds the optional Cohere SDK (cloud engine) on either architecture
+  - --with-whisper-cpu: on Apple Silicon, also installs the Whisper CPU fallback
+  - --with-parakeet-mlx: Apple Silicon-only Parakeet MLX dependency profile (optional; enables selecting Parakeet locally)
+  - Legacy Parakeet NeMo/CUDA is experimental/internal only and not part of the macOS bootstrap story
 EOF
 }
 
@@ -67,10 +71,10 @@ printf '  Bin:    %s\n' "$BIN_DIR"
 if [[ "$(uname -s)" == "Darwin" ]]; then
     case "$(uname -m)" in
         arm64)
-            printf '  Engine: Apple Silicon detected; first run defaults to Whisper MLX.\n'
+            printf '  Engine: Apple Silicon detected; first run defaults to Whisper MLX (optional Parakeet MLX via --with-parakeet-mlx).\n'
             ;;
         x86_64)
-            printf '  Engine: Intel macOS detected; first run defaults to Whisper CPU.\n'
+            printf '  Engine: Intel macOS detected; first run defaults to Whisper CPU (Parakeet MLX is not supported).\n'
             ;;
         *)
             printf '  Engine: macOS detected; architecture-specific bootstrap will run on first launch.\n'
@@ -107,5 +111,7 @@ printf '\nInstallation complete.\n'
 printf 'Launcher created at: %s\n' "$LAUNCHER"
 printf '\nMake sure %s is on your PATH.\n' "$BIN_DIR"
 printf 'Then run:\n\n  whisper-webui-mlx\n\n'
-printf 'Optional cloud backend:\n\n  whisper-webui-mlx --with-cohere\n\n'
-
+printf 'Optional profiles:\n\n'
+printf '  whisper-webui-mlx --with-cohere\n'
+printf '  whisper-webui-mlx --with-whisper-cpu\n'
+printf '  whisper-webui-mlx --with-parakeet-mlx  (Apple Silicon only)\n\n'

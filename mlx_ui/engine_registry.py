@@ -3,11 +3,17 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import platform
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 import sys
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Mapping
+
+from mlx_ui.engines.parakeet_mlx_runtime import (
+    is_parakeet_mlx_runtime_usable,
+    parakeet_mlx_runtime_unavailability_reason,
+)
 
 if TYPE_CHECKING:
     from mlx_ui.transcriber import Transcriber
@@ -21,7 +27,10 @@ PARAKEET_TDT_V3_ENGINE = "parakeet_tdt_v3"
 WTM_BACKEND = "wtm"
 WHISPER_BACKEND = "whisper"
 FAKE_BACKEND = "fake"
+PARAKEET_MLX_BACKEND = "parakeet_mlx"
+PARAKEET_NEMO_CUDA_BACKEND = "parakeet_nemo_cuda"
 PARAKEET_TDT_V3_NEMO_CUDA_BACKEND = "parakeet_tdt_v3_nemo_cuda"
+PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV = "PARAKEET_NEMO_CUDA_EXPERIMENTAL"
 
 DEFAULT_ENGINE_ID = WHISPER_MLX_ENGINE
 DEFAULT_BACKEND = WTM_BACKEND
@@ -52,6 +61,12 @@ class EngineImplementation:
     backend_aliases: tuple[str, ...] = ()
 
     def is_available(self) -> bool:
+        if not self.is_implemented():
+            return False
+        if self.availability_reason is not None:
+            detail = self.availability_reason()
+            if detail:
+                return False
         return self.availability_probe()
 
     def is_implemented(self) -> bool:
@@ -77,7 +92,8 @@ class EngineProvider:
 
     def is_available(self) -> bool:
         return any(
-            implementation.is_available() for implementation in self.implementations
+            implementation.is_implemented() and implementation.is_available()
+            for implementation in self.implementations
         )
 
     def is_implemented(self) -> bool:
@@ -96,6 +112,48 @@ class EngineProvider:
     def display_implementation(self) -> EngineImplementation | None:
         if not self.implementations:
             return None
+        if self.id == PARAKEET_TDT_V3_ENGINE:
+            mlx_implementation = next(
+                (
+                    implementation
+                    for implementation in self.implementations
+                    if implementation.id == PARAKEET_MLX_BACKEND
+                ),
+                None,
+            )
+            nemo_implementation = next(
+                (
+                    implementation
+                    for implementation in self.implementations
+                    if implementation.id == PARAKEET_NEMO_CUDA_BACKEND
+                ),
+                None,
+            )
+            if _is_apple_silicon():
+                return (
+                    mlx_implementation
+                    or nemo_implementation
+                    or next(
+                        (implementation for implementation in self.implementations),
+                        None,
+                    )
+                )
+            if is_parakeet_nemo_cuda_experimental_enabled():
+                return (
+                    nemo_implementation
+                    or mlx_implementation
+                    or next(
+                        (implementation for implementation in self.implementations),
+                        None,
+                    )
+                )
+            return (
+                mlx_implementation
+                or nemo_implementation
+                or next(
+                    (implementation for implementation in self.implementations), None
+                )
+            )
         for implementation in self.implementations:
             if implementation.is_implemented():
                 return implementation
@@ -114,6 +172,15 @@ class EngineProvider:
                 if any(
                     alias.strip().lower() == normalized for alias in aliases if alias
                 ):
+                    if (
+                        self.id == PARAKEET_TDT_V3_ENGINE
+                        and implementation.id == PARAKEET_NEMO_CUDA_BACKEND
+                        and not is_parakeet_nemo_cuda_experimental_enabled()
+                    ):
+                        raise ValueError(
+                            "Parakeet NeMo/CUDA backend is experimental and disabled by default. "
+                            f"Set {PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV}=1 to enable it."
+                        )
                     if require_available and not implementation.is_available():
                         raise ValueError(
                             f"Backend '{implementation_id}' is not available for engine '{self.id}'."
@@ -184,8 +251,21 @@ def is_cohere_available() -> bool:
 
 
 def parakeet_availability_reason() -> str | None:
+    return parakeet_nemo_cuda_availability_reason()
+
+
+def parakeet_mlx_availability_reason() -> str | None:
+    return parakeet_mlx_runtime_unavailability_reason()
+
+
+def parakeet_nemo_cuda_availability_reason() -> str | None:
+    if not is_parakeet_nemo_cuda_experimental_enabled():
+        return (
+            "Parakeet NeMo/CUDA backend is experimental and disabled by default. "
+            f"Set {PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV}=1 to enable it."
+        )
     if not sys.platform.startswith("linux"):
-        return "Parakeet currently requires Linux with an NVIDIA CUDA GPU."
+        return "Parakeet NeMo CUDA backend requires Linux with an NVIDIA CUDA GPU."
     if importlib.util.find_spec("torch") is None:
         return "PyTorch is not installed."
     try:
@@ -201,6 +281,22 @@ def parakeet_availability_reason() -> str | None:
 
 def is_parakeet_available() -> bool:
     return parakeet_availability_reason() is None
+
+
+def is_parakeet_nemo_cuda_experimental_enabled(
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    if env is None:
+        env = os.environ
+    raw = str(env.get(PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_apple_silicon() -> bool:
+    return sys.platform == "darwin" and platform.machine().lower() in {
+        "arm64",
+        "aarch64",
+    }
 
 
 def _create_wtm_transcriber(options: EngineFactoryOptions) -> Transcriber:
@@ -242,6 +338,19 @@ def _create_parakeet_transcriber(options: EngineFactoryOptions) -> Transcriber:
     from mlx_ui.transcriber import ParakeetTranscriber
 
     return ParakeetTranscriber(
+        repo_id=options.repo_id,
+        chunk_duration=options.chunk_duration,
+        overlap_duration=options.overlap_duration,
+        decoding_mode=options.decoding_mode,
+        batch_size=options.batch_size,
+        output_formats=options.output_formats,
+    )
+
+
+def _create_parakeet_mlx_transcriber(options: EngineFactoryOptions) -> Transcriber:
+    from mlx_ui.transcriber import ParakeetMlxTranscriber
+
+    return ParakeetMlxTranscriber(
         repo_id=options.repo_id,
         chunk_duration=options.chunk_duration,
         overlap_duration=options.overlap_duration,
@@ -325,20 +434,33 @@ _ENGINE_PROVIDERS: tuple[EngineProvider, ...] = (
         mode="local",
         implementations=(
             EngineImplementation(
-                id=PARAKEET_TDT_V3_NEMO_CUDA_BACKEND,
+                id=PARAKEET_MLX_BACKEND,
+                availability_probe=lambda: is_parakeet_mlx_runtime_usable(),
+                factory=_create_parakeet_mlx_transcriber,
+                compatibility_note="Parakeet MLX backend requires Apple Silicon and the optional 'parakeet-mlx' dependency.",
+                availability_reason=lambda: parakeet_mlx_availability_reason(),
+                disabled_label="Requires install",
+                backend_aliases=(PARAKEET_MLX_BACKEND,),
+            ),
+            EngineImplementation(
+                id=PARAKEET_NEMO_CUDA_BACKEND,
                 availability_probe=lambda: is_parakeet_available(),
                 factory=_create_parakeet_transcriber,
                 compatibility_note=(
-                    "Parakeet requires Linux with CUDA, PyTorch, and NVIDIA NeMo ASR."
+                    "Experimental: Parakeet NeMo/CUDA backend requires Linux with CUDA, PyTorch, and NVIDIA NeMo ASR."
                 ),
                 availability_reason=lambda: parakeet_availability_reason(),
-                disabled_label="Requires CUDA",
-                backend_aliases=(PARAKEET_TDT_V3_ENGINE, "parakeet"),
+                disabled_label="Experimental CUDA",
+                backend_aliases=(PARAKEET_TDT_V3_NEMO_CUDA_BACKEND,),
             ),
         ),
         selectable=True,
     ),
 )
+
+_PROVIDER_ALIASES = {
+    "parakeet": PARAKEET_TDT_V3_ENGINE,
+}
 
 _PROVIDERS_BY_ID = {provider.id: provider for provider in _ENGINE_PROVIDERS}
 _IMPLEMENTATIONS_BY_BACKEND: dict[str, tuple[EngineProvider, EngineImplementation]] = {}
@@ -394,9 +516,18 @@ def resolve_backend_implementation(
     if not normalized:
         return None
     resolved = _IMPLEMENTATIONS_BY_BACKEND.get(normalized)
-    if resolved is None:
-        return None
-    provider, implementation = resolved
+    provider: EngineProvider | None = None
+    implementation: EngineImplementation | None = None
+    if resolved is not None:
+        provider, implementation = resolved
+    else:
+        provider_id = _PROVIDER_ALIASES.get(normalized, normalized)
+        provider = get_engine_provider(provider_id)
+        if provider is None:
+            return None
+        implementation = provider.display_implementation()
+        if implementation is None:
+            return None
     if not include_hidden and not provider.selectable:
         return None
     return provider, implementation
@@ -485,8 +616,15 @@ def create_transcriber(
 def supported_backend_names() -> tuple[str, ...]:
     names: list[str] = []
     for provider in _ENGINE_PROVIDERS:
+        names.append(provider.id)
         for implementation in provider.implementations:
             if implementation.factory is None:
+                continue
+            if (
+                provider.id == PARAKEET_TDT_V3_ENGINE
+                and implementation.id == PARAKEET_NEMO_CUDA_BACKEND
+                and not is_parakeet_nemo_cuda_experimental_enabled()
+            ):
                 continue
             names.append(implementation.id)
             if provider.id in implementation.backend_aliases:

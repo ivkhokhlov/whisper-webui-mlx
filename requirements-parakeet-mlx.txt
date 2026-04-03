@@ -1,0 +1,11 @@
+# Apple Silicon optional Parakeet profile (MLX backend).
+# This does NOT make Parakeet the default engine; it only installs the minimal
+# Python dependencies needed for an MLX-based Parakeet implementation.
+#
+# Requirements:
+#   - macOS arm64 (Apple Silicon)
+#   - ffmpeg (the bootstrap script installs it via Homebrew)
+parakeet-mlx>=0.5,<1.0
+huggingface-hub>=0.30,<1.0
+mlx>=0.29,<1.0
+safetensors>=0.4,<1.0

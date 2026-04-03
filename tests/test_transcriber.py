@@ -12,7 +12,8 @@ from mlx_ui.db import JobRecord
 import mlx_ui.transcriber as transcriber_module
 from mlx_ui.transcriber import (
     CohereTranscriber,
-    ParakeetTranscriber,
+    ParakeetMlxTranscriber,
+    ParakeetNemoCudaTranscriber,
     WhisperTranscriber,
     WtmTranscriber,
 )
@@ -96,6 +97,42 @@ class FakeParakeetFactory:
 
     def from_pretrained(self, repo_id: str):  # type: ignore[no-untyped-def]
         self.calls.append(repo_id)
+        return self.model
+
+
+class FakeParakeetMlxModel:
+    def __init__(self, output: object) -> None:
+        self.output = output
+        self.calls: list[dict[str, object]] = []
+
+    def transcribe(
+        self,
+        source_path: str,
+        *,
+        chunk_duration: float | None = None,
+        overlap_duration: float | None = None,
+        decoding_mode: str | None = None,
+        batch_size: int | None = None,
+    ) -> object:
+        self.calls.append(
+            {
+                "source_path": source_path,
+                "chunk_duration": chunk_duration,
+                "overlap_duration": overlap_duration,
+                "decoding_mode": decoding_mode,
+                "batch_size": batch_size,
+            }
+        )
+        return self.output
+
+
+class FakeParakeetMlxRuntime:
+    def __init__(self, model: FakeParakeetMlxModel) -> None:
+        self.model = model
+        self.calls: list[str] = []
+
+    def from_pretrained(self, model_id: str) -> FakeParakeetMlxModel:
+        self.calls.append(model_id)
         return self.model
 
 
@@ -292,7 +329,7 @@ def test_whisper_transcriber_skips_timed_outputs_when_backend_has_no_timing(
     assert not (results_dir / job.id / "sample.vtt").exists()
 
 
-def test_parakeet_transcriber_uses_python_api_and_writes_outputs(
+def test_parakeet_nemo_cuda_transcriber_uses_python_api_and_writes_outputs(
     tmp_path: Path, monkeypatch
 ) -> None:
     job = _make_job(tmp_path)
@@ -326,7 +363,7 @@ def test_parakeet_transcriber_uses_python_api_and_writes_outputs(
         lambda: (fake_nemo_asr, _fake_open_dict),
     )
 
-    transcriber = ParakeetTranscriber(
+    transcriber = ParakeetNemoCudaTranscriber(
         output_formats=("txt", "srt", "vtt", "json"),
         batch_size=4,
     )
@@ -349,7 +386,7 @@ def test_parakeet_transcriber_uses_python_api_and_writes_outputs(
     assert model.decoding_strategy.strategy == "greedy_batch"
 
 
-def test_parakeet_transcriber_lazy_loads_and_reuses_model(
+def test_parakeet_nemo_cuda_transcriber_lazy_loads_and_reuses_model(
     tmp_path: Path, monkeypatch
 ) -> None:
     job1 = _make_job_with_id(tmp_path, "job1")
@@ -364,7 +401,7 @@ def test_parakeet_transcriber_lazy_loads_and_reuses_model(
         lambda: (fake_nemo_asr, _fake_open_dict),
     )
 
-    transcriber = ParakeetTranscriber()
+    transcriber = ParakeetNemoCudaTranscriber()
     transcriber.transcribe(job1, results_dir)
     transcriber.transcribe(job2, results_dir)
 
@@ -372,7 +409,7 @@ def test_parakeet_transcriber_lazy_loads_and_reuses_model(
     assert len(model.calls) == 2
 
 
-def test_parakeet_transcriber_raises_clear_error_when_runtime_missing(
+def test_parakeet_nemo_cuda_transcriber_raises_clear_error_when_runtime_missing(
     tmp_path: Path, monkeypatch
 ) -> None:
     job = _make_job(tmp_path)
@@ -384,11 +421,170 @@ def test_parakeet_transcriber_raises_clear_error_when_runtime_missing(
 
     monkeypatch.setattr(transcriber_module, "_load_parakeet_runtime", fail_runtime)
 
-    transcriber = ParakeetTranscriber()
+    transcriber = ParakeetNemoCudaTranscriber()
 
     with pytest.raises(
         RuntimeError,
         match="Parakeet backend cannot run: NVIDIA NeMo ASR is not installed.",
+    ):
+        transcriber.transcribe(job, tmp_path / "results")
+
+
+def test_parakeet_mlx_transcriber_uses_python_api_and_writes_outputs(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    results_dir = tmp_path / "results"
+    model_output = {
+        "text": "hello world",
+        "language": "en",
+        "segments": [{"id": 0, "text": "hello world", "start": 0.0, "end": 1.0}],
+        "words": [
+            {"word": "hello", "start": 0.0, "end": 0.5},
+            {"word": "world", "start": 0.5, "end": 1.0},
+        ],
+    }
+    model = FakeParakeetMlxModel(model_output)
+    runtime = FakeParakeetMlxRuntime(model)
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_mlx_runtime",
+        lambda: runtime.from_pretrained,
+    )
+
+    transcriber = ParakeetMlxTranscriber(
+        output_formats=("txt", "srt", "vtt", "json"),
+    )
+    result_path = transcriber.transcribe(job, results_dir)
+
+    assert runtime.calls == ["mlx-community/parakeet-tdt-0.6b-v3"]
+    assert result_path == results_dir / job.id / "sample.txt"
+    assert result_path.read_text(encoding="utf-8") == "hello world\n"
+    assert (results_dir / job.id / "sample.srt").is_file()
+    assert (results_dir / job.id / "sample.vtt").is_file()
+    payload = json.loads((results_dir / job.id / "sample.json").read_text("utf-8"))
+    assert payload["engine_id"] == "parakeet_tdt_v3"
+    assert payload["model_id"] == "mlx-community/parakeet-tdt-0.6b-v3"
+    assert payload["language"] == "en"
+    assert model.calls[0]["source_path"] == str(Path(job.upload_path))
+    assert model.calls[0]["chunk_duration"] == 30.0
+    assert model.calls[0]["overlap_duration"] == 5.0
+    assert model.calls[0]["decoding_mode"] == "greedy"
+    assert model.calls[0]["batch_size"] == 1
+
+
+def test_parakeet_mlx_transcriber_lazy_loads_and_reuses_model(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job1 = _make_job_with_id(tmp_path, "job1")
+    job2 = _make_job_with_id(tmp_path, "job2")
+    results_dir = tmp_path / "results"
+    model = FakeParakeetMlxModel({"text": "hello"})
+    runtime = FakeParakeetMlxRuntime(model)
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_mlx_runtime",
+        lambda: runtime.from_pretrained,
+    )
+
+    transcriber = ParakeetMlxTranscriber()
+    transcriber.transcribe(job1, results_dir)
+    transcriber.transcribe(job2, results_dir)
+
+    assert runtime.calls == ["mlx-community/parakeet-tdt-0.6b-v3"]
+    assert len(model.calls) == 2
+
+
+def test_parakeet_mlx_transcriber_passes_beam_decoding_config_when_supported(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    job = _make_job(tmp_path)
+    results_dir = tmp_path / "results"
+    decoding_configs: list[object] = []
+
+    class BeamModel:
+        def transcribe(
+            self,
+            source_path: str,
+            *,
+            decoding_config=None,
+            **_kwargs,  # type: ignore[no-untyped-def]
+        ) -> object:
+            decoding_configs.append(decoding_config)
+            return {"text": "hello"}
+
+    model = BeamModel()
+    runtime = FakeParakeetMlxRuntime(model)  # type: ignore[arg-type]
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_mlx_runtime",
+        lambda: runtime.from_pretrained,
+    )
+
+    import mlx_ui.engines.parakeet_mlx as parakeet_mlx_engine
+
+    sentinel = object()
+    monkeypatch.setattr(
+        parakeet_mlx_engine, "parakeet_mlx_supports_beam_decoding", lambda: True
+    )
+    monkeypatch.setattr(
+        parakeet_mlx_engine,
+        "build_parakeet_mlx_decoding_config",
+        lambda _mode: sentinel,
+    )
+
+    transcriber = ParakeetMlxTranscriber(decoding_mode="beam")
+    transcriber.transcribe(job, results_dir)
+
+    assert decoding_configs == [sentinel]
+
+
+def test_parakeet_mlx_transcriber_rejects_beam_when_runtime_does_not_support_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    job = _make_job(tmp_path)
+    results_dir = tmp_path / "results"
+    model = FakeParakeetMlxModel({"text": "hello"})
+    runtime = FakeParakeetMlxRuntime(model)
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_mlx_runtime",
+        lambda: runtime.from_pretrained,
+    )
+    import mlx_ui.engines.parakeet_mlx as parakeet_mlx_engine
+
+    monkeypatch.setattr(
+        parakeet_mlx_engine, "parakeet_mlx_supports_beam_decoding", lambda: False
+    )
+
+    transcriber = ParakeetMlxTranscriber(decoding_mode="beam")
+
+    with pytest.raises(
+        RuntimeError,
+        match="Beam decoding requested",
+    ):
+        transcriber.transcribe(job, results_dir)
+
+
+def test_parakeet_mlx_transcriber_raises_clear_error_when_runtime_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+
+    def fail_runtime():  # type: ignore[no-untyped-def]
+        raise RuntimeError(
+            "Parakeet MLX backend cannot run: The optional 'parakeet-mlx' dependency is not installed."
+        )
+
+    monkeypatch.setattr(transcriber_module, "_load_parakeet_mlx_runtime", fail_runtime)
+
+    transcriber = ParakeetMlxTranscriber()
+
+    with pytest.raises(
+        RuntimeError,
+        match="Parakeet MLX backend cannot run: The optional 'parakeet-mlx' dependency is not installed.",
     ):
         transcriber.transcribe(job, tmp_path / "results")
 

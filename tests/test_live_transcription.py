@@ -1,92 +1,98 @@
-from mlx_ui.live_transcription import (
-    LiveSessionNotFound,
-    LiveTranscriptionUpdate,
-    LiveTranscriptionService,
-    ParakeetLiveConfig,
-)
+import types
+
+from mlx_ui.engines.parakeet_mlx_live_runtime import ParakeetMlxLiveRuntime
+from mlx_ui.live_transcription import ParakeetLiveConfig, ParakeetMlxLiveBackend
 
 
-class FakeSession:
-    def __init__(self, session_id: str, *, model_id: str) -> None:
-        self.session_id = session_id
-        self.model_id = model_id
-        self.status = "ready"
-        self.transcript = ""
-        self.received_chunks = 0
-        self.processed_windows = 0
-        self.error = None
+def test_parakeet_mlx_live_session_streams_text(monkeypatch) -> None:
+    class FakeMx:
+        float32 = "float32"
 
-    def snapshot(self):  # type: ignore[no-untyped-def]
-        return _update_from_session(self)
+        def array(self, values, dtype=None):  # type: ignore[no-untyped-def]
+            return {"values": list(values), "dtype": dtype}
 
-    def push_chunk(self, chunk_bytes: bytes, *, content_type: str | None):  # type: ignore[no-untyped-def]
-        self.status = "running"
-        self.received_chunks += 1
-        self.processed_windows += 1
-        self.transcript = f"{content_type}:{chunk_bytes.decode('utf-8')}"
-        return _update_from_session(self)
+    class StreamingParakeet:
+        def __init__(self, model) -> None:
+            self._chunks = 0
 
-    def finish(self):  # type: ignore[no-untyped-def]
-        self.status = "stopped"
-        return _update_from_session(self)
+        def add_audio(self, audio) -> None:  # type: ignore[no-untyped-def]
+            self._chunks += 1
 
-    def mark_error(self, message: str) -> None:
-        self.status = "error"
-        self.error = message
+        @property
+        def result(self):  # type: ignore[no-untyped-def]
+            return types.SimpleNamespace(text=f"chunks={self._chunks}")
 
+        def finalize(self) -> None:
+            return None
 
-def _update_from_session(session: FakeSession):  # type: ignore[no-untyped-def]
-    return LiveTranscriptionUpdate(
-        session_id=session.session_id,
-        status=session.status,
-        transcript=session.transcript,
-        received_chunks=session.received_chunks,
-        processed_windows=session.processed_windows,
-        engine_id="parakeet_tdt_v3",
-        engine_label="Parakeet TDT v3",
-        model_id=session.model_id,
-        note="Experimental local-only Parakeet streaming.",
-        error=session.error,
+    runtime = ParakeetMlxLiveRuntime(
+        from_pretrained=lambda _: object(),
+        StreamingParakeet=StreamingParakeet,
+        mx=FakeMx(),
     )
 
+    backend = ParakeetMlxLiveBackend(
+        ParakeetLiveConfig(repo_id="mlx-community/parakeet-tdt-0.6b-v3"),
+        runtime_loader=lambda: runtime,
+    )
+    monkeypatch.setattr(
+        backend,
+        "decode_chunk",
+        lambda *_args, **_kwargs: [0.1, -0.2, 0.3],
+    )
 
-def test_live_transcription_service_reuses_backend_for_same_config() -> None:
-    created_models: list[str] = []
+    session = backend.create_session("live-1")
+    first = session.push_chunk(b"ignored", content_type="audio/webm")
+    second = session.push_chunk(b"ignored", content_type="audio/webm")
+    stopped = session.finish()
 
-    class FakeBackend:
-        def __init__(self, config: ParakeetLiveConfig) -> None:
-            created_models.append(config.repo_id)
-            self.config = config
+    assert first.status == "running"
+    assert first.transcript == "chunks=1"
+    assert first.received_chunks == 1
+    assert first.processed_windows == 1
 
-        def create_session(self, session_id: str):  # type: ignore[no-untyped-def]
-            return FakeSession(session_id, model_id=self.config.repo_id)
+    assert second.transcript == "chunks=2"
+    assert second.received_chunks == 2
+    assert second.processed_windows == 2
 
-    service = LiveTranscriptionService(backend_factory=FakeBackend)
-    config = ParakeetLiveConfig(repo_id="nvidia/parakeet-tdt-0.6b-v3")
-
-    first = service.open_session(config)
-    second = service.open_session(config)
-    service.append_chunk(first.session_id, b"one", content_type="audio/webm")
-    stopped = service.stop_session(second.session_id)
-
-    assert created_models == ["nvidia/parakeet-tdt-0.6b-v3"]
-    assert first.status == "ready"
     assert stopped.status == "stopped"
 
 
-def test_live_transcription_service_rejects_unknown_session() -> None:
-    class FakeBackend:
-        def __init__(self, config: ParakeetLiveConfig) -> None:
-            self.config = config
+def test_parakeet_mlx_live_session_skips_empty_audio(monkeypatch) -> None:
+    class FakeMx:
+        def array(self, values, dtype=None):  # type: ignore[no-untyped-def]
+            return list(values)
 
-        def create_session(self, session_id: str):  # type: ignore[no-untyped-def]
-            return FakeSession(session_id, model_id=self.config.repo_id)
+    class StreamingParakeet:
+        def __init__(self, model) -> None:
+            self._chunks = 0
 
-    service = LiveTranscriptionService(backend_factory=FakeBackend)
+        def add_audio(self, audio) -> None:  # type: ignore[no-untyped-def]
+            self._chunks += 1
 
-    try:
-        service.stop_session("missing")
-    except LiveSessionNotFound as exc:
-        assert str(exc) == "'missing'"
-    else:  # pragma: no cover - defensive
-        raise AssertionError("Expected LiveSessionNotFound")
+        @property
+        def result(self):  # type: ignore[no-untyped-def]
+            return types.SimpleNamespace(text=f"chunks={self._chunks}")
+
+    runtime = ParakeetMlxLiveRuntime(
+        from_pretrained=lambda _: object(),
+        StreamingParakeet=StreamingParakeet,
+        mx=FakeMx(),
+    )
+
+    backend = ParakeetMlxLiveBackend(
+        ParakeetLiveConfig(repo_id="mlx-community/parakeet-tdt-0.6b-v3"),
+        runtime_loader=lambda: runtime,
+    )
+    monkeypatch.setattr(
+        backend,
+        "decode_chunk",
+        lambda *_args, **_kwargs: [],
+    )
+
+    session = backend.create_session("live-1")
+    update = session.push_chunk(b"ignored", content_type="audio/webm")
+
+    assert update.received_chunks == 1
+    assert update.processed_windows == 0
+    assert update.transcript == ""

@@ -24,10 +24,21 @@ def _configure_app(tmp_path: Path) -> None:
 
 def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     _configure_app(tmp_path)
+    import mlx_ui.settings_schema as settings_schema
+
+    monkeypatch.setattr(
+        settings_schema, "parakeet_mlx_supports_beam_decoding", lambda: False
+    )
+    monkeypatch.delenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", raising=False)
     monkeypatch.delenv("DISABLE_UPDATE_CHECK", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("WTM_QUICK", raising=False)
     monkeypatch.delenv("TRANSCRIBER_BACKEND", raising=False)
+    monkeypatch.delenv("WHISPER_CACHE_DIR", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(
         engine_registry,
         "cohere_availability_reason",
@@ -36,7 +47,12 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         engine_registry,
         "parakeet_availability_reason",
-        lambda: "Parakeet currently requires Linux with an NVIDIA CUDA GPU.",
+        lambda: "Parakeet NeMo CUDA backend requires Linux with an NVIDIA CUDA GPU.",
+    )
+    monkeypatch.setattr(
+        engine_registry,
+        "parakeet_mlx_availability_reason",
+        lambda: "The optional 'parakeet-mlx' dependency is not installed.",
     )
 
     with TestClient(app) as client:
@@ -54,7 +70,7 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     assert settings["output_formats"] == ["txt"]
     assert settings["default_language"] == "auto"
     assert settings["cohere_model"] == "cohere-transcribe-03-2026"
-    assert settings["parakeet_model"] == "nvidia/parakeet-tdt-0.6b-v3"
+    assert settings["parakeet_model"] == "mlx-community/parakeet-tdt-0.6b-v3"
     assert settings["parakeet_chunk_duration"] == 30
     assert settings["parakeet_overlap_duration"] == 5
     assert settings["parakeet_decoding_mode"] == "greedy"
@@ -78,22 +94,34 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
         "id": "auto",
         "label": "Detect automatically",
     }
-    assert payload["options"]["parakeet_decoding_modes"] == ["greedy", "beam"]
+    assert payload["options"]["parakeet_decoding_modes"] == ["greedy"]
+    assert payload["options"]["parakeet"]["supports_beam_decoding"] is False
+    assert payload["options"]["parakeet"]["implementation_id"] == "parakeet_mlx"
+    assert (
+        payload["options"]["parakeet"]["effective_model_id"]
+        == "mlx-community/parakeet-tdt-0.6b-v3"
+    )
+    assert payload["options"]["parakeet"]["batch_size_control_active"] is False
+    assert payload["options"]["parakeet"]["model_note"] is None
 
     engines = {engine["id"]: engine for engine in payload["options"]["engines"]}
     assert engines["whisper_mlx"]["configured"] is True
     assert engines["whisper_mlx"]["local"] is True
+    assert engines["whisper_mlx"]["implementation_id"] == "wtm"
+    assert engines["whisper_mlx"]["implementation"]["id"] == "wtm"
     assert engines["cohere"]["available"] is False
     assert engines["cohere"]["cloud"] is True
+    assert engines["cohere"]["implementation_id"] == "cohere"
     assert (
         engines["cohere"]["reason"]
         == "The optional 'cohere' Python SDK is not installed."
     )
     assert engines["parakeet_tdt_v3"]["available"] is False
     assert engines["parakeet_tdt_v3"]["local"] is True
+    assert engines["parakeet_tdt_v3"]["implementation_id"] == "parakeet_mlx"
     assert (
         engines["parakeet_tdt_v3"]["reason"]
-        == "Parakeet currently requires Linux with an NVIDIA CUDA GPU."
+        == "The optional 'parakeet-mlx' dependency is not installed."
     )
     assert payload["cohere_snapshot"]["configured"] is False
     assert payload["cohere_snapshot"]["available"] is False
@@ -107,7 +135,7 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     assert payload["local_models"]["whisper"]["configured_model_present"] is False
     assert (
         payload["local_models"]["parakeet"]["configured_model"]
-        == "nvidia/parakeet-tdt-0.6b-v3"
+        == "mlx-community/parakeet-tdt-0.6b-v3"
     )
     assert payload["local_models"]["parakeet"]["configured_model_present"] is False
     assert payload["local_models"]["selected"] is None
@@ -165,7 +193,7 @@ def test_settings_update_persists_parakeet_config(tmp_path: Path) -> None:
                 "parakeet_model": "nvidia/parakeet-tdt-0.6b-v3",
                 "parakeet_chunk_duration": 45,
                 "parakeet_overlap_duration": 8,
-                "parakeet_decoding_mode": "beam",
+                "parakeet_decoding_mode": "greedy",
                 "parakeet_batch_size": 2,
             },
         )
@@ -177,7 +205,7 @@ def test_settings_update_persists_parakeet_config(tmp_path: Path) -> None:
     assert settings["parakeet_model"] == "nvidia/parakeet-tdt-0.6b-v3"
     assert settings["parakeet_chunk_duration"] == 45
     assert settings["parakeet_overlap_duration"] == 8
-    assert settings["parakeet_decoding_mode"] == "beam"
+    assert settings["parakeet_decoding_mode"] == "greedy"
     assert settings["parakeet_batch_size"] == 2
     assert payload["sources"]["parakeet_model"] == "file"
     assert payload["sources"]["parakeet_chunk_duration"] == "file"
@@ -190,8 +218,52 @@ def test_settings_update_persists_parakeet_config(tmp_path: Path) -> None:
     assert persisted["parakeet_model"] == "nvidia/parakeet-tdt-0.6b-v3"
     assert persisted["parakeet_chunk_duration"] == 45
     assert persisted["parakeet_overlap_duration"] == 8
-    assert persisted["parakeet_decoding_mode"] == "beam"
+    assert persisted["parakeet_decoding_mode"] == "greedy"
     assert persisted["parakeet_batch_size"] == 2
+
+
+def test_settings_rejects_beam_mode_when_unsupported(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    import mlx_ui.settings_schema as settings_schema
+
+    monkeypatch.setattr(
+        settings_schema, "parakeet_mlx_supports_beam_decoding", lambda: False
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings",
+            json={"parakeet_decoding_mode": "beam"},
+        )
+
+    assert response.status_code == 422
+    assert any(
+        "parakeet_decoding_mode must be one of" in item
+        for item in response.json()["detail"]
+    )
+
+
+def test_settings_allows_beam_mode_when_supported(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+    import mlx_ui.settings_schema as settings_schema
+
+    monkeypatch.setattr(
+        settings_schema, "parakeet_mlx_supports_beam_decoding", lambda: True
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/settings",
+            json={"parakeet_decoding_mode": "beam"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["settings"]["parakeet_decoding_mode"] == "beam"
+    assert payload["options"]["parakeet"]["supports_beam_decoding"] is True
+    assert payload["options"]["parakeet_decoding_modes"] == ["greedy", "beam"]
 
 
 def test_settings_allows_parakeet_engine_selection(tmp_path: Path) -> None:
@@ -362,10 +434,16 @@ def test_runtime_metadata_explains_unavailable_parakeet_environment(
     tmp_path: Path, monkeypatch
 ) -> None:
     _configure_app(tmp_path)
+    monkeypatch.delenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", raising=False)
     monkeypatch.setattr(
         engine_registry,
         "parakeet_availability_reason",
-        lambda: "Parakeet currently requires Linux with an NVIDIA CUDA GPU.",
+        lambda: "Parakeet NeMo CUDA backend requires Linux with an NVIDIA CUDA GPU.",
+    )
+    monkeypatch.setattr(
+        engine_registry,
+        "parakeet_mlx_availability_reason",
+        lambda: "The optional 'parakeet-mlx' dependency is not installed.",
     )
     settings_path = tmp_path / "data" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,13 +456,13 @@ def test_runtime_metadata_explains_unavailable_parakeet_environment(
     engines = {engine["id"]: engine for engine in metadata["about"]["engines"]}
 
     assert metadata["about"]["configured_engine"]["id"] == "parakeet_tdt_v3"
-    assert (
-        metadata["about"]["configured_engine"]["reason"]
-        == "Parakeet currently requires Linux with an NVIDIA CUDA GPU."
+    expected_parakeet_reason = (
+        "The optional 'parakeet-mlx' dependency is not installed."
     )
+    assert metadata["about"]["configured_engine"]["reason"] == expected_parakeet_reason
     assert (
         metadata["about"]["engine_note"]
-        == "Parakeet TDT v3 is unavailable. Parakeet currently requires Linux with an NVIDIA CUDA GPU."
+        == f"Parakeet TDT v3 is unavailable. {expected_parakeet_reason}"
     )
     assert engines["parakeet_tdt_v3"]["configured"] is True
     assert engines["parakeet_tdt_v3"]["available"] is False
@@ -396,10 +474,15 @@ def test_live_snapshot_reports_flag_and_environment_requirements(
 ) -> None:
     _configure_app(tmp_path)
     monkeypatch.delenv(PARAKEET_LIVE_BETA_ENV, raising=False)
+    monkeypatch.delenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", raising=False)
+    monkeypatch.setattr("mlx_ui.live_backend_runtime.sys.platform", "darwin")
     monkeypatch.setattr(
-        engine_registry,
-        "parakeet_availability_reason",
-        lambda: "Parakeet currently requires Linux with an NVIDIA CUDA GPU.",
+        "mlx_ui.runtime_metadata.shutil.which",
+        lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
+    )
+    monkeypatch.setattr(
+        "mlx_ui.live_backend_runtime.parakeet_mlx_live_runtime_unavailability_reason",
+        lambda: "The optional 'parakeet-mlx' dependency is not installed.",
     )
 
     disabled = build_live_transcription_snapshot(base_dir=tmp_path)
@@ -414,7 +497,7 @@ def test_live_snapshot_reports_flag_and_environment_requirements(
     assert enabled["enabled"] is True
     assert enabled["supported"] is False
     assert enabled["active"] is False
-    assert "Parakeet currently requires Linux with an NVIDIA CUDA GPU" in str(
+    assert "The optional 'parakeet-mlx' dependency is not installed" in str(
         enabled["reason"]
     )
 
@@ -520,6 +603,37 @@ def test_runtime_metadata_reports_missing_selected_local_model_download_need(
     assert selected["engine_id"] == "parakeet_tdt_v3"
     assert selected["present"] is False
     assert "may download on first use" in selected["note"]
+
+
+def test_runtime_metadata_reports_parakeet_mlx_default_model_cache_readiness(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr(engine_registry, "_is_apple_silicon", lambda: True)
+    monkeypatch.setattr(
+        engine_registry, "parakeet_mlx_availability_reason", lambda: None
+    )
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"engine": "parakeet_tdt_v3"}), encoding="utf-8"
+    )
+    cache_root = tmp_path / "cache"
+    hf_cache = cache_root / "huggingface" / "hub"
+    (
+        hf_cache / "models--mlx-community--parakeet-tdt-0.6b-v3" / "snapshots" / "abc"
+    ).mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
+
+    metadata = build_runtime_metadata(base_dir=tmp_path)
+
+    parakeet = metadata["local_models"]["parakeet"]
+    assert parakeet["configured_model"] == "mlx-community/parakeet-tdt-0.6b-v3"
+    assert parakeet["configured_model_present"] is True
+    assert "present locally" in parakeet["note"]
 
 
 def test_clear_storage_paths(tmp_path: Path) -> None:

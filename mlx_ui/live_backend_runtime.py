@@ -1,41 +1,81 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+import os
+import sys
+from typing import Literal, Mapping
+
+from mlx_ui.engine_registry import (
+    PARAKEET_MLX_BACKEND,
+    PARAKEET_NEMO_CUDA_BACKEND,
+    PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV,
+    is_parakeet_nemo_cuda_experimental_enabled,
+)
+from mlx_ui.engines.parakeet_mlx_live_runtime import (
+    parakeet_mlx_live_runtime_unavailability_reason,
+)
+
+LiveBackendState = Literal["supported", "experimental", "unavailable"]
 
 
 @dataclass(frozen=True)
-class ParakeetLiveRuntime:
-    torch: object
-    ContextSize: type
-    StreamingBatchedAudioBuffer: type
-    batched_hyps_to_hypotheses: Callable[..., list[object]]
+class LiveBackendResolution:
+    state: LiveBackendState
+    implementation_id: str | None
+    reason: str | None
 
 
-def load_parakeet_live_runtime():
-    from mlx_ui.engines.parakeet_nemo import load_parakeet_runtime
+def resolve_parakeet_live_backend(
+    *,
+    env: Mapping[str, str] | None = None,
+) -> LiveBackendResolution:
+    if env is None:
+        env = os.environ
 
-    nemo_asr, open_dict = load_parakeet_runtime()
-    try:
-        import torch  # type: ignore[import-not-found]
-        from nemo.collections.asr.parts.utils.rnnt_utils import (  # type: ignore[import-not-found]
-            batched_hyps_to_hypotheses,
+    if sys.platform == "darwin":
+        reason = parakeet_mlx_live_runtime_unavailability_reason()
+        if reason is None:
+            return LiveBackendResolution(
+                state="supported",
+                implementation_id=PARAKEET_MLX_BACKEND,
+                reason=None,
+            )
+        return LiveBackendResolution(
+            state="unavailable",
+            implementation_id=PARAKEET_MLX_BACKEND,
+            reason=reason,
         )
-        from nemo.collections.asr.parts.utils.streaming_utils import (  # type: ignore[import-not-found]
-            ContextSize,
-            StreamingBatchedAudioBuffer,
+
+    if not is_parakeet_nemo_cuda_experimental_enabled(env):
+        return LiveBackendResolution(
+            state="unavailable",
+            implementation_id=None,
+            reason=(
+                "Parakeet live beta currently targets Apple Silicon (arm64) on macOS. "
+                f"Internal Linux CUDA backends can be enabled with {PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV}=1."
+            ),
         )
-    except Exception as exc:
-        raise RuntimeError(
-            "Parakeet live beta requires NVIDIA NeMo streaming utilities and PyTorch."
-        ) from exc
-    return (
-        nemo_asr,
-        open_dict,
-        ParakeetLiveRuntime(
-            torch=torch,
-            ContextSize=ContextSize,
-            StreamingBatchedAudioBuffer=StreamingBatchedAudioBuffer,
-            batched_hyps_to_hypotheses=batched_hyps_to_hypotheses,
-        ),
+
+    nemo_reason = _parakeet_nemo_cuda_live_unavailability_reason(env)
+    if nemo_reason is not None:
+        return LiveBackendResolution(
+            state="unavailable",
+            implementation_id=PARAKEET_NEMO_CUDA_BACKEND,
+            reason=nemo_reason,
+        )
+
+    return LiveBackendResolution(
+        state="experimental",
+        implementation_id=PARAKEET_NEMO_CUDA_BACKEND,
+        reason=None,
     )
+
+
+def _parakeet_nemo_cuda_live_unavailability_reason(
+    env: Mapping[str, str],
+) -> str | None:
+    from mlx_ui.engines.parakeet_nemo_cuda_live_runtime_experimental import (
+        parakeet_nemo_cuda_live_runtime_unavailability_reason,
+    )
+
+    return parakeet_nemo_cuda_live_runtime_unavailability_reason(env=env)

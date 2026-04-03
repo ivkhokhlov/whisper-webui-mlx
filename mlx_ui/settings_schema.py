@@ -9,6 +9,7 @@ from mlx_ui.engine_registry import (
     get_selectable_engine_ids,
     list_engine_providers,
 )
+from mlx_ui.engines.parakeet_mlx_runtime import parakeet_mlx_supports_beam_decoding
 from mlx_ui.languages import DEFAULT_LANGUAGE as DEFAULT_JOB_LANGUAGE
 from mlx_ui.languages import parse_language
 from mlx_ui.transcriber import DEFAULT_COHERE_MODEL, DEFAULT_WHISPER_MODEL
@@ -22,11 +23,19 @@ ENGINE_CHOICES = tuple(provider.id for provider in list_engine_providers())
 CONFIGURABLE_ENGINE_CHOICES = get_selectable_engine_ids()
 COHERE_PRODUCT_NOTE = "Cohere runs in the cloud and needs network access. It is not a local/offline engine."
 PARAKEET_DECODING_CHOICES = ("greedy", "beam")
-DEFAULT_PARAKEET_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
+DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+LEGACY_PARAKEET_NEMO_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 DEFAULT_PARAKEET_CHUNK_DURATION = 30
 DEFAULT_PARAKEET_OVERLAP_DURATION = 5
 DEFAULT_PARAKEET_DECODING_MODE = "greedy"
 DEFAULT_PARAKEET_BATCH_SIZE = 1
+
+
+def supported_parakeet_decoding_modes() -> tuple[str, ...]:
+    if parakeet_mlx_supports_beam_decoding():
+        return PARAKEET_DECODING_CHOICES
+    return ("greedy",)
+
 
 DEFAULT_SETTINGS: dict[str, object] = {
     "engine": DEFAULT_ENGINE_ID,
@@ -226,8 +235,12 @@ def validate_settings_payload(payload: object) -> tuple[dict[str, object], list[
         value = normalize_parakeet_decoding_mode(payload["parakeet_decoding_mode"])
         if value is None:
             errors.append(
-                "parakeet_decoding_mode must be one of: "
-                f"{', '.join(PARAKEET_DECODING_CHOICES)}"
+                f"parakeet_decoding_mode must be one of: {', '.join(PARAKEET_DECODING_CHOICES)}"
+            )
+        elif value not in supported_parakeet_decoding_modes():
+            choices = supported_parakeet_decoding_modes()
+            errors.append(
+                f"parakeet_decoding_mode must be one of: {', '.join(choices)}"
             )
         else:
             updates["parakeet_decoding_mode"] = value

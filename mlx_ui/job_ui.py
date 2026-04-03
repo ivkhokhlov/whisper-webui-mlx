@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from mlx_ui.db import JobRecord
-from mlx_ui.engine_registry import get_engine_provider
+from mlx_ui.engine_registry import (
+    get_engine_provider,
+    resolve_backend_implementation,
+    resolve_backend_provider,
+)
 from mlx_ui.languages import language_label, normalize_language
 
 _ENGINE_SHORT_LABELS = {
@@ -31,18 +35,36 @@ def serialize_job(job: JobRecord) -> dict[str, object]:
 def build_job_ui(job: JobRecord) -> dict[str, object]:
     requested_engine = _engine_ui(job.requested_engine)
     effective_engine = _engine_ui(job.effective_engine)
+    effective_implementation = _implementation_ui(
+        engine_id=job.effective_engine,
+        implementation_id=job.effective_implementation_id,
+    )
     language = _language_ui(job.language)
     engine_badges, engine_summary = _job_engine_badges(
         requested_engine=requested_engine,
         effective_engine=effective_engine,
     )
+    if effective_implementation is not None:
+        backend_title = str(effective_implementation.get("title") or "")
+        for badge in engine_badges:
+            kind = str(badge.get("kind") or "")
+            if kind not in {"effective", "engine"}:
+                continue
+            title = str(badge.get("title") or "")
+            if backend_title and backend_title not in title:
+                badge["title"] = f"{title} ({backend_title})".strip()
     preview_meta_parts = []
     if engine_summary:
         preview_meta_parts.append(engine_summary)
     preview_meta_parts.append(f"Language: {language['label']}")
+    if effective_implementation is not None:
+        note = str(effective_implementation.get("note") or "")
+        if note:
+            preview_meta_parts.append(note)
     return {
         "requested_engine": requested_engine,
         "effective_engine": effective_engine,
+        "effective_implementation": effective_implementation,
         "engine_badges": engine_badges,
         "engine_summary": engine_summary,
         "language": language,
@@ -89,6 +111,10 @@ def _engine_ui(engine_id: str | None) -> dict[str, object] | None:
         return None
     provider = get_engine_provider(normalized)
     if provider is None:
+        provider = resolve_backend_provider(normalized)
+        if provider is not None:
+            normalized = provider.id
+    if provider is None:
         mode = "unknown"
         label = normalized
         short_label = normalized
@@ -108,6 +134,46 @@ def _engine_ui(engine_id: str | None) -> dict[str, object] | None:
         "mode_label": mode if mode in {"local", "cloud"} else "unknown",
         "local": local,
         "cloud": cloud,
+    }
+
+
+def _implementation_ui(
+    *,
+    engine_id: str | None,
+    implementation_id: str | None,
+) -> dict[str, str] | None:
+    normalized_engine = (engine_id or "").strip()
+    normalized_implementation = (implementation_id or "").strip()
+    if normalized_implementation:
+        normalized_implementation = normalized_implementation.lower()
+        if normalized_engine.strip().lower() == normalized_implementation:
+            return None
+        return {
+            "id": normalized_implementation,
+            "note": f"Backend: {normalized_implementation}",
+            "title": f"Backend: {normalized_implementation}",
+        }
+
+    normalized = normalized_engine.strip().lower()
+    if not normalized:
+        return None
+    if get_engine_provider(normalized) is not None:
+        return None
+    resolved = resolve_backend_implementation(normalized)
+    if resolved is None:
+        return None
+    _provider, implementation = resolved
+    aliases = (implementation.id,) + tuple(implementation.backend_aliases)
+    if not any(
+        (alias or "").strip().lower() == normalized for alias in aliases if alias
+    ):
+        return None
+    if implementation.id.strip().lower() == _provider.id.strip().lower():
+        return None
+    return {
+        "id": implementation.id,
+        "note": f"Backend: {implementation.id}",
+        "title": f"Backend: {implementation.id}",
     }
 
 

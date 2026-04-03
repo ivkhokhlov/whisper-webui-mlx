@@ -7,7 +7,14 @@ video files in batches, choose a job language, queue work, and retrieve results
 from a queue/history flow backed by SQLite and on-disk artifacts. The product
 still runs on `127.0.0.1` and keeps uploads, results, settings, and logs on the
 local machine, but it now supports both local engines and an optional cloud
-engine. In developer/repo mode, mutable runtime state lives under `data/` inside
+engine. On macOS, the engine story is explicit:
+
+- Apple Silicon (arm64): local Whisper MLX and local Parakeet MLX
+- Intel (x86_64): local Whisper CPU
+- Cohere: optional cloud transcription (uploads audio)
+- Legacy Parakeet NeMo/CUDA: experimental/internal only (Linux + CUDA), disabled by default
+
+In developer/repo mode, mutable runtime state lives under `data/` inside
 the repo. In packaged macOS app mode, the same mutable state lives under
 `~/Library/Application Support/<bundle_id>/data/` so the `.app` bundle and its
 embedded payload remain read-only. Recent work added a real provider registry,
@@ -33,9 +40,9 @@ template partials.
   non-technical users.
 - Engine registry and settings model that expose real engine availability,
   configuration, and compatibility notes instead of hard-coded backend logic.
-- Best-supported Apple Silicon MLX path for fast local processing, plus a real
-  CPU Whisper path for Intel/Docker, a local Parakeet path for Linux + CUDA, and
-  an optional Cohere cloud path.
+- Best-supported Apple Silicon local path (Whisper MLX + Parakeet MLX), plus a
+  practical Whisper CPU path for Intel/Docker, plus an optional Cohere cloud
+  engine.
 - Sequential job queue with per-job `requested_engine`, `effective_engine`, and
   explicit language values so queued work remains truthful even when settings
   change later.
@@ -54,7 +61,6 @@ template partials.
   internal meetings).
 - macOS Apple Silicon users who want the fastest local path.
 - macOS Intel users who still want a practical local UI with CPU transcription.
-- Linux + CUDA users who want Parakeet locally.
 - Users who prefer a local UI but sometimes need an optional cloud transcription
   backend.
 - Anyone who prefers a simple UI over managing ML CLI workflows.
@@ -112,8 +118,8 @@ template partials.
   labels, env-locked values explain that they are managed by environment, and
   repeated restart warnings are collapsed into section-level notes.
 - Cohere and Telegram now use status-first setup disclosures, so optional
-  integrations read as compact summaries until the user explicitly opens masked
-  setup details or clear actions.
+  integrations stay understandable at a glance without exposing setup detail
+  until the user asks for it.
 - Final responsive QA tightened History row tap targets and reduced the empty
   Live transcript footprint so mobile and keyboard navigation stay calm,
   readable, and easier to operate.
@@ -164,8 +170,13 @@ template partials.
 - Optional CPU Docker backend and Intel macOS path for broader compatibility.
 
 ## Constraints and scope
-- Native MLX backend requires macOS Apple Silicon.
-- Parakeet currently requires Linux + CUDA + PyTorch + NeMo.
+- Native MLX backends require macOS Apple Silicon.
+- Parakeet MLX requires macOS Apple Silicon and the optional `parakeet-mlx`
+  dependency (the packaged `macos-arm64` artifact embeds it; repo bootstrap is
+  opt-in via `--with-parakeet-mlx`).
+- Legacy Parakeet NeMo/CUDA is retained for internal/experimental Linux CUDA
+  flows only; it is disabled by default and not part of the macOS bootstrap or
+  packaged release targets.
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.

@@ -32,7 +32,13 @@ from mlx_ui.db import (
     list_jobs,
 )
 from mlx_ui.job_ui import queue_groups, serialize_job, split_jobs, worker_state
-from mlx_ui.languages import DEFAULT_LANGUAGE, normalize_language
+from mlx_ui.engine_registry import PARAKEET_TDT_V3_ENGINE
+from mlx_ui.languages import (
+    AUTO_LANGUAGE,
+    DEFAULT_LANGUAGE,
+    is_parakeet_tdt_v3_language_supported,
+    normalize_language,
+)
 from mlx_ui.settings import (
     resolve_default_language_with_settings,
     resolve_requested_engine_with_settings,
@@ -82,11 +88,20 @@ async def upload_files(
 ):
     uploads_dir = ensure_directory(get_uploads_dir())
     db_path = get_db_path()
-    batch_language = normalize_language(
-        language,
-        default=resolve_default_language_with_settings(base_dir=get_base_dir()),
-    )
     requested_engine = resolve_requested_engine_with_settings(base_dir=get_base_dir())
+    default_language = resolve_default_language_with_settings(base_dir=get_base_dir())
+    if requested_engine == PARAKEET_TDT_V3_ENGINE:
+        default_language = AUTO_LANGUAGE
+    batch_language = normalize_language(language, default=default_language)
+
+    if (
+        requested_engine == PARAKEET_TDT_V3_ENGINE
+        and not is_parakeet_tdt_v3_language_supported(batch_language)
+    ):
+        return RedirectResponse(
+            url=f"/?tab=queue&queue_error=parakeet_language&queue_error_language={batch_language}",
+            status_code=303,
+        )
 
     for upload in files:
         if not upload.filename:
