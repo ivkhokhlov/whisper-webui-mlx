@@ -69,6 +69,9 @@ template partials.
   only when the worker is actively processing.
 - Compact top-level navigation for Queue, History, and Settings that stays
   usable on mobile while `/live` remains a direct beta-preview route.
+- Distinct task surfaces: Queue is for adding work, History is for retrieving
+  results, Settings is for configuration, and `/live` stays intentionally
+  separate from the stable saved workflow.
 - Queue-first onboarding that keeps one dominant “Select files…” action above
   the fold while preserving folder batch upload and drag-and-drop as secondary
   affordances.
