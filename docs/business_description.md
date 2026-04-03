@@ -90,7 +90,9 @@ template partials.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.
-- Details-on-demand panel for full timestamps, outputs list, and error logs.
+- Details-on-demand panel is the canonical home for secondary history context:
+  preview snippets, full timestamps, engine/language/backend metadata, output
+  lists, and failure logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
 - History action menus (⋯) dismiss on outside click for faster triage.

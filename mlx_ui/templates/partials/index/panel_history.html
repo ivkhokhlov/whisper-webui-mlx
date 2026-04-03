@@ -64,6 +64,7 @@
                 {% if result_ns.default is none and results %}
                   {% set result_ns.default = results[0] %}
                 {% endif %}
+                {% set has_processing_details = job_view and (job_view.engine_summary or job_view.language or (job_view.effective_implementation and job_view.effective_implementation.id)) %}
                 <div
                   class="history-row"
                   data-job-id="{{ job.id }}"
@@ -173,43 +174,18 @@
                     </details>
                   </div>
                   <details class="job-details" data-job-id="{{ job.id }}">
-                    <summary aria-label="Details for {{ job.filename }}">
-                      <span>Details</span>
+                    <summary aria-label="View details for {{ job.filename }}">
+                      <span>View details</span>
                       <span class="details-chevron" aria-hidden="true">▾</span>
                     </summary>
                     <div class="job-details-body">
-                      <div class="detail-block">
-                        <div class="detail-label">Timeline</div>
-                        <div class="detail-line" data-iso="{{ job.created_at }}" data-label="Added"></div>
-                        {% if job.started_at %}
-                          <div class="detail-line" data-iso="{{ job.started_at }}" data-label="Started"></div>
-                        {% endif %}
-                        {% if job.completed_at %}
-                          <div
-                            class="detail-line"
-                            data-iso="{{ job.completed_at }}"
-                            data-label="{{ 'Failed' if job.status == 'failed' else 'Completed' }}"
-                          ></div>
-                        {% endif %}
-                      </div>
-                      {% if job_view and job_view.effective_implementation and job_view.effective_implementation.id and not (job.status == "done" and result_ns.default) %}
-                        <div class="detail-block">
-                          <div class="detail-label">Runtime</div>
-                          <div class="detail-line" title="{{ job_view.effective_implementation.title }}">
-                            Backend: <code>{{ job_view.effective_implementation.id }}</code>
-                          </div>
-                        </div>
-                      {% endif %}
                       {% if job.status == "done" and result_ns.default %}
                         <div
-                          class="detail-block"
+                          class="detail-block is-preview"
                           data-preview-block
                           data-preview-url="/api/jobs/{{ job.id }}/preview?chars=300"
                         >
                           <div class="detail-label">Preview</div>
-                          {% if job_view.preview_meta %}
-                            <div class="preview-meta-note">{{ job_view.preview_meta }}</div>
-                          {% endif %}
                           <div class="preview-snippet is-loading" data-preview-snippet>
                             Preview will load when expanded.
                           </div>
@@ -233,8 +209,14 @@
                           </div>
                         </div>
                       {% endif %}
+                      {% if job.status == "failed" and job.error_message %}
+                        <div class="detail-block is-log">
+                          <div class="detail-label">Failure log</div>
+                          <div class="detail-log" data-log>{{ job.error_message }}</div>
+                        </div>
+                      {% endif %}
                       {% if results %}
-                        <div class="detail-block">
+                        <div class="detail-block is-outputs">
                           <div class="detail-label">Outputs</div>
                           <ul class="detail-results">
                             {% for result in results %}
@@ -252,12 +234,47 @@
                           </ul>
                         </div>
                       {% endif %}
-                      {% if job.status == "failed" and job.error_message %}
-                        <div class="detail-block">
-                          <div class="detail-label">Log</div>
-                          <div class="detail-log" data-log>{{ job.error_message }}</div>
+                      {% if has_processing_details %}
+                        <div class="detail-block is-processing">
+                          <div class="detail-label">Processing</div>
+                          <dl class="detail-list">
+                            {% if job_view.engine_summary %}
+                              <div class="detail-pair">
+                                <dt class="detail-term">Engine</dt>
+                                <dd class="detail-value">{{ job_view.engine_summary }}</dd>
+                              </div>
+                            {% endif %}
+                            {% if job_view.language %}
+                              <div class="detail-pair">
+                                <dt class="detail-term">Language</dt>
+                                <dd class="detail-value">{{ job_view.language.label }}</dd>
+                              </div>
+                            {% endif %}
+                            {% if job_view.effective_implementation and job_view.effective_implementation.id %}
+                              <div class="detail-pair">
+                                <dt class="detail-term">Backend</dt>
+                                <dd class="detail-value" title="{{ job_view.effective_implementation.title }}">
+                                  <code>{{ job_view.effective_implementation.id }}</code>
+                                </dd>
+                              </div>
+                            {% endif %}
+                          </dl>
                         </div>
                       {% endif %}
+                      <div class="detail-block is-timeline">
+                        <div class="detail-label">Timeline</div>
+                        <div class="detail-line" data-iso="{{ job.created_at }}" data-label="Added"></div>
+                        {% if job.started_at %}
+                          <div class="detail-line" data-iso="{{ job.started_at }}" data-label="Started"></div>
+                        {% endif %}
+                        {% if job.completed_at %}
+                          <div
+                            class="detail-line"
+                            data-iso="{{ job.completed_at }}"
+                            data-label="{{ 'Failed' if job.status == 'failed' else 'Completed' }}"
+                          ></div>
+                        {% endif %}
+                      </div>
                     </div>
                   </details>
                 </div>
