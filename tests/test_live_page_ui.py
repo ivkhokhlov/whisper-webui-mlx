@@ -47,6 +47,7 @@ def test_live_page_uses_one_clear_beta_notice_without_extra_metrics(
     assert "Windows:" not in response.text
     assert "theoretical latency" not in response.text
     assert "~4.0s latency" not in response.text
+    assert 'class="live-transcript is-inactive"' in response.text
 
 
 def test_live_page_active_state_keeps_one_status_action_and_transcript_area(
@@ -83,3 +84,4 @@ def test_live_page_active_state_keeps_one_status_action_and_transcript_area(
     assert "~4.0s latency" not in response.text
     assert "Chunks:" not in response.text
     assert "Windows:" not in response.text
+    assert 'class="live-transcript is-inactive"' not in response.text

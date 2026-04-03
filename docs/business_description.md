@@ -114,6 +114,9 @@ template partials.
 - Cohere and Telegram now use status-first setup disclosures, so optional
   integrations read as compact summaries until the user explicitly opens masked
   setup details or clear actions.
+- Final responsive QA tightened History row tap targets and reduced the empty
+  Live transcript footprint so mobile and keyboard navigation stay calm,
+  readable, and easier to operate.
 - Storage now leads with cleanup actions while raw local paths live behind a
   disclosure; destructive buttons use plain labels and counts stay in muted
   helper text.
