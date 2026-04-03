@@ -382,6 +382,12 @@
         max-width: 62ch;
       }
 
+      .settings-section-note {
+        margin: 0;
+        font-size: 0.82rem;
+        color: var(--ink-muted);
+      }
+
       .settings-subsection {
         display: grid;
         gap: 12px;
@@ -415,6 +421,10 @@
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 10px 12px;
+      }
+
+      .settings-label-row.is-single {
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .settings-label-row > * {
@@ -488,7 +498,7 @@
         gap: 2px 6px;
         min-width: 0;
         max-width: min(100%, 44ch);
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         color: var(--ink-muted);
       }
 
@@ -784,6 +794,18 @@
         margin-bottom: 14px;
       }
 
+      .settings-status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px 12px;
+        flex-wrap: wrap;
+      }
+
+      .settings-status-value {
+        font-weight: 600;
+        color: var(--ink);
+      }
+
       .settings-label {
         font-weight: 600;
         color: var(--ink);
@@ -827,6 +849,14 @@
         font-size: 0.85rem;
         color: var(--ink-muted);
         margin: 2px 0 0;
+        max-width: 62ch;
+      }
+
+      .settings-lock-note {
+        font-size: 0.82rem;
+        color: var(--ink-muted);
+        margin: 2px 0 0;
+        max-width: 62ch;
       }
 
       .settings-error {
