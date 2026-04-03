@@ -255,6 +255,8 @@ def parakeet_availability_reason() -> str | None:
 
 
 def parakeet_mlx_availability_reason() -> str | None:
+    if is_parakeet_mlx_runtime_usable():
+        return None
     return parakeet_mlx_runtime_unavailability_reason()
 
 

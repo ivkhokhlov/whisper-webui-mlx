@@ -11,6 +11,7 @@
     settingsBannerSuccess,
     settingsBannerError,
     whisperModelError,
+    hotFolderError,
     cohereStatusLabel,
     cohereKeyMask,
     cohereKeyMaskValue,
@@ -259,6 +260,9 @@
       const cohereModelInput = settingsForm.querySelector("#cohere-model");
       const clearCohereKey = settingsForm.querySelector("input[name='clear_cohere_api_key']");
       const whisperModelInput = settingsForm.querySelector("#whisper-model");
+      const hotFolderEnabledInput = settingsForm.querySelector("#hot-folder-enabled");
+      const hotFolderInputDir = settingsForm.querySelector("#hot-folder-input-dir");
+      const hotFolderOutputDir = settingsForm.querySelector("#hot-folder-output-dir");
       const telegramTokenInput = settingsForm.querySelector("#telegram-token");
       const telegramChatInput = settingsForm.querySelector("#telegram-chat-id");
       const clearTelegramToken = settingsForm.querySelector("input[name='clear_telegram_token']");
@@ -282,28 +286,78 @@
           whisperModelError.hidden = true;
           whisperModelError.textContent = "";
         }
+        if (hotFolderInputDir) {
+          hotFolderInputDir.classList.remove("is-invalid");
+        }
+        if (hotFolderOutputDir) {
+          hotFolderOutputDir.classList.remove("is-invalid");
+        }
+        if (hotFolderError) {
+          hotFolderError.hidden = true;
+          hotFolderError.textContent = "";
+        }
       }
 
       function validateSettingsForUi(current) {
-        if (!whisperModelInput || whisperModelInput.disabled) {
-          return { valid: true };
-        }
-        const value = current.whisper_model || "";
-        const baseline = baselineState.whisper_model || "";
-        if (!value && baseline) {
-          whisperModelInput.classList.add("is-invalid");
-          if (whisperModelError) {
-            whisperModelError.textContent = "Whisper model can’t be blank.";
-            whisperModelError.hidden = false;
+        let valid = true;
+
+        if (whisperModelInput && !whisperModelInput.disabled) {
+          const value = current.whisper_model || "";
+          const baseline = baselineState.whisper_model || "";
+          if (!value && baseline) {
+            whisperModelInput.classList.add("is-invalid");
+            if (whisperModelError) {
+              whisperModelError.textContent = "Whisper model can’t be blank.";
+              whisperModelError.hidden = false;
+            }
+            valid = false;
+          } else {
+            whisperModelInput.classList.remove("is-invalid");
+            if (whisperModelError) {
+              whisperModelError.hidden = true;
+              whisperModelError.textContent = "";
+            }
           }
-          return { valid: false };
         }
-        whisperModelInput.classList.remove("is-invalid");
-        if (whisperModelError) {
-          whisperModelError.hidden = true;
-          whisperModelError.textContent = "";
+
+        if (
+          hotFolderEnabledInput &&
+          !hotFolderEnabledInput.disabled &&
+          hotFolderInputDir &&
+          !hotFolderInputDir.disabled &&
+          hotFolderOutputDir &&
+          !hotFolderOutputDir.disabled
+        ) {
+          const enabled = Boolean(current.hot_folder_enabled);
+          const inputDir = String(current.hot_folder_input_dir || "").trim();
+          const outputDir = String(current.hot_folder_output_dir || "").trim();
+          if (enabled && (!inputDir || !outputDir)) {
+            if (!inputDir) {
+              hotFolderInputDir.classList.add("is-invalid");
+            } else {
+              hotFolderInputDir.classList.remove("is-invalid");
+            }
+            if (!outputDir) {
+              hotFolderOutputDir.classList.add("is-invalid");
+            } else {
+              hotFolderOutputDir.classList.remove("is-invalid");
+            }
+            if (hotFolderError) {
+              hotFolderError.textContent = "Hot folder needs both input and output paths.";
+              hotFolderError.hidden = false;
+            }
+            valid = false;
+          } else {
+            hotFolderInputDir.classList.remove("is-invalid");
+            hotFolderOutputDir.classList.remove("is-invalid");
+            if (hotFolderError) {
+              hotFolderError.hidden = true;
+              hotFolderError.textContent = "";
+            }
+          }
         }
-        return { valid: true };
+
+        return { valid };
       }
 
       function updateSettingsSaveUi() {
@@ -351,6 +405,24 @@
         }
         if ("default_language" in current && current.default_language !== baselineState.default_language) {
           updates.default_language = current.default_language;
+        }
+        if (
+          "hot_folder_enabled" in current &&
+          current.hot_folder_enabled !== baselineState.hot_folder_enabled
+        ) {
+          updates.hot_folder_enabled = current.hot_folder_enabled;
+        }
+        if (
+          "hot_folder_input_dir" in current &&
+          current.hot_folder_input_dir !== baselineState.hot_folder_input_dir
+        ) {
+          updates.hot_folder_input_dir = current.hot_folder_input_dir;
+        }
+        if (
+          "hot_folder_output_dir" in current &&
+          current.hot_folder_output_dir !== baselineState.hot_folder_output_dir
+        ) {
+          updates.hot_folder_output_dir = current.hot_folder_output_dir;
         }
         if ("cohere_model" in current && current.cohere_model !== baselineState.cohere_model) {
           updates.cohere_model = current.cohere_model;

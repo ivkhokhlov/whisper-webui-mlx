@@ -71,8 +71,8 @@ def build_settings_snapshot(
     parakeet_model_source = sources.get("parakeet_model", "default")
     parakeet_implementation_id = None
     parakeet_engine = find_engine_option(engine_options, ENGINE_PARAKEET)
-    implementation_value = None if parakeet_engine is None else parakeet_engine.get(
-        "implementation_id"
+    implementation_value = (
+        None if parakeet_engine is None else parakeet_engine.get("implementation_id")
     )
     if isinstance(implementation_value, str) and implementation_value.strip():
         parakeet_implementation_id = implementation_value
@@ -133,6 +133,9 @@ def build_settings_snapshot(
                 "cohere_api_key": COHERE_API_KEY_ENV,
                 "cohere_model": COHERE_MODEL_ENV,
                 "engine": BACKEND_ENV,
+                "hot_folder_enabled": "HOT_FOLDER_ENABLED",
+                "hot_folder_input_dir": "HOT_FOLDER_INPUT_DIR",
+                "hot_folder_output_dir": "HOT_FOLDER_OUTPUT_DIR",
                 "update_check_enabled": DISABLE_UPDATE_CHECK_ENV,
                 "log_level": "LOG_LEVEL",
                 "wtm_quick": "WTM_QUICK",
@@ -140,4 +143,3 @@ def build_settings_snapshot(
             }
         },
     }
-

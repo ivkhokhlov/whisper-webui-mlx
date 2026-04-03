@@ -40,9 +40,17 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "requested_engine" in columns
         assert "effective_engine" in columns
         assert "effective_implementation_id" in columns
+        assert "source_path" in columns
+        assert "source_relpath" in columns
         row = connection.execute(
             """
-            SELECT language, requested_engine, effective_engine, effective_implementation_id
+            SELECT
+                language,
+                requested_engine,
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath
             FROM jobs
             WHERE id = 'job-1'
             """
@@ -52,6 +60,8 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert row[1] is None
         assert row[2] is None
         assert row[3] is None
+        assert row[4] is None
+        assert row[5] is None
 
     jobs = list_jobs(db_path)
     assert len(jobs) == 1
@@ -172,6 +182,8 @@ def test_init_db_is_idempotent_on_current_schema(tmp_path: Path) -> None:
     assert "requested_engine" in columns
     assert "effective_engine" in columns
     assert "effective_implementation_id" in columns
+    assert "source_path" in columns
+    assert "source_relpath" in columns
 
 
 def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:

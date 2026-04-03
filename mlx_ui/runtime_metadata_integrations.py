@@ -129,4 +129,3 @@ def build_cohere_snapshot(
             "model": bool(str(file_settings.get("cohere_model", "")).strip()),
         },
     }
-

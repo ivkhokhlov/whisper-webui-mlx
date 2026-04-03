@@ -48,10 +48,10 @@ def test_settings_moves_low_frequency_controls_into_disclosures(
         response = client.get("/?tab=settings")
 
     assert response.status_code == 200
-    assert 'data-settings-local-options' in response.text
-    assert 'data-cohere-setup' in response.text
-    assert 'data-telegram-setup' in response.text
-    assert 'data-storage-paths' in response.text
+    assert "data-settings-local-options" in response.text
+    assert "data-cohere-setup" in response.text
+    assert "data-telegram-setup" in response.text
+    assert "data-storage-paths" in response.text
     assert "Local engine options" in response.text
     assert "More actions" in response.text
     assert "View local paths" in response.text
@@ -77,8 +77,8 @@ def test_settings_integrations_use_status_first_setup_disclosures(
 
     assert text.index("data-cohere-status") < text.index('id="cohere-api-key"')
     assert text.index("data-telegram-status") < text.index('id="telegram-token"')
-    assert re.search(r'data-cohere-setup-title[^>]*>\s*Set up\s*<', text)
-    assert re.search(r'data-telegram-setup-title[^>]*>\s*Set up\s*<', text)
+    assert re.search(r"data-cohere-setup-title[^>]*>\s*Set up\s*<", text)
+    assert re.search(r"data-telegram-setup-title[^>]*>\s*Set up\s*<", text)
 
 
 def test_settings_integrations_switch_to_edit_setup_when_configured(
@@ -104,8 +104,8 @@ def test_settings_integrations_switch_to_edit_setup_when_configured(
     assert response.status_code == 200
     text = response.text
 
-    assert re.search(r'data-cohere-setup-title[^>]*>\s*Edit setup\s*<', text)
-    assert re.search(r'data-telegram-setup-title[^>]*>\s*Edit setup\s*<', text)
+    assert re.search(r"data-cohere-setup-title[^>]*>\s*Edit setup\s*<", text)
+    assert re.search(r"data-telegram-setup-title[^>]*>\s*Edit setup\s*<", text)
 
 
 def test_settings_storage_prioritizes_actions_over_raw_paths(
@@ -121,8 +121,8 @@ def test_settings_storage_prioritizes_actions_over_raw_paths(
 
     assert "Delete local data" in text
     assert "Delete history (" not in text
-    assert re.search(r'>\s*Delete history\s*<', text)
-    assert re.search(r'>\s*Clear uploads\s*<', text)
+    assert re.search(r">\s*Delete history\s*<", text)
+    assert re.search(r">\s*Clear uploads\s*<", text)
     assert text.index("Delete local data") < text.index("View local paths")
 
 

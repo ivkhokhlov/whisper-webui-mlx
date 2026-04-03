@@ -139,6 +139,19 @@ async def update_settings(request: Request) -> RedirectResponse:
     if default_language is not None:
         updates["default_language"] = default_language
 
+    if "hot_folder_enabled_present" in form or "hot_folder_enabled" in form:
+        updates["hot_folder_enabled"] = "hot_folder_enabled" in form
+
+    if "hot_folder_input_dir" in form:
+        updates["hot_folder_input_dir"] = str(
+            form.get("hot_folder_input_dir", "")
+        ).strip()
+
+    if "hot_folder_output_dir" in form:
+        updates["hot_folder_output_dir"] = str(
+            form.get("hot_folder_output_dir", "")
+        ).strip()
+
     if "cohere_model" in form:
         updates["cohere_model"] = str(form.get("cohere_model", "")).strip()
 

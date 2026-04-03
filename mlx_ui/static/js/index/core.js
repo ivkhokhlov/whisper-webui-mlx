@@ -31,6 +31,7 @@
     settingsBannerSuccess: document.getElementById("settings-banner-success"),
     settingsBannerError: document.getElementById("settings-banner-error"),
     whisperModelError: document.getElementById("settings-error-whisper-model"),
+    hotFolderError: document.getElementById("settings-error-hot-folder"),
     cohereStatusLabel: document.querySelector("[data-cohere-status]"),
     cohereSourcePill: document.querySelector("[data-cohere-source-pill]"),
     cohereKeyMask: document.querySelector("[data-cohere-key-mask]"),
