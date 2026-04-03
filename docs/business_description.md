@@ -120,6 +120,9 @@ template partials.
 - Live preview now uses one clear status area, one action area, and one
   transcript area, with latency and chunk/window metrics removed from the
   default surface while the unsaved-session limitation stays explicit.
+- UI copy across Queue, History, Settings, and Live is now shorter and more
+  operational, reducing repeated local/beta/history explanations while keeping
+  cloud behavior, environment locks, and destructive actions explicit.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be

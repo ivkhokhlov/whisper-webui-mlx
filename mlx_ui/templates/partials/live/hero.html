@@ -4,9 +4,9 @@
           <h1>Live capture</h1>
           <p>
             {% if live_snapshot.active %}
-              Local microphone preview is available on this machine with {{ live_snapshot.engine_label }}.
+              Ready on this machine with {{ live_snapshot.engine_label }}.
             {% else %}
-              Local microphone preview is unavailable here right now.
+              Unavailable on this machine.
             {% endif %}
           </p>
         </div>
@@ -15,11 +15,11 @@
           <div class="status">{{ "Ready locally" if live_snapshot.active else "Preview only" }}</div>
           <p>
             {% if live_snapshot.active %}
-              {{ live_snapshot.engine_label }} is available for one local live session at a time.
+              One session at a time.
             {% else %}
-              Live preview only runs on supported local setups.
+              Supported local setups only.
             {% endif %}
           </p>
-          <a class="status-link" href="/?tab=queue">← Back to Queue</a>
+          <a class="status-link" href="/?tab=queue">← Queue</a>
         </div>
       </header>

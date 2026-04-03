@@ -33,18 +33,18 @@
     if (locked) {
       return {
         title: "View setup",
-        desc: "Review the masked key and provider defaults.",
+        desc: "View the masked key and defaults.",
       };
     }
     if (configured) {
       return {
         title: "Edit setup",
-        desc: "Saved credentials stay masked until you need to update them.",
+        desc: "Masked until you change it.",
       };
     }
     return {
       title: "Set up",
-      desc: "Add a key only if you plan to use Cohere.",
+      desc: "Add a key if you need Cohere.",
     };
   }
 
@@ -53,18 +53,18 @@
     if (locked) {
       return {
         title: "View setup",
-        desc: "Review the masked delivery credentials.",
+        desc: "View the masked credentials.",
       };
     }
     if (configured) {
       return {
         title: "Edit setup",
-        desc: "Saved credentials stay masked until you need to update them.",
+        desc: "Masked until you change them.",
       };
     }
     return {
       title: "Set up",
-      desc: "Add a bot token and chat ID only if you want delivery in Telegram.",
+      desc: "Add a token and chat ID if you need delivery.",
     };
   }
 
@@ -166,13 +166,13 @@
     }
     if (telegramTokenHint) {
       telegramTokenHint.textContent = configured
-        ? "Leave blank to keep the saved token."
-        : "Add your bot token.";
+        ? "Leave blank to keep it."
+        : "Add the bot token.";
     }
     if (telegramChatHint) {
       telegramChatHint.textContent = configured
-        ? "Leave blank to keep the saved chat ID."
-        : "Use the numeric chat ID for your target chat.";
+        ? "Leave blank to keep it."
+        : "Add the chat ID.";
     }
     if (telegramTokenMask) {
       const masked = snapshot.token_masked ? String(snapshot.token_masked) : "";
@@ -212,8 +212,8 @@
     }
     if (cohereKeyHint) {
       cohereKeyHint.textContent = configured
-        ? "Leave blank to keep the saved key."
-        : "Add a key only if you plan to use Cohere.";
+        ? "Leave blank to keep it."
+        : "Add a key if needed.";
     }
     if (cohereKeyMask) {
       const masked = snapshot.api_key_masked ? String(snapshot.api_key_masked) : "";
@@ -334,10 +334,10 @@
           return;
         }
         if (!validation.valid) {
-          setSettingsSaveState("is-error", "Fix highlighted fields");
+          setSettingsSaveState("is-error", "Check fields");
           return;
         }
-        setSettingsSaveState("is-dirty", "Unsaved changes");
+        setSettingsSaveState("is-dirty", "Needs save");
       }
 
       function buildSettingsUpdatePayload(current) {
@@ -471,7 +471,7 @@
           }
 
           if (!response.ok) {
-            let message = "Unable to save settings. Please try again.";
+            let message = "Can’t save settings. Try again.";
             if (payload && payload.detail) {
               if (Array.isArray(payload.detail)) {
                 message = payload.detail.join(" ");
@@ -528,7 +528,7 @@
           console.warn("Failed to save settings", error);
           setSettingsBanner(
             settingsBannerError,
-            "Unable to save settings. Please try again (your changes are still here)."
+            "Can’t save settings right now. Your changes are still here."
           );
           setSettingsSaveState("is-error", "Save failed");
         } finally {

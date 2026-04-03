@@ -7,9 +7,7 @@
           >
             <div class="settings-header">
               <h2>Settings</h2>
-              <p>
-                Set defaults for new jobs, optional integrations, and local storage on this Mac.
-              </p>
+              <p>Defaults, integrations, and storage.</p>
             </div>
             <div
               class="settings-banner"
@@ -37,13 +35,13 @@
                 <section class="settings-card is-primary" aria-labelledby="settings-transcription-title">
                   <header class="settings-section-header">
                     <h3 id="settings-transcription-title">General / Transcription defaults</h3>
-                    <p class="settings-section-desc">Start here. These settings affect new jobs by default.</p>
+                    <p class="settings-section-desc">Affects new jobs.</p>
                   </header>
-                  <p class="settings-section-note">Engine changes take effect after restart.</p>
+                  <p class="settings-section-note">Restart after changing the engine.</p>
                   <section class="settings-subsection" aria-labelledby="settings-engine-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-engine-title">Engine</h4>
-                      <p class="settings-subsection-desc">Choose the default transcription engine for new jobs.</p>
+                      <p class="settings-subsection-desc">Default engine for new jobs.</p>
                     </header>
                     <div class="settings-field">
                       <div class="settings-label-row is-single">
@@ -66,7 +64,7 @@
                         {% endfor %}
                       </select>
                       <p class="settings-hint">
-                        Local engines stay on this Mac. Cohere uploads audio to the provider.
+                        Local engines stay on this Mac. Cohere uploads audio.
                       </p>
                       {% if engine_locked %}
                         <p class="settings-lock-note">
@@ -84,7 +82,7 @@
                   <section class="settings-subsection" aria-labelledby="settings-defaults-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-defaults-title">Defaults for new jobs</h4>
-                      <p class="settings-subsection-desc">Choose what new queue items inherit automatically.</p>
+                      <p class="settings-subsection-desc">New jobs use these defaults.</p>
                     </header>
                     <div class="settings-field">
                       <div class="settings-label-row is-single">
@@ -101,7 +99,7 @@
                         {% endfor %}
                       </select>
                       <p class="settings-hint">
-                        Auto is safest unless you always transcribe the same language.
+                        Use Auto unless you always work in one language.
                       </p>
                     </div>
                   </section>
@@ -110,7 +108,7 @@
                     <summary>
                       <span class="settings-disclosure-copy">
                         <span class="settings-disclosure-title">Local engine options</span>
-                        <span class="settings-disclosure-desc">Lower-frequency controls for Whisper and Parakeet.</span>
+                        <span class="settings-disclosure-desc">Whisper and Parakeet options.</span>
                       </span>
                       <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
                     </summary>
@@ -133,7 +131,7 @@
                             <option value="{{ model }}"></option>
                           {% endfor %}
                         </datalist>
-                        <p class="settings-hint">Used only when Whisper runs on CPU.</p>
+                        <p class="settings-hint">Used only for Whisper CPU.</p>
                         {% if whisper_source == "env" %}
                           <p class="settings-lock-note">
                             Managed by environment (<code>{{ settings_snapshot.meta.env_vars.whisper_model }}</code>).
@@ -141,9 +139,9 @@
                         {% endif %}
                         <p class="settings-hint">
                           {% if downloaded_models %}
-                            Downloaded models: {{ downloaded_models | join(", ") }}.
+                            Downloaded: {{ downloaded_models | join(", ") }}.
                           {% else %}
-                            No downloaded Whisper models detected yet.
+                            No local Whisper models found.
                           {% endif %}
                         </p>
                         <div class="settings-error" id="settings-error-whisper-model" hidden></div>
@@ -165,7 +163,7 @@
                             Quick mode (WTM)
                           </label>
                         </div>
-                        <p class="settings-hint">Speeds up Whisper MLX at the cost of some accuracy.</p>
+                        <p class="settings-hint">Faster Whisper MLX, less accurate.</p>
                         {% if quick_locked %}
                           <p class="settings-lock-note">
                             Managed by environment (<code>{{ settings_snapshot.meta.env_vars.wtm_quick }}</code>).
@@ -179,12 +177,12 @@
                 <section class="settings-card" aria-labelledby="settings-integrations-title">
                   <header class="settings-section-header">
                     <h3 id="settings-integrations-title">Integrations</h3>
-                    <p class="settings-section-desc">Optional services for cloud transcription and transcript delivery.</p>
+                    <p class="settings-section-desc">Optional cloud and delivery services.</p>
                   </header>
                   <section class="settings-subsection" aria-labelledby="settings-cloud-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-cloud-title">Cohere</h4>
-                      <p class="settings-subsection-desc">Optional cloud transcription.</p>
+                      <p class="settings-subsection-desc">Cloud transcription.</p>
                     </header>
                     <div class="settings-field">
                       <div class="settings-status-row">
@@ -220,11 +218,11 @@
                           </span>
                           <span class="settings-disclosure-desc" data-cohere-setup-desc>
                             {% if cohere_key_locked %}
-                              Review the masked key and provider defaults.
+                              View the masked key and defaults.
                             {% elif cohere_snapshot.configured %}
-                              Saved credentials stay masked until you need to update them.
+                              Masked until you change it.
                             {% else %}
-                              Add a key only if you plan to use Cohere.
+                              Add a key if you need Cohere.
                             {% endif %}
                           </span>
                         </span>
@@ -258,9 +256,9 @@
                           {% if not cohere_key_locked %}
                             <p class="settings-hint" data-cohere-key-hint>
                               {% if cohere_snapshot.configured %}
-                                Leave blank to keep the saved key.
+                                Leave blank to keep it.
                               {% else %}
-                                Add a key only if you plan to use Cohere.
+                                Add a key if needed.
                               {% endif %}
                             </p>
                           {% endif %}
@@ -271,7 +269,7 @@
                               value="1"
                               {% if cohere_key_locked %}disabled{% endif %}
                             >
-                            Forget saved API key
+                            Forget API key
                           </label>
                         </div>
                         <div class="settings-field">
@@ -287,7 +285,7 @@
                             placeholder="Set a Cohere model ID"
                             {% if cohere_model_locked %}disabled{% endif %}
                           >
-                          <p class="settings-hint">Used only for Cohere jobs.</p>
+                          <p class="settings-hint">Used only for Cohere.</p>
                           {% if cohere_model_locked %}
                             <p class="settings-lock-note">
                               Managed by environment (<code>{{ settings_snapshot.meta.env_vars.cohere_model }}</code>).
@@ -301,7 +299,7 @@
                   <section class="settings-subsection" aria-labelledby="settings-notifications-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-notifications-title">Telegram</h4>
-                      <p class="settings-subsection-desc">Optional delivery of completed transcripts.</p>
+                      <p class="settings-subsection-desc">Transcript delivery.</p>
                     </header>
                     <div class="settings-field">
                       <div class="settings-status-row">
@@ -311,7 +309,7 @@
                         </span>
                       </div>
                       <p class="settings-hint">
-                        Sends completed transcript files to your Telegram chat.
+                        Sends finished transcripts to Telegram.
                       </p>
                       {% if telegram_locked %}
                         <p class="settings-lock-note">
@@ -333,11 +331,11 @@
                           </span>
                           <span class="settings-disclosure-desc" data-telegram-setup-desc>
                             {% if telegram_locked %}
-                              Review the masked delivery credentials.
+                              View the masked credentials.
                             {% elif telegram_snapshot.configured %}
-                              Saved credentials stay masked until you need to update them.
+                              Masked until you change them.
                             {% else %}
-                              Add a bot token and chat ID only if you want delivery in Telegram.
+                              Add a token and chat ID if you need delivery.
                             {% endif %}
                           </span>
                         </span>
@@ -370,15 +368,15 @@
                           {% if not telegram_locked %}
                             <p class="settings-hint" data-telegram-token-hint>
                               {% if telegram_snapshot.configured %}
-                                Leave blank to keep the saved token.
+                                Leave blank to keep it.
                               {% else %}
-                                Add your bot token.
+                                Add the bot token.
                               {% endif %}
                             </p>
                           {% endif %}
                           <label class="settings-checkbox">
                             <input type="checkbox" name="clear_telegram_token" value="1" {% if telegram_locked %}disabled{% endif %}>
-                            Forget saved token
+                            Forget token
                           </label>
                         </div>
                         <div class="settings-field">
@@ -407,9 +405,9 @@
                           {% if not telegram_locked %}
                             <p class="settings-hint" data-telegram-chat-hint>
                               {% if telegram_snapshot.configured %}
-                                Leave blank to keep the saved chat ID.
+                                Leave blank to keep it.
                               {% else %}
-                                Use the numeric chat ID for your target chat.
+                                Add the chat ID.
                               {% endif %}
                             </p>
                           {% endif %}
@@ -420,7 +418,7 @@
                               value="1"
                               {% if telegram_locked %}disabled{% endif %}
                             >
-                            Forget saved chat ID
+                            Forget chat ID
                           </label>
                         </div>
                       </div>
@@ -431,11 +429,11 @@
                 <section class="settings-card is-storage" aria-labelledby="settings-storage-title">
                   <header class="settings-section-header">
                     <h3 id="settings-storage-title">Storage</h3>
-                    <p class="settings-section-desc">Manage local data and cleanup actions on this Mac.</p>
+                    <p class="settings-section-desc">Cleanup and local paths.</p>
                   </header>
                   <div class="settings-storage-layout">
                     <p class="settings-section-note">
-                      Files, results, and settings stay on this Mac unless you choose a cloud engine.
+                      Cloud engines upload audio. Other files stay here.
                     </p>
                     <div class="settings-danger-zone" aria-labelledby="settings-storage-danger-title">
                       <div class="settings-danger-zone-header">
@@ -443,18 +441,18 @@
                           Delete local data
                         </div>
                         <p class="settings-hint">
-                          Each action asks for confirmation before removing files from this Mac.
+                          Each action asks before deleting local files.
                         </p>
                       </div>
                       <div class="settings-danger-list">
                         <div class="settings-danger-item">
                           <div class="settings-danger-copy">
-                            <div class="settings-danger-title">Delete completed history</div>
+                            <div class="settings-danger-title">Delete history</div>
                             <p class="settings-danger-hint" data-storage-history-hint>
                               {% if history_count == 0 %}
-                                No saved history to remove.
+                                No saved history.
                               {% else %}
-                                Removes {{ history_count }} saved {{ "entry" if history_count == 1 else "entries" }} from History.
+                                Deletes {{ history_count }} saved {{ "entry" if history_count == 1 else "entries" }}.
                               {% endif %}
                             </p>
                           </div>
@@ -473,9 +471,9 @@
                             <div class="settings-danger-title">Clear queued uploads</div>
                             <p class="settings-danger-hint" data-storage-uploads-hint>
                               {% if queue_count_total > 0 %}
-                                Unavailable while {{ queue_count_total }} {{ "item is" if queue_count_total == 1 else "items are" }} still in Queue.
+                                Queue must be empty first.
                               {% else %}
-                                Deletes local processing copies after the queue is empty.
+                                Deletes local processing copies.
                               {% endif %}
                             </p>
                           </div>
@@ -493,17 +491,17 @@
                       <details class="settings-disclosure is-inline">
                         <summary>
                           <span class="settings-disclosure-copy">
-                            <span class="settings-disclosure-title">More cleanup tools</span>
-                            <span class="settings-disclosure-desc">Less common storage actions for troubleshooting.</span>
+                            <span class="settings-disclosure-title">More actions</span>
+                            <span class="settings-disclosure-desc">Low-frequency cleanup.</span>
                           </span>
                           <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
                         </summary>
                         <div class="settings-disclosure-body">
                           <div class="settings-danger-item">
                             <div class="settings-danger-copy">
-                              <div class="settings-danger-title">Clear results folder only</div>
+                              <div class="settings-danger-title">Clear result files</div>
                               <p class="settings-danger-hint">
-                                Removes transcript files on disk without changing job history. Use only for troubleshooting.
+                                Removes result files only. History stays.
                               </p>
                             </div>
                             <button
@@ -521,7 +519,7 @@
                       <summary>
                         <span class="settings-disclosure-copy">
                           <span class="settings-disclosure-title">View local paths</span>
-                          <span class="settings-disclosure-desc">Uploads, results, logs, database, and settings file locations.</span>
+                          <span class="settings-disclosure-desc">Show storage paths.</span>
                         </span>
                         <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
                       </summary>
@@ -529,7 +527,7 @@
                         <section class="settings-subsection" aria-labelledby="settings-storage-folders-title">
                           <header class="settings-subsection-header">
                             <h4 id="settings-storage-folders-title">Local paths</h4>
-                            <p class="settings-subsection-desc">Useful when you need to inspect or back up local app data.</p>
+                            <p class="settings-subsection-desc">For backup or manual inspection.</p>
                           </header>
                           <ul class="settings-paths">
                             <li class="settings-path">
@@ -564,7 +562,7 @@
                     <summary>
                       <span class="settings-disclosure-copy">
                         <span class="settings-disclosure-title" id="settings-about-title">About / Advanced</span>
-                        <span class="settings-disclosure-desc">Diagnostics, runtime info, update checks, and troubleshooting.</span>
+                        <span class="settings-disclosure-desc">Diagnostics and low-frequency controls.</span>
                       </span>
                       <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
                     </summary>
@@ -572,7 +570,7 @@
                       <section class="settings-subsection" aria-labelledby="settings-runtime-title">
                         <header class="settings-subsection-header">
                           <h4 id="settings-runtime-title">Runtime</h4>
-                          <p class="settings-subsection-desc">Useful when confirming what is active now or troubleshooting local engines.</p>
+                          <p class="settings-subsection-desc">Version and runtime details.</p>
                         </header>
                         <div class="settings-meta-grid" aria-label="About this app">
                           <div class="settings-meta-item">
@@ -591,9 +589,9 @@
                             <div class="settings-meta-label">Processing</div>
                             <div class="settings-meta-value">
                               {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
-                                Local storage, cloud transcription available.
+                                Cloud transcription available.
                               {% else %}
-                                Local storage and local transcription by default.
+                                Local transcription.
                               {% endif %}
                             </div>
                           </div>
@@ -608,9 +606,7 @@
                             <span class="settings-label">WTM command</span>
                           </div>
                           <div class="settings-readonly is-mono">{{ runtime_snapshot.about.wtm_path }}</div>
-                          <p class="settings-hint">
-                            Used for Whisper (MLX / Metal). Check this path if local transcription fails to start.
-                          </p>
+                          <p class="settings-hint">Used by Whisper MLX.</p>
                         </div>
                         <div class="settings-field">
                           <div class="settings-label-row is-single">
@@ -621,7 +617,7 @@
                             {% if parakeet_snapshot.configured_model_present %}
                               Ready locally.
                             {% else %}
-                              Not detected; may download on first use.
+                              Not found; may download on first use.
                             {% endif %}
                           </p>
                         </div>
@@ -629,7 +625,7 @@
                       <section class="settings-subsection" aria-labelledby="settings-advanced-behavior-title">
                         <header class="settings-subsection-header">
                           <h4 id="settings-advanced-behavior-title">App behavior</h4>
-                          <p class="settings-subsection-desc">These changes apply after restart.</p>
+                          <p class="settings-subsection-desc">Applies after restart.</p>
                         </header>
                         {% if not update_locked %}
                           <input type="hidden" name="update_check_enabled_present" value="1">
@@ -648,7 +644,7 @@
                               Check for updates at startup
                             </label>
                           </div>
-                          <p class="settings-hint">Checks GitHub for release metadata at startup.</p>
+                          <p class="settings-hint">Checks for new releases at startup.</p>
                           {% if update_locked %}
                             <p class="settings-lock-note">
                               Managed by environment (<code>{{ settings_snapshot.meta.env_vars.update_check_enabled }}</code>).
@@ -690,7 +686,7 @@
                 <div class="settings-save-copy">
                   <div class="settings-save-title">Save locally</div>
                   <p class="settings-save-desc">
-                    Store configuration changes on this Mac. Where noted, changes apply after restart.
+                    Saves on this Mac. Restart where noted.
                   </p>
                 </div>
                 <div class="settings-actions">

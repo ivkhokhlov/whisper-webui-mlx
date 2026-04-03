@@ -5,9 +5,9 @@
                         <strong id="live-status">{{ "Ready for live capture." if live_snapshot.active else "Live capture is unavailable here." }}</strong>
                         <span class="live-stage__status-copy">
                           {% if live_snapshot.active %}
-                            {{ live_snapshot.engine_label }} runs locally on this Mac.
+                            Runs locally on this Mac.
                           {% else %}
-                            Saved transcripts still go through Queue.
+                            Save transcripts from Queue.
                           {% endif %}
                         </span>
                       </div>
@@ -19,7 +19,7 @@
                           {% if live_snapshot.active %}
                             {{ live_snapshot.engine_label }} · Local session only
                           {% else %}
-                            Queue and History remain the saved workflow.
+                            Not saved to History.
                           {% endif %}
                         </div>
                       </div>

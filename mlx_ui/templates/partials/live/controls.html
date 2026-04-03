@@ -11,11 +11,11 @@
                       <button class="cta is-secondary is-disabled" id="live-stop" type="button" disabled aria-disabled="true">
                         Stop capture
                       </button>
-                      <a class="cta is-secondary" href="/?tab=queue">Use Queue instead</a>
+                      <a class="cta is-secondary" href="/?tab=queue">Open Queue</a>
                     </div>
                     <p class="live-stage__note" id="live-note">
                       {% if live_snapshot.active %}
-                        Allow microphone access, then speak normally.
+                        Allow microphone access, then speak.
                       {% else %}
                         {{ live_snapshot.reason }}
                       {% endif %}

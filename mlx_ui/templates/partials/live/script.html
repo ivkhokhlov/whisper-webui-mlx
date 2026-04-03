@@ -33,11 +33,11 @@
           }
           if (session.status === "stopped") {
             statusEl.textContent = "Live session ended.";
-            noteEl.textContent = "This session stayed in memory only. Use Queue for saved transcripts.";
+            noteEl.textContent = "Not saved. Use Queue for saved transcripts.";
             return;
           }
           if (session.transcript) {
-            statusEl.textContent = "Listening and updating transcript.";
+            statusEl.textContent = "Updating transcript.";
           } else {
             statusEl.textContent = "Listening for speech.";
           }
@@ -111,7 +111,7 @@
         if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
           setButtonState(startButton, true);
           noteEl.textContent =
-            "This browser does not expose the microphone capture path needed for live preview.";
+            "This browser can't capture the microphone for live preview.";
           return;
         }
 
@@ -147,7 +147,7 @@
             });
             recorder.start(liveConfig.timeslice_ms);
             statusEl.textContent = "Microphone capture is live.";
-            noteEl.textContent = "Speak normally and watch the transcript update here.";
+            noteEl.textContent = "Speak normally. Text updates here.";
             setButtonState(startButton, true);
             setButtonState(stopButton, false);
           } catch (error) {
