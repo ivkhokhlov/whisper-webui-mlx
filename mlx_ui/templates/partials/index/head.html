@@ -75,15 +75,15 @@
       .hero {
         display: flex;
         flex-wrap: wrap;
-        gap: 24px;
-        align-items: flex-end;
+        gap: 16px 20px;
+        align-items: flex-start;
         justify-content: space-between;
       }
 
       .hero-copy {
-        flex: 1 1 460px;
+        flex: 1 1 380px;
         min-width: 0;
-        max-width: 680px;
+        max-width: 620px;
       }
 
       .eyebrow {
@@ -94,8 +94,8 @@
       }
 
       h1 {
-        margin: 8px 0 10px;
-        font-size: clamp(2rem, 3vw, 3rem);
+        margin: 0 0 6px;
+        font-size: clamp(1.9rem, 2.5vw, 2.45rem);
       }
 
       h2 {
@@ -110,28 +110,53 @@
         line-height: 1.5;
       }
 
+      .hero-copy p {
+        max-width: 58ch;
+        font-size: 0.95rem;
+      }
+
       .status-card {
         background: var(--surface-strong);
         border: 1px solid var(--line);
         border-radius: var(--radius-lg);
-        padding: 16px 20px;
+        padding: 12px 14px;
         min-width: 180px;
-        width: min(360px, 100%);
-        max-width: 360px;
+        width: min(320px, 100%);
+        max-width: 320px;
         box-shadow: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .status-card.is-running {
+        border-color: rgba(185, 82, 44, 0.24);
+        background: rgba(255, 241, 229, 0.8);
+      }
+
+      .status-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
       }
 
       .status-label {
-        font-size: 0.8rem;
+        font-size: 0.68rem;
         text-transform: uppercase;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.12em;
         color: var(--accent-strong);
+        font-weight: 700;
       }
 
       .status {
-        font-size: 1.4rem;
+        font-size: 1rem;
         font-weight: 700;
-        margin: 6px 0;
+        margin: 0;
+        line-height: 1.1;
+      }
+
+      .status-card.is-running .status {
+        color: var(--accent-strong);
       }
 
       .status-meta {
@@ -141,37 +166,31 @@
       }
 
       .worker-current {
-        margin-top: 10px;
-        padding: 12px 12px;
+        margin-top: 0;
+        padding: 8px 10px;
         border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.34);
+        background: rgba(255, 255, 255, 0.5);
         border: 1px solid var(--line);
         display: grid;
-        gap: 4px;
-      }
-
-      .worker-current-label {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: var(--accent-strong);
-        font-weight: 800;
+        gap: 0;
+        min-width: 0;
       }
 
       .worker-current-name {
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         font-weight: 700;
         line-height: 1.25;
         color: var(--ink);
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
-      .worker-pills {
-        margin-top: 12px;
+      .worker-meta {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 6px;
         align-items: center;
       }
 
@@ -179,13 +198,13 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 4px 10px;
+        padding: 4px 8px;
         border-radius: 999px;
         border: 1px solid var(--line);
         background: rgba(255, 255, 255, 0.4);
-        font-size: 0.72rem;
-        font-weight: 800;
-        letter-spacing: 0.12em;
+        font-size: 0.67rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--ink-muted);
         white-space: nowrap;
@@ -197,14 +216,17 @@
         color: var(--accent-strong);
       }
 
-      .worker-pill.is-muted {
-        background: transparent;
-        border-color: var(--line);
+      .worker-context {
+        min-height: 1.1em;
+        font-size: 0.78rem;
         color: var(--ink-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .tabs {
-        margin-top: 24px;
+        margin-top: 16px;
       }
 
       .tabbar {
@@ -2772,18 +2794,12 @@
           padding: 24px 14px 40px;
         }
 
-        .worker-pills {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          align-items: stretch;
+        .worker-meta {
+          gap: 5px;
         }
 
         .worker-pill {
-          justify-content: center;
-        }
-
-        .worker-pill.is-muted {
-          grid-column: 1 / -1;
+          justify-content: flex-start;
         }
 
         .settings-current-meta {

@@ -63,10 +63,11 @@ template partials.
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
 - Batch-level language selector plus a persisted default language setting.
-- Requested/effective engine tracking per job, exposed in the worker card,
+- Requested/effective engine tracking per job, exposed in the worker shell,
   queue, history, and preview metadata.
-- Worker status card that surfaces queue depth, mode, and current job metadata
-  only when the worker is actively processing.
+- Compact utility header with a short operational sentence plus a worker status
+  area that stays quiet when idle and only shows queue depth, elapsed time,
+  filename, and minimal engine/language context when that information helps.
 - Compact top-level navigation for Queue, History, and Settings that stays
   usable on mobile while `/live` remains a direct beta-preview route.
 - Distinct task surfaces: Queue is for adding work, History is for retrieving
@@ -80,6 +81,9 @@ template partials.
 - Compact History view with status, filename, time, output labels, and one-click
   primary actions, plus overflow actions that stay inside the viewport near
   screen edges.
+- The top shell avoids permanent “pill soup”: zero-value queue counts stay
+  hidden, always-on mode labels are removed, and the worker area never shows
+  more than two secondary metadata tokens at once.
 - Details-on-demand panel for full timestamps, outputs list, and error logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
