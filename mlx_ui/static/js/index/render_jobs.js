@@ -56,9 +56,23 @@
       })
       .join("");
     return `
-      <div class="detail-block">
+      <div class="detail-block is-outputs">
         <div class="detail-label">Outputs</div>
         <ul class="detail-results">${items}</ul>
+      </div>
+    `;
+  }
+
+  function buildDetailPair(label, valueHtml, options) {
+    if (!valueHtml) {
+      return "";
+    }
+    const opts = options || {};
+    const titleAttr = opts.title ? ` title="${escapeHtml(opts.title)}"` : "";
+    return `
+      <div class="detail-pair">
+        <dt class="detail-term">${escapeHtml(label)}</dt>
+        <dd class="detail-value"${titleAttr}>${valueHtml}</dd>
       </div>
     `;
   }
@@ -84,6 +98,72 @@
       lines.push(buildMetaLine("Completed", job.completed_at, "job-meta"));
     }
     return lines.join("");
+  }
+
+  function buildProcessingBlock(job) {
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    if (!ui) {
+      return "";
+    }
+    const language = ui.language && typeof ui.language === "object" ? ui.language : null;
+    const implementation =
+      ui.effective_implementation && typeof ui.effective_implementation === "object"
+        ? ui.effective_implementation
+        : null;
+    const implementationId = implementation && implementation.id ? String(implementation.id) : "";
+    const implementationTitle =
+      implementation && implementation.title
+        ? String(implementation.title)
+        : implementationId
+          ? `Backend: ${implementationId}`
+          : "";
+    const items = [];
+    if (ui.engine_summary) {
+      items.push(buildDetailPair("Engine", escapeHtml(String(ui.engine_summary))));
+    }
+    if (language && (language.label || language.short_label)) {
+      items.push(
+        buildDetailPair("Language", escapeHtml(String(language.label || language.short_label)))
+      );
+    }
+    if (implementationId) {
+      items.push(
+        buildDetailPair("Backend", `<code>${escapeHtml(implementationId)}</code>`, {
+          title: implementationTitle,
+        })
+      );
+    }
+    if (!items.length) {
+      return "";
+    }
+    return `
+      <div class="detail-block is-processing">
+        <div class="detail-label">Processing</div>
+        <dl class="detail-list">
+          ${items.join("")}
+        </dl>
+      </div>
+    `;
+  }
+
+  function buildTimelineBlock(job, status) {
+    const lines = [
+      buildMetaLine("Added", job.created_at, "detail-line"),
+      job.started_at ? buildMetaLine("Started", job.started_at, "detail-line") : "",
+      job.completed_at
+        ? buildMetaLine(
+            status === "failed" ? "Failed" : "Completed",
+            job.completed_at,
+            "detail-line"
+          )
+        : "",
+    ].join("");
+    return `
+      <div class="detail-block is-timeline">
+        <div class="detail-label">Timeline</div>
+        ${lines}
+      </div>
+    `;
   }
 
   function buildJobMetaChips(job) {
@@ -345,52 +425,18 @@
     const encodedJobId = encodeURIComponent(job.id);
     const safeFilename = escapeHtml(job.filename || "Untitled file");
     const openAttr = isOpen ? " open" : "";
-    const previewMeta = escapeHtml(buildPreviewMetaText(job));
-    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
-    const implementation =
-      ui && ui.effective_implementation && typeof ui.effective_implementation === "object"
-        ? ui.effective_implementation
-        : null;
-    const implementationId = implementation && implementation.id ? String(implementation.id) : "";
-    const implementationTitle =
-      implementation && implementation.title
-        ? String(implementation.title)
-        : implementationId
-          ? `Backend: ${implementationId}`
-          : "";
-    const timelineLines = [
-      buildMetaLine("Added", job.created_at, "detail-line"),
-      job.started_at ? buildMetaLine("Started", job.started_at, "detail-line") : "",
-      job.completed_at
-        ? buildMetaLine(
-            status === "failed" ? "Failed" : "Completed",
-            job.completed_at,
-            "detail-line"
-          )
-        : "",
-    ].join("");
-    const runtimeBlock =
-      implementationId && !(status === "done" && defaultResult)
-        ? `
-          <div class="detail-block">
-            <div class="detail-label">Runtime</div>
-            <div class="detail-line" title="${escapeHtml(implementationTitle)}">
-              Backend: <code>${escapeHtml(implementationId)}</code>
-            </div>
-          </div>
-        `
-        : "";
+    const processingBlock = buildProcessingBlock(job);
+    const timelineBlock = buildTimelineBlock(job, status);
 
     const previewBlock =
       status === "done" && defaultResult
         ? `
           <div
-            class="detail-block"
+            class="detail-block is-preview"
             data-preview-block
             data-preview-url="/api/jobs/${encodedJobId}/preview?chars=300"
           >
             <div class="detail-label">Preview</div>
-            ${previewMeta ? `<div class="preview-meta-note">${previewMeta}</div>` : ""}
             <div class="preview-snippet is-loading" data-preview-snippet>
               Preview will load when expanded.
             </div>
@@ -420,8 +466,8 @@
     const logBlock =
       status === "failed" && job.error_message
         ? `
-          <div class="detail-block">
-            <div class="detail-label">Log</div>
+          <div class="detail-block is-log">
+            <div class="detail-label">Failure log</div>
             <div class="detail-log" data-log>${escapeHtml(job.error_message)}</div>
           </div>
         `
@@ -429,19 +475,16 @@
 
     return `
       <details class="job-details" data-job-id="${escapeHtml(job.id)}"${openAttr}>
-        <summary aria-label="Details for ${safeFilename}">
-          <span>Details</span>
+        <summary aria-label="View details for ${safeFilename}">
+          <span>View details</span>
           <span class="details-chevron" aria-hidden="true">▾</span>
         </summary>
         <div class="job-details-body">
-          <div class="detail-block">
-            <div class="detail-label">Timeline</div>
-            ${timelineLines}
-          </div>
-          ${runtimeBlock}
           ${previewBlock}
-          ${outputsBlock}
           ${logBlock}
+          ${outputsBlock}
+          ${processingBlock}
+          ${timelineBlock}
         </div>
       </details>
     `;
