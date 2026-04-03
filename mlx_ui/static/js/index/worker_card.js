@@ -65,7 +65,17 @@
     const status = worker.status || "Idle";
     workerStatus.textContent = status;
     if (workerCardEl) {
-      workerCardEl.classList.toggle("is-running", status === "Running");
+      const normalizedStatus = String(status).trim().toLowerCase();
+      workerCardEl.classList.remove("is-running", "is-paused", "is-failed", "is-error");
+      if (normalizedStatus === "running") {
+        workerCardEl.classList.add("is-running");
+      } else if (normalizedStatus === "paused") {
+        workerCardEl.classList.add("is-paused");
+      } else if (normalizedStatus === "failed") {
+        workerCardEl.classList.add("is-failed");
+      } else if (normalizedStatus === "error") {
+        workerCardEl.classList.add("is-error");
+      }
     }
 
     const queuedCount =

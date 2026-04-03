@@ -17,6 +17,26 @@
         --shadow: 0 8px 18px rgba(29, 27, 22, 0.04);
         --shadow-soft: 0 2px 8px rgba(29, 27, 22, 0.035);
         --shadow-accent: 0 8px 18px rgba(185, 82, 44, 0.16);
+        --status-success-bg: #e7f4ec;
+        --status-success-border: #c9e4d4;
+        --status-success-text: #2f7d32;
+        --status-success-surface: rgba(231, 244, 236, 0.8);
+        --status-success-surface-soft: rgba(231, 244, 236, 0.48);
+        --status-active-bg: var(--status-success-bg);
+        --status-active-border: var(--status-success-border);
+        --status-active-text: var(--status-success-text);
+        --status-active-surface: var(--status-success-surface);
+        --status-active-surface-soft: var(--status-success-surface-soft);
+        --status-warning-bg: #fff0e1;
+        --status-warning-border: #f0c7b1;
+        --status-warning-text: var(--accent-strong);
+        --status-neutral-bg: #fff8f2;
+        --status-neutral-border: #f1e2d2;
+        --status-neutral-text: var(--ink-muted);
+        --status-error-bg: #fff1f1;
+        --status-error-bg-soft: #fff5f5;
+        --status-error-border: #f4d2d2;
+        --status-error-text: #8b2f2f;
         --radius-sm: 10px;
         --radius-md: 12px;
         --radius-lg: 14px;
@@ -129,8 +149,8 @@
       }
 
       .status-card.is-running {
-        border-color: rgba(185, 82, 44, 0.24);
-        background: rgba(255, 241, 229, 0.8);
+        border-color: var(--status-active-border);
+        background: var(--status-active-surface);
       }
 
       .status-head {
@@ -155,8 +175,32 @@
         line-height: 1.1;
       }
 
-      .status-card.is-running .status {
-        color: var(--accent-strong);
+      .status-card.is-running .status,
+      .status-card.is-running .status-label {
+        color: var(--status-active-text);
+      }
+
+      .status-card.is-paused {
+        border-color: var(--status-warning-border);
+        background: var(--status-warning-bg);
+      }
+
+      .status-card.is-paused .status,
+      .status-card.is-paused .status-label {
+        color: var(--status-warning-text);
+      }
+
+      .status-card.is-failed,
+      .status-card.is-error {
+        border-color: var(--status-error-border);
+        background: var(--status-error-bg);
+      }
+
+      .status-card.is-failed .status,
+      .status-card.is-failed .status-label,
+      .status-card.is-error .status,
+      .status-card.is-error .status-label {
+        color: var(--status-error-text);
       }
 
       .status-meta {
@@ -309,9 +353,9 @@
       }
 
       .settings-banner {
-        background: #e7f4ec;
-        border: 1px solid #c9e4d4;
-        color: #2f7d32;
+        background: var(--status-success-bg);
+        border: 1px solid var(--status-success-border);
+        color: var(--status-success-text);
         padding: 10px 14px;
         border-radius: var(--radius-md);
         font-weight: 600;
@@ -319,9 +363,9 @@
       }
 
       .settings-banner.is-error {
-        background: #fff1f1;
-        border-color: #f4d2d2;
-        color: #8b2f2f;
+        background: var(--status-error-bg);
+        border-color: var(--status-error-border);
+        color: var(--status-error-text);
       }
 
       .settings-form {
@@ -889,21 +933,21 @@
       }
 
       .settings-save-state.is-dirty {
-        border-color: #f0c7b1;
-        background: #fff0e1;
-        color: var(--accent-strong);
+        border-color: var(--status-warning-border);
+        background: var(--status-warning-bg);
+        color: var(--status-warning-text);
       }
 
       .settings-save-state.is-success {
-        border-color: #c9e4d4;
-        background: #e7f4ec;
-        color: #2f7d32;
+        border-color: var(--status-success-border);
+        background: var(--status-success-bg);
+        color: var(--status-success-text);
       }
 
       .settings-save-state.is-error {
-        border-color: #f4d2d2;
-        background: #fff5f5;
-        color: #8b2f2f;
+        border-color: var(--status-error-border);
+        background: var(--status-error-bg-soft);
+        color: var(--status-error-text);
       }
 
       .panels {
@@ -1529,7 +1573,7 @@
 
       .history-error-summary {
         font-size: 0.76rem;
-        color: rgba(139, 47, 47, 0.86);
+        color: var(--status-error-text);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1556,27 +1600,35 @@
       }
 
       .status-badge.is-done {
-        background: #e6f2e8;
-        border-color: #cfe6d6;
-        color: #2f7d32;
+        background: var(--status-success-bg);
+        border-color: var(--status-success-border);
+        color: var(--status-success-text);
       }
 
-      .status-badge.is-failed {
-        background: #fff1f1;
-        border-color: #f4d2d2;
-        color: #8b2f2f;
+      .status-badge.is-failed,
+      .status-badge.is-error {
+        background: var(--status-error-bg);
+        border-color: var(--status-error-border);
+        color: var(--status-error-text);
       }
 
       .status-badge.is-running {
-        background: #fff0e1;
-        border-color: #f0c7b1;
-        color: var(--accent-strong);
+        background: var(--status-active-bg);
+        border-color: var(--status-active-border);
+        color: var(--status-active-text);
       }
 
-      .status-badge.is-queued {
-        background: #fff8f2;
-        border-color: #f1e2d2;
-        color: var(--ink-muted);
+      .status-badge.is-queued,
+      .status-badge.is-idle {
+        background: var(--status-neutral-bg);
+        border-color: var(--status-neutral-border);
+        color: var(--status-neutral-text);
+      }
+
+      .status-badge.is-paused {
+        background: var(--status-warning-bg);
+        border-color: var(--status-warning-border);
+        color: var(--status-warning-text);
       }
 
       .history-actions {
@@ -1644,9 +1696,9 @@
       }
 
       .job-primary.is-danger {
-        background: #fff1f1;
-        border: 1px solid #f4d2d2;
-        color: #8b2f2f;
+        background: var(--status-error-bg);
+        border: 1px solid var(--status-error-border);
+        color: var(--status-error-text);
       }
 
       .job-primary.is-danger:hover {
@@ -1743,17 +1795,17 @@
 
       .job-menu-divider {
         height: 1px;
-        background: #f1e2d2;
+        background: var(--status-neutral-border);
         margin: 4px 6px;
       }
 
       .job-menu-item.is-danger {
-        color: #8b2f2f;
+        color: var(--status-error-text);
       }
 
       .job-menu-item.is-danger:hover {
-        background: #fff1f1;
-        color: #8b2f2f;
+        background: var(--status-error-bg);
+        color: var(--status-error-text);
       }
 
       .job-details {
@@ -1962,8 +2014,8 @@
       }
 
       .job-row.is-running {
-        border-color: rgba(185, 82, 44, 0.22);
-        background: rgba(255, 246, 238, 0.48);
+        border-color: var(--status-active-border);
+        background: var(--status-active-surface-soft);
         box-shadow: none;
       }
 
@@ -2095,11 +2147,11 @@
       .job-error {
         margin-top: 8px;
         padding: 8px 10px;
-        background: #fff1f1;
-        border: 1px solid #f4d2d2;
+        background: var(--status-error-bg);
+        border: 1px solid var(--status-error-border);
         border-radius: 8px;
         font-size: 0.82rem;
-        color: #8b2f2f;
+        color: var(--status-error-text);
         white-space: pre-wrap;
       }
 
@@ -2507,13 +2559,13 @@
       }
 
       .toast.is-done {
-        --toast-border: #cfe6d6;
-        --toast-accent: #2f7d32;
+        --toast-border: var(--status-success-border);
+        --toast-accent: var(--status-success-text);
       }
 
       .toast.is-failed {
-        --toast-border: #f4d2d2;
-        --toast-accent: #b3261e;
+        --toast-border: var(--status-error-border);
+        --toast-accent: var(--status-error-text);
       }
 
       .toast__icon {

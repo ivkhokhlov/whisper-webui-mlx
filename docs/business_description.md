@@ -100,6 +100,9 @@ shared project history while preserving the same user-facing data flow.
 - Queue rows now collapse to a filename/status line plus one short contextual
   summary, replacing duplicate queue numbers and chip-heavy engine/language
   metadata with calmer scan-first labels.
+- Task status colors now follow semantic design-system tokens, so running work
+  reads as active/success, failed work stays clearly error-coded, and idle or
+  queued states remain visually neutral.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.

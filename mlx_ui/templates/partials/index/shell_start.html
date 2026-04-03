@@ -20,7 +20,7 @@
           {% endif %}
         {% endif %}
         <div
-          class="status-card{% if worker.status == 'Running' %} is-running{% endif %}"
+          class="status-card{% if worker.status == 'Running' %} is-running{% elif worker.status == 'Paused' %} is-paused{% elif worker.status == 'Error' or worker.status == 'Failed' %} is-failed{% endif %}"
           id="worker-card"
           aria-live="polite"
           aria-label="Worker status"
