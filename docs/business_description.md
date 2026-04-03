@@ -115,6 +115,10 @@ shared project history while preserving the same user-facing data flow.
   elapsed timer in both the worker shell and the active queue row, reusing the
   shared loader primitive and disabling the animation automatically when the
   system requests reduced motion.
+- Main navigation is now typography-led instead of container-led: Queue,
+  History, and Settings sit directly on the page background with lighter
+  spacing, a thin active underline, and stronger active weight instead of a
+  boxed segmented strip.
 - The Queue intake area now scales with workload: it stays prominent when idle
   and collapses into a tighter banner once jobs are queued or running, giving
   the worker and queue list more vertical priority without removing drag/drop.

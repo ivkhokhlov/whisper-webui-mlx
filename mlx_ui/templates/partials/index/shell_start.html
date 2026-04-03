@@ -101,33 +101,31 @@
       </header>
 
       <section class="tabs" aria-label="Main sections">
-        <div class="tabbar">
-          <nav class="tablist" aria-label="Main sections">
-            <a
-              class="tab{% if active_tab == 'queue' %} is-active{% endif %}"
-              data-tab="queue"
-              href="/?tab=queue"
-              {% if active_tab == 'queue' %}aria-current="page"{% endif %}
-            >
-              Queue
-            </a>
-            <a
-              class="tab{% if active_tab == 'history' %} is-active{% endif %}"
-              data-tab="history"
-              href="/?tab=history"
-              {% if active_tab == 'history' %}aria-current="page"{% endif %}
-            >
-              History
-            </a>
-            <a
-              class="tab{% if active_tab == 'settings' %} is-active{% endif %}"
-              data-tab="settings"
-              href="/?tab=settings"
-              {% if active_tab == 'settings' %}aria-current="page"{% endif %}
-            >
-              Settings
-            </a>
-          </nav>
-        </div>
+        <nav class="tablist" aria-label="Main sections">
+          <a
+            class="tab{% if active_tab == 'queue' %} is-active{% endif %}"
+            data-tab="queue"
+            href="/?tab=queue"
+            {% if active_tab == 'queue' %}aria-current="page"{% endif %}
+          >
+            Queue
+          </a>
+          <a
+            class="tab{% if active_tab == 'history' %} is-active{% endif %}"
+            data-tab="history"
+            href="/?tab=history"
+            {% if active_tab == 'history' %}aria-current="page"{% endif %}
+          >
+            History
+          </a>
+          <a
+            class="tab{% if active_tab == 'settings' %} is-active{% endif %}"
+            data-tab="settings"
+            href="/?tab=settings"
+            {% if active_tab == 'settings' %}aria-current="page"{% endif %}
+          >
+            Settings
+          </a>
+        </nav>
 
         <div class="panels">

@@ -76,6 +76,8 @@ def test_root_tab_param_sets_active_panel_and_nav(tmp_path: Path) -> None:
         response = client.get("/?tab=history")
 
     assert response.status_code == 200
+    assert 'class="tabbar"' not in response.text
+    assert 'class="tablist"' in response.text
     history_link = re.search(r'<a[^>]*data-tab="history"[^>]*>', response.text)
     assert history_link is not None
     assert 'aria-current="page"' in history_link.group(0)
