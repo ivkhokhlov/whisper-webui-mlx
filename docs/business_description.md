@@ -111,6 +111,9 @@ template partials.
   cached already, so the app can explain likely first-run downloads before jobs
   stall.
 - Settings and the resolver keep the selected engine, compatibility notes, log
+- Settings now follow a clearer priority order: transcription defaults first,
+-  optional integrations second, local storage third, and diagnostics/update
+-  controls behind a calmer About / Advanced disclosure.
   level, output formats, update-check preference, and environment overrides
   aligned between saved settings and runtime snapshots.
 - Local settings API endpoints for automation (read, update, and clear storage).
