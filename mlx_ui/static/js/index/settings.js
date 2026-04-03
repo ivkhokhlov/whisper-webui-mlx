@@ -12,11 +12,9 @@
     settingsBannerError,
     whisperModelError,
     cohereStatusLabel,
-    cohereSourcePill,
     cohereKeyMask,
     cohereKeyMaskValue,
     telegramStatusLabel,
-    telegramSourcePill,
     telegramTokenMask,
     telegramChatMask,
     telegramTokenMaskValue,
@@ -25,6 +23,50 @@
     telegramChatHint,
   } = app.dom || {};
   const cohereKeyHint = document.querySelector("[data-cohere-key-hint]");
+  const cohereSetupTitle = document.querySelector("[data-cohere-setup-title]");
+  const cohereSetupDesc = document.querySelector("[data-cohere-setup-desc]");
+  const telegramSetupTitle = document.querySelector("[data-telegram-setup-title]");
+  const telegramSetupDesc = document.querySelector("[data-telegram-setup-desc]");
+
+  function getCohereSetupCopy(configured) {
+    const locked = Boolean(document.getElementById("cohere-api-key")?.disabled);
+    if (locked) {
+      return {
+        title: "View setup",
+        desc: "Review the masked key and provider defaults.",
+      };
+    }
+    if (configured) {
+      return {
+        title: "Edit setup",
+        desc: "Saved credentials stay masked until you need to update them.",
+      };
+    }
+    return {
+      title: "Set up",
+      desc: "Add a key only if you plan to use Cohere.",
+    };
+  }
+
+  function getTelegramSetupCopy(configured) {
+    const locked = Boolean(document.getElementById("telegram-token")?.disabled);
+    if (locked) {
+      return {
+        title: "View setup",
+        desc: "Review the masked delivery credentials.",
+      };
+    }
+    if (configured) {
+      return {
+        title: "Edit setup",
+        desc: "Saved credentials stay masked until you need to update them.",
+      };
+    }
+    return {
+      title: "Set up",
+      desc: "Add a bot token and chat ID only if you want delivery in Telegram.",
+    };
+  }
 
   function normalizeSettingsText(value) {
     return String(value || "").trim();
@@ -111,17 +153,16 @@
       return;
     }
     const configured = Boolean(snapshot.configured);
-    const source = typeof snapshot.source === "string" ? snapshot.source : "missing";
-    const normalized = ["env", "file", "default"].includes(source) ? source : "missing";
+    const setupCopy = getTelegramSetupCopy(configured);
 
     if (telegramStatusLabel) {
-      telegramStatusLabel.textContent = configured ? "Enabled" : "Off";
+      telegramStatusLabel.textContent = configured ? "Configured" : "Not configured";
     }
-    if (telegramSourcePill) {
-      telegramSourcePill.textContent = source;
-      telegramSourcePill.setAttribute("title", `Value source: ${source}`);
-      telegramSourcePill.classList.remove("is-env", "is-file", "is-default", "is-missing");
-      telegramSourcePill.classList.add(`is-${normalized}`);
+    if (telegramSetupTitle) {
+      telegramSetupTitle.textContent = setupCopy.title;
+    }
+    if (telegramSetupDesc) {
+      telegramSetupDesc.textContent = setupCopy.desc;
     }
     if (telegramTokenHint) {
       telegramTokenHint.textContent = configured
@@ -158,17 +199,16 @@
       return;
     }
     const configured = Boolean(snapshot.configured);
-    const source = typeof snapshot.source === "string" ? snapshot.source : "missing";
-    const normalized = ["env", "file", "default"].includes(source) ? source : "missing";
+    const setupCopy = getCohereSetupCopy(configured);
 
     if (cohereStatusLabel) {
       cohereStatusLabel.textContent = configured ? "Configured" : "Not configured";
     }
-    if (cohereSourcePill) {
-      cohereSourcePill.textContent = source;
-      cohereSourcePill.setAttribute("title", `Value source: ${source}`);
-      cohereSourcePill.classList.remove("is-env", "is-file", "is-default", "is-missing");
-      cohereSourcePill.classList.add(`is-${normalized}`);
+    if (cohereSetupTitle) {
+      cohereSetupTitle.textContent = setupCopy.title;
+    }
+    if (cohereSetupDesc) {
+      cohereSetupDesc.textContent = setupCopy.desc;
     }
     if (cohereKeyHint) {
       cohereKeyHint.textContent = configured

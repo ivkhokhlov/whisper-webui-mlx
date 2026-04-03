@@ -193,7 +193,6 @@
                           {% if cohere_snapshot.configured %}Configured{% else %}Not configured{% endif %}
                         </span>
                       </div>
-                      <p class="settings-hint">{{ cohere_snapshot.product_note }}</p>
                       {% if cohere_snapshot.selected and cohere_snapshot.reason %}
                         <p class="settings-hint">
                           Selected for new jobs. {{ cohere_snapshot.reason }}
@@ -201,62 +200,80 @@
                       {% elif cohere_snapshot.reason %}
                         <p class="settings-hint">{{ cohere_snapshot.reason }}</p>
                       {% endif %}
-                    </div>
-                    <div class="settings-field">
-                      <div class="settings-label-row is-field-meta">
-                        <label class="settings-label" for="cohere-api-key">API key</label>
-                        <span
-                          class="settings-current-meta"
-                          data-cohere-key-mask
-                          {% if cohere_snapshot.source == "missing" %}hidden{% endif %}
-                        >
-                          <span class="settings-current-meta-label">Current</span>
-                          <span class="settings-current-meta-value" data-cohere-key-mask-value>
-                            {{ cohere_snapshot.api_key_masked }}
-                          </span>
-                        </span>
-                      </div>
-                      <input
-                        class="settings-input"
-                        id="cohere-api-key"
-                        name="cohere_api_key"
-                        type="password"
-                        autocomplete="new-password"
-                        placeholder="Paste your Cohere API key"
-                        {% if cohere_key_locked %}disabled{% endif %}
-                      >
                       {% if cohere_key_locked %}
                         <p class="settings-lock-note">
                           Managed by environment (<code>{{ settings_snapshot.meta.env_vars.cohere_api_key }}</code>).
                         </p>
-                      {% else %}
-                        <p class="settings-hint" data-cohere-key-hint>
-                          {% if cohere_snapshot.configured %}
-                            Leave blank to keep the saved key.
-                          {% else %}
-                            Add a key only if you plan to use Cohere.
-                          {% endif %}
-                        </p>
                       {% endif %}
-                      <label class="settings-checkbox">
-                        <input
-                          type="checkbox"
-                          name="clear_cohere_api_key"
-                          value="1"
-                          {% if cohere_key_locked %}disabled{% endif %}
-                        >
-                        Forget saved API key
-                      </label>
                     </div>
-                    <details class="settings-disclosure is-inline">
+                    <details class="settings-disclosure is-inline" data-cohere-setup>
                       <summary>
                         <span class="settings-disclosure-copy">
-                          <span class="settings-disclosure-title">Advanced Cohere options</span>
-                          <span class="settings-disclosure-desc">Model ID and low-frequency provider settings.</span>
+                          <span class="settings-disclosure-title" data-cohere-setup-title>
+                            {% if cohere_key_locked %}
+                              View setup
+                            {% elif cohere_snapshot.configured %}
+                              Edit setup
+                            {% else %}
+                              Set up
+                            {% endif %}
+                          </span>
+                          <span class="settings-disclosure-desc" data-cohere-setup-desc>
+                            {% if cohere_key_locked %}
+                              Review the masked key and provider defaults.
+                            {% elif cohere_snapshot.configured %}
+                              Saved credentials stay masked until you need to update them.
+                            {% else %}
+                              Add a key only if you plan to use Cohere.
+                            {% endif %}
+                          </span>
                         </span>
                         <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
                       </summary>
                       <div class="settings-disclosure-body">
+                        <p class="settings-hint">{{ cohere_snapshot.product_note }}</p>
+                        <div class="settings-field">
+                          <div class="settings-label-row is-field-meta">
+                            <label class="settings-label" for="cohere-api-key">API key</label>
+                            <span
+                              class="settings-current-meta"
+                              data-cohere-key-mask
+                              {% if cohere_snapshot.source == "missing" %}hidden{% endif %}
+                            >
+                              <span class="settings-current-meta-label">Current</span>
+                              <span class="settings-current-meta-value" data-cohere-key-mask-value>
+                                {{ cohere_snapshot.api_key_masked }}
+                              </span>
+                            </span>
+                          </div>
+                          <input
+                            class="settings-input"
+                            id="cohere-api-key"
+                            name="cohere_api_key"
+                            type="password"
+                            autocomplete="new-password"
+                            placeholder="Paste your Cohere API key"
+                            {% if cohere_key_locked %}disabled{% endif %}
+                          >
+                          {% if not cohere_key_locked %}
+                            <p class="settings-hint" data-cohere-key-hint>
+                              {% if cohere_snapshot.configured %}
+                                Leave blank to keep the saved key.
+                              {% else %}
+                                Add a key only if you plan to use Cohere.
+                              {% endif %}
+                            </p>
+                          {% endif %}
+                          <label class="settings-checkbox">
+                            <input
+                              type="checkbox"
+                              name="clear_cohere_api_key"
+                              value="1"
+                              {% if cohere_key_locked %}disabled{% endif %}
+                            >
+                            Forget saved API key
+                          </label>
+                        </div>
                         <div class="settings-field">
                           <div class="settings-label-row is-single">
                             <label class="settings-label" for="cohere-model">Model ID</label>
@@ -290,7 +307,7 @@
                       <div class="settings-status-row">
                         <span class="settings-label">Status</span>
                         <span class="settings-status-value" data-telegram-status>
-                          {% if telegram_snapshot.configured %}Enabled{% else %}Off{% endif %}
+                          {% if telegram_snapshot.configured %}Configured{% else %}Not configured{% endif %}
                         </span>
                       </div>
                       <p class="settings-hint">
@@ -302,85 +319,112 @@
                         </p>
                       {% endif %}
                     </div>
-                    <div class="settings-field">
-                      <div class="settings-label-row is-field-meta">
-                        <label class="settings-label" for="telegram-token">Bot token</label>
-                        <span
-                          class="settings-current-meta"
-                          data-telegram-token-mask
-                          {% if not telegram_snapshot.configured %}hidden{% endif %}
-                        >
-                          <span class="settings-current-meta-label">Current</span>
-                          <span class="settings-current-meta-value" data-telegram-token-mask-value>
-                            {{ telegram_snapshot.token_masked }}
+                    <details class="settings-disclosure is-inline" data-telegram-setup>
+                      <summary>
+                        <span class="settings-disclosure-copy">
+                          <span class="settings-disclosure-title" data-telegram-setup-title>
+                            {% if telegram_locked %}
+                              View setup
+                            {% elif telegram_snapshot.configured %}
+                              Edit setup
+                            {% else %}
+                              Set up
+                            {% endif %}
+                          </span>
+                          <span class="settings-disclosure-desc" data-telegram-setup-desc>
+                            {% if telegram_locked %}
+                              Review the masked delivery credentials.
+                            {% elif telegram_snapshot.configured %}
+                              Saved credentials stay masked until you need to update them.
+                            {% else %}
+                              Add a bot token and chat ID only if you want delivery in Telegram.
+                            {% endif %}
                           </span>
                         </span>
-                      </div>
-                      <input
-                        class="settings-input"
-                        id="telegram-token"
-                        name="telegram_token"
-                        type="password"
-                        autocomplete="new-password"
-                        placeholder="123456:ABC..."
-                        {% if telegram_locked %}disabled{% endif %}
-                      >
-                      {% if not telegram_locked %}
-                        <p class="settings-hint" data-telegram-token-hint>
-                          {% if telegram_snapshot.configured %}
-                            Leave blank to keep the saved token.
-                          {% else %}
-                            Add your bot token.
+                        <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="settings-disclosure-body">
+                        <div class="settings-field">
+                          <div class="settings-label-row is-field-meta">
+                            <label class="settings-label" for="telegram-token">Bot token</label>
+                            <span
+                              class="settings-current-meta"
+                              data-telegram-token-mask
+                              {% if not telegram_snapshot.configured %}hidden{% endif %}
+                            >
+                              <span class="settings-current-meta-label">Current</span>
+                              <span class="settings-current-meta-value" data-telegram-token-mask-value>
+                                {{ telegram_snapshot.token_masked }}
+                              </span>
+                            </span>
+                          </div>
+                          <input
+                            class="settings-input"
+                            id="telegram-token"
+                            name="telegram_token"
+                            type="password"
+                            autocomplete="new-password"
+                            placeholder="123456:ABC..."
+                            {% if telegram_locked %}disabled{% endif %}
+                          >
+                          {% if not telegram_locked %}
+                            <p class="settings-hint" data-telegram-token-hint>
+                              {% if telegram_snapshot.configured %}
+                                Leave blank to keep the saved token.
+                              {% else %}
+                                Add your bot token.
+                              {% endif %}
+                            </p>
                           {% endif %}
-                        </p>
-                      {% endif %}
-                      <label class="settings-checkbox">
-                        <input type="checkbox" name="clear_telegram_token" value="1" {% if telegram_locked %}disabled{% endif %}>
-                        Forget saved token
-                      </label>
-                    </div>
-                    <div class="settings-field">
-                      <div class="settings-label-row is-field-meta">
-                        <label class="settings-label" for="telegram-chat-id">Chat ID</label>
-                        <span
-                          class="settings-current-meta"
-                          data-telegram-chat-mask
-                          {% if not telegram_snapshot.configured %}hidden{% endif %}
-                        >
-                          <span class="settings-current-meta-label">Current</span>
-                          <span class="settings-current-meta-value" data-telegram-chat-mask-value>
-                            {{ telegram_snapshot.chat_id_masked }}
-                          </span>
-                        </span>
-                      </div>
-                      <input
-                        class="settings-input"
-                        id="telegram-chat-id"
-                        name="telegram_chat_id"
-                        type="password"
-                        autocomplete="new-password"
-                        placeholder="-1001234567890"
-                        {% if telegram_locked %}disabled{% endif %}
-                      >
-                      {% if not telegram_locked %}
-                        <p class="settings-hint" data-telegram-chat-hint>
-                          {% if telegram_snapshot.configured %}
-                            Leave blank to keep the saved chat ID.
-                          {% else %}
-                            Use the numeric chat ID for your target chat.
+                          <label class="settings-checkbox">
+                            <input type="checkbox" name="clear_telegram_token" value="1" {% if telegram_locked %}disabled{% endif %}>
+                            Forget saved token
+                          </label>
+                        </div>
+                        <div class="settings-field">
+                          <div class="settings-label-row is-field-meta">
+                            <label class="settings-label" for="telegram-chat-id">Chat ID</label>
+                            <span
+                              class="settings-current-meta"
+                              data-telegram-chat-mask
+                              {% if not telegram_snapshot.configured %}hidden{% endif %}
+                            >
+                              <span class="settings-current-meta-label">Current</span>
+                              <span class="settings-current-meta-value" data-telegram-chat-mask-value>
+                                {{ telegram_snapshot.chat_id_masked }}
+                              </span>
+                            </span>
+                          </div>
+                          <input
+                            class="settings-input"
+                            id="telegram-chat-id"
+                            name="telegram_chat_id"
+                            type="password"
+                            autocomplete="new-password"
+                            placeholder="-1001234567890"
+                            {% if telegram_locked %}disabled{% endif %}
+                          >
+                          {% if not telegram_locked %}
+                            <p class="settings-hint" data-telegram-chat-hint>
+                              {% if telegram_snapshot.configured %}
+                                Leave blank to keep the saved chat ID.
+                              {% else %}
+                                Use the numeric chat ID for your target chat.
+                              {% endif %}
+                            </p>
                           {% endif %}
-                        </p>
-                      {% endif %}
-                      <label class="settings-checkbox">
-                        <input
-                          type="checkbox"
-                          name="clear_telegram_chat_id"
-                          value="1"
-                          {% if telegram_locked %}disabled{% endif %}
-                        >
-                        Forget saved chat ID
-                      </label>
-                    </div>
+                          <label class="settings-checkbox">
+                            <input
+                              type="checkbox"
+                              name="clear_telegram_chat_id"
+                              value="1"
+                              {% if telegram_locked %}disabled{% endif %}
+                            >
+                            Forget saved chat ID
+                          </label>
+                        </div>
+                      </div>
+                    </details>
                   </section>
                 </section>
 
