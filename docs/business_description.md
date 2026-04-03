@@ -105,15 +105,18 @@ template partials.
   default language, output formats, WTM quick mode, Telegram delivery, and local
   diagnostics, persisted in `data/settings.json` (dev) or
   `~/Library/Application Support/<bundle_id>/data/settings.json` (packaged).
+- Settings now follow a clearer priority order: transcription defaults first,
+  optional integrations second, local storage third, and diagnostics/update
+  controls behind a calmer About / Advanced disclosure.
+- Field-level source metadata is now demoted: editable controls lead with plain
+  labels, env-locked values explain that they are managed by environment, and
+  repeated restart warnings are collapsed into section-level notes.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be
   cached already, so the app can explain likely first-run downloads before jobs
   stall.
 - Settings and the resolver keep the selected engine, compatibility notes, log
-- Settings now follow a clearer priority order: transcription defaults first,
--  optional integrations second, local storage third, and diagnostics/update
--  controls behind a calmer About / Advanced disclosure.
   level, output formats, update-check preference, and environment overrides
   aligned between saved settings and runtime snapshots.
 - Local settings API endpoints for automation (read, update, and clear storage).

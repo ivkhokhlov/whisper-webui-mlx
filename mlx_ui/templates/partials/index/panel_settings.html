@@ -21,23 +21,17 @@
             </div>
             <div class="settings-banner is-error" id="settings-banner-error" role="alert" hidden></div>
             <form class="settings-form" action="/settings" method="post">
-              {% set engine_source = settings_snapshot.sources.engine %}
-              {% set engine_locked = engine_source == "env" %}
+              {% set engine_locked = settings_snapshot.sources.engine == "env" %}
               {% set configured_engine = settings_snapshot.engine.configured %}
-              {% set default_language_source = settings_snapshot.sources.default_language %}
               {% set whisper_source = settings_snapshot.sources.whisper_model %}
-              {% set quick_source = settings_snapshot.sources.wtm_quick %}
-              {% set quick_locked = quick_source == "env" %}
-              {% set cohere_source = cohere_snapshot.source %}
+              {% set quick_locked = settings_snapshot.sources.wtm_quick == "env" %}
               {% set cohere_key_locked = cohere_snapshot.api_key_source == "env" %}
-              {% set cohere_model_source = settings_snapshot.sources.cohere_model %}
-              {% set telegram_source = telegram_snapshot.source %}
+              {% set cohere_model_locked = settings_snapshot.sources.cohere_model == "env" %}
               {% set telegram_locked = telegram_snapshot.source == "env" %}
               {% set history_count = history_jobs | length %}
               {% set queue_count_total = queue_jobs | length %}
-              {% set update_source = settings_snapshot.sources.update_check_enabled %}
-              {% set update_locked = update_source == "env" %}
-              {% set log_source = settings_snapshot.sources.log_level %}
+              {% set update_locked = settings_snapshot.sources.update_check_enabled == "env" %}
+              {% set log_locked = settings_snapshot.sources.log_level == "env" %}
               {% set parakeet_snapshot = settings_snapshot.local_models.parakeet %}
               <div class="settings-grid">
                 <section class="settings-card is-primary" aria-labelledby="settings-transcription-title">
@@ -45,21 +39,15 @@
                     <h3 id="settings-transcription-title">General / Transcription defaults</h3>
                     <p class="settings-section-desc">Start here. These settings affect new jobs by default.</p>
                   </header>
+                  <p class="settings-section-note">Engine changes take effect after restart.</p>
                   <section class="settings-subsection" aria-labelledby="settings-engine-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-engine-title">Engine</h4>
-                      <p class="settings-subsection-desc">Choose how new files should be transcribed.</p>
+                      <p class="settings-subsection-desc">Choose the default transcription engine for new jobs.</p>
                     </header>
                     <div class="settings-field">
-                      <div class="settings-label-row">
+                      <div class="settings-label-row is-single">
                         <label class="settings-label" for="engine-select">Engine</label>
-                        <span
-                          class="source-pill is-{{ engine_source }}"
-                          data-settings-source-pill="engine"
-                          title="Value source: {{ engine_source }}"
-                        >
-                          {{ engine_source }}
-                        </span>
                       </div>
                       <select
                         class="settings-input"
@@ -78,15 +66,11 @@
                         {% endfor %}
                       </select>
                       <p class="settings-hint">
-                        Affects new jobs. Restart the app to switch the active worker.
-                      </p>
-                      <p class="settings-hint">
-                        Apple Silicon: Whisper (MLX / Metal) or Parakeet (MLX). Intel: Whisper (CPU). Cohere uploads audio to the provider.
+                        Local engines stay on this Mac. Cohere uploads audio to the provider.
                       </p>
                       {% if engine_locked %}
-                        <p class="settings-hint">
-                          Managed by <code>{{ settings_snapshot.meta.env_vars.engine }}</code>. Remove that environment
-                          variable to change it here.
+                        <p class="settings-lock-note">
+                          Managed by environment (<code>{{ settings_snapshot.meta.env_vars.engine }}</code>).
                         </p>
                       {% endif %}
                       {% if configured_engine and configured_engine.reason %}
@@ -103,15 +87,8 @@
                       <p class="settings-subsection-desc">Choose what new queue items inherit automatically.</p>
                     </header>
                     <div class="settings-field">
-                      <div class="settings-label-row">
+                      <div class="settings-label-row is-single">
                         <label class="settings-label" for="default-language">Default language</label>
-                        <span
-                          class="source-pill is-{{ default_language_source }}"
-                          data-settings-source-pill="default_language"
-                          title="Value source: {{ default_language_source }}"
-                        >
-                          {{ default_language_source }}
-                        </span>
                       </div>
                       <select class="settings-input" id="default-language" name="default_language">
                         {% for language_option in settings_snapshot.options.languages %}
@@ -124,7 +101,7 @@
                         {% endfor %}
                       </select>
                       <p class="settings-hint">
-                        Used for new jobs. Auto is usually safest unless your provider requires a fixed language.
+                        Auto is safest unless you always transcribe the same language.
                       </p>
                     </div>
                   </section>
@@ -139,15 +116,8 @@
                     </summary>
                     <div class="settings-disclosure-body">
                       <div class="settings-field">
-                        <div class="settings-label-row">
+                        <div class="settings-label-row is-single">
                           <label class="settings-label" for="whisper-model">Whisper model</label>
-                          <span
-                            class="source-pill is-{{ whisper_source }}"
-                            data-settings-source-pill="whisper_model"
-                            title="Value source: {{ whisper_source }}"
-                          >
-                            {{ whisper_source }}
-                          </span>
                         </div>
                         <input
                           class="settings-input"
@@ -163,13 +133,15 @@
                             <option value="{{ model }}"></option>
                           {% endfor %}
                         </datalist>
-                        <p class="settings-hint">
-                          Used only for Whisper (CPU). {% if whisper_source == "env" %}Managed by
-                          <code>{{ settings_snapshot.meta.env_vars.whisper_model }}</code>.{% endif %}
-                        </p>
+                        <p class="settings-hint">Used only when Whisper runs on CPU.</p>
+                        {% if whisper_source == "env" %}
+                          <p class="settings-lock-note">
+                            Managed by environment (<code>{{ settings_snapshot.meta.env_vars.whisper_model }}</code>).
+                          </p>
+                        {% endif %}
                         <p class="settings-hint">
                           {% if downloaded_models %}
-                            Downloaded: {{ downloaded_models | join(", ") }}.
+                            Downloaded models: {{ downloaded_models | join(", ") }}.
                           {% else %}
                             No downloaded Whisper models detected yet.
                           {% endif %}
@@ -180,7 +152,7 @@
                         <input type="hidden" name="wtm_quick_present" value="1">
                       {% endif %}
                       <div class="settings-field">
-                        <div class="settings-label-row">
+                        <div class="settings-label-row is-single">
                           <label class="settings-toggle" for="wtm-quick">
                             <input
                               id="wtm-quick"
@@ -192,18 +164,13 @@
                             >
                             Quick mode (WTM)
                           </label>
-                          <span
-                            class="source-pill is-{{ quick_source }}"
-                            data-settings-source-pill="wtm_quick"
-                            title="Value source: {{ quick_source }}"
-                          >
-                            {{ quick_source }}
-                          </span>
                         </div>
-                        <p class="settings-hint">
-                          Faster runs with lower accuracy. Applies to Whisper (MLX / Metal) only.
-                          {% if quick_locked %}Managed by <code>{{ settings_snapshot.meta.env_vars.wtm_quick }}</code>.{% endif %}
-                        </p>
+                        <p class="settings-hint">Speeds up Whisper MLX at the cost of some accuracy.</p>
+                        {% if quick_locked %}
+                          <p class="settings-lock-note">
+                            Managed by environment (<code>{{ settings_snapshot.meta.env_vars.wtm_quick }}</code>).
+                          </p>
+                        {% endif %}
                       </div>
                     </div>
                   </details>
@@ -217,30 +184,22 @@
                   <section class="settings-subsection" aria-labelledby="settings-cloud-title">
                     <header class="settings-subsection-header">
                       <h4 id="settings-cloud-title">Cohere</h4>
-                      <p class="settings-subsection-desc">Optional cloud transcription. Your audio uploads only if you choose it.</p>
+                      <p class="settings-subsection-desc">Optional cloud transcription.</p>
                     </header>
                     <div class="settings-field">
-                      <div class="settings-label-row">
-                        <span class="settings-label" data-cohere-status>
-                          {% if cohere_snapshot.configured %}Cohere is configured{% else %}Cohere is not configured{% endif %}
-                        </span>
-                        <span
-                          class="source-pill is-{{ cohere_source if cohere_source in ['env', 'file', 'default'] else 'missing' }}"
-                          data-cohere-source-pill
-                          title="Value source: {{ cohere_source }}"
-                        >
-                          {{ cohere_source }}
+                      <div class="settings-status-row">
+                        <span class="settings-label">Status</span>
+                        <span class="settings-status-value" data-cohere-status>
+                          {% if cohere_snapshot.configured %}Configured{% else %}Not configured{% endif %}
                         </span>
                       </div>
                       <p class="settings-hint">{{ cohere_snapshot.product_note }}</p>
                       {% if cohere_snapshot.selected and cohere_snapshot.reason %}
                         <p class="settings-hint">
-                          <strong>Cohere is selected.</strong> {{ cohere_snapshot.reason }}
+                          Selected for new jobs. {{ cohere_snapshot.reason }}
                         </p>
                       {% elif cohere_snapshot.reason %}
-                        <p class="settings-hint">
-                          <strong>Availability:</strong> {{ cohere_snapshot.reason }}
-                        </p>
+                        <p class="settings-hint">{{ cohere_snapshot.reason }}</p>
                       {% endif %}
                     </div>
                     <div class="settings-field">
@@ -266,16 +225,19 @@
                         placeholder="Paste your Cohere API key"
                         {% if cohere_key_locked %}disabled{% endif %}
                       >
-                      <p class="settings-hint">
-                        {% if cohere_snapshot.source != "missing" %}
-                          Source: {{ cohere_snapshot.source }}.
-                        {% else %}
-                          Add a key only if you plan to use Cohere.
-                        {% endif %}
-                        {% if cohere_key_locked %}
-                          Managed by <code>{{ settings_snapshot.meta.env_vars.cohere_api_key }}</code>.
-                        {% endif %}
-                      </p>
+                      {% if cohere_key_locked %}
+                        <p class="settings-lock-note">
+                          Managed by environment (<code>{{ settings_snapshot.meta.env_vars.cohere_api_key }}</code>).
+                        </p>
+                      {% else %}
+                        <p class="settings-hint" data-cohere-key-hint>
+                          {% if cohere_snapshot.configured %}
+                            Leave blank to keep the saved key.
+                          {% else %}
+                            Add a key only if you plan to use Cohere.
+                          {% endif %}
+                        </p>
+                      {% endif %}
                       <label class="settings-checkbox">
                         <input
                           type="checkbox"
@@ -296,15 +258,8 @@
                       </summary>
                       <div class="settings-disclosure-body">
                         <div class="settings-field">
-                          <div class="settings-label-row">
+                          <div class="settings-label-row is-single">
                             <label class="settings-label" for="cohere-model">Model ID</label>
-                            <span
-                              class="source-pill is-{{ cohere_model_source }}"
-                              data-settings-source-pill="cohere_model"
-                              title="Value source: {{ cohere_model_source }}"
-                            >
-                              {{ cohere_model_source }}
-                            </span>
                           </div>
                           <input
                             class="settings-input"
@@ -313,12 +268,14 @@
                             type="text"
                             value="{{ settings_snapshot.settings.cohere_model }}"
                             placeholder="Set a Cohere model ID"
-                            {% if cohere_model_source == "env" %}disabled{% endif %}
+                            {% if cohere_model_locked %}disabled{% endif %}
                           >
-                          <p class="settings-hint">
-                            Used only for the Cohere engine. {% if cohere_model_source == "env" %}Managed by
-                            <code>{{ settings_snapshot.meta.env_vars.cohere_model }}</code>.{% endif %}
-                          </p>
+                          <p class="settings-hint">Used only for Cohere jobs.</p>
+                          {% if cohere_model_locked %}
+                            <p class="settings-lock-note">
+                              Managed by environment (<code>{{ settings_snapshot.meta.env_vars.cohere_model }}</code>).
+                            </p>
+                          {% endif %}
                         </div>
                       </div>
                     </details>
@@ -330,21 +287,20 @@
                       <p class="settings-subsection-desc">Optional delivery of completed transcripts.</p>
                     </header>
                     <div class="settings-field">
-                      <div class="settings-label-row">
-                        <span class="settings-label" data-telegram-status>
-                          {% if telegram_snapshot.configured %}Telegram is enabled{% else %}Telegram is off{% endif %}
-                        </span>
-                        <span
-                          class="source-pill is-{{ telegram_source if telegram_source in ['env', 'file', 'default'] else 'missing' }}"
-                          data-telegram-source-pill
-                          title="Value source: {{ telegram_source }}"
-                        >
-                          {{ telegram_source }}
+                      <div class="settings-status-row">
+                        <span class="settings-label">Status</span>
+                        <span class="settings-status-value" data-telegram-status>
+                          {% if telegram_snapshot.configured %}Enabled{% else %}Off{% endif %}
                         </span>
                       </div>
                       <p class="settings-hint">
-                        Sends transcript files to your Telegram chat. Your audio/video stays on this Mac.
+                        Sends completed transcript files to your Telegram chat.
                       </p>
+                      {% if telegram_locked %}
+                        <p class="settings-lock-note">
+                          Managed by environment (<code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code>).
+                        </p>
+                      {% endif %}
                     </div>
                     <div class="settings-field">
                       <div class="settings-label-row is-field-meta">
@@ -369,16 +325,15 @@
                         placeholder="123456:ABC..."
                         {% if telegram_locked %}disabled{% endif %}
                       >
-                      <p class="settings-hint" data-telegram-token-hint>
-                        {% if telegram_snapshot.configured %}
-                          Source: {{ telegram_snapshot.source }}.
-                        {% else %}
-                          Add both fields to enable delivery.
-                        {% endif %}
-                        {% if telegram_locked %}
-                          Managed by environment variables <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code>.
-                        {% endif %}
-                      </p>
+                      {% if not telegram_locked %}
+                        <p class="settings-hint" data-telegram-token-hint>
+                          {% if telegram_snapshot.configured %}
+                            Leave blank to keep the saved token.
+                          {% else %}
+                            Add your bot token.
+                          {% endif %}
+                        </p>
+                      {% endif %}
                       <label class="settings-checkbox">
                         <input type="checkbox" name="clear_telegram_token" value="1" {% if telegram_locked %}disabled{% endif %}>
                         Forget saved token
@@ -407,13 +362,15 @@
                         placeholder="-1001234567890"
                         {% if telegram_locked %}disabled{% endif %}
                       >
-                      <p class="settings-hint" data-telegram-chat-hint>
-                        {% if telegram_snapshot.configured %}
-                          Source: {{ telegram_snapshot.source }}.
-                        {% else %}
-                          Use a numeric chat ID (often starts with <code>-100</code>).
-                        {% endif %}
-                      </p>
+                      {% if not telegram_locked %}
+                        <p class="settings-hint" data-telegram-chat-hint>
+                          {% if telegram_snapshot.configured %}
+                            Leave blank to keep the saved chat ID.
+                          {% else %}
+                            Use the numeric chat ID for your target chat.
+                          {% endif %}
+                        </p>
+                      {% endif %}
                       <label class="settings-checkbox">
                         <input
                           type="checkbox"
@@ -581,7 +538,7 @@
                           </p>
                         {% endif %}
                         <div class="settings-field">
-                          <div class="settings-label-row">
+                          <div class="settings-label-row is-single">
                             <span class="settings-label">WTM command</span>
                           </div>
                           <div class="settings-readonly is-mono">{{ runtime_snapshot.about.wtm_path }}</div>
@@ -590,7 +547,7 @@
                           </p>
                         </div>
                         <div class="settings-field">
-                          <div class="settings-label-row">
+                          <div class="settings-label-row is-single">
                             <span class="settings-label">Parakeet model cache</span>
                           </div>
                           <p class="settings-hint">
@@ -606,13 +563,13 @@
                       <section class="settings-subsection" aria-labelledby="settings-advanced-behavior-title">
                         <header class="settings-subsection-header">
                           <h4 id="settings-advanced-behavior-title">App behavior</h4>
-                          <p class="settings-subsection-desc">Low-frequency preferences that do not usually need daily changes.</p>
+                          <p class="settings-subsection-desc">These changes apply after restart.</p>
                         </header>
                         {% if not update_locked %}
                           <input type="hidden" name="update_check_enabled_present" value="1">
                         {% endif %}
                         <div class="settings-field">
-                          <div class="settings-label-row">
+                          <div class="settings-label-row is-single">
                             <label class="settings-toggle" for="update-check-enabled">
                               <input
                                 id="update-check-enabled"
@@ -624,35 +581,23 @@
                               >
                               Check for updates at startup
                             </label>
-                            <span
-                              class="source-pill is-{{ update_source }}"
-                              data-settings-source-pill="update_check_enabled"
-                              title="Value source: {{ update_source }}"
-                            >
-                              {{ update_source }}
-                            </span>
                           </div>
-                          <p class="settings-hint">
-                            Fetches release metadata (GitHub) at startup. Changes apply after restarting. Does not upload your media.
-                            {% if update_locked %}Managed by <code>{{ settings_snapshot.meta.env_vars.update_check_enabled }}</code>.{% endif %}
-                          </p>
+                          <p class="settings-hint">Checks GitHub for release metadata at startup.</p>
+                          {% if update_locked %}
+                            <p class="settings-lock-note">
+                              Managed by environment (<code>{{ settings_snapshot.meta.env_vars.update_check_enabled }}</code>).
+                            </p>
+                          {% endif %}
                         </div>
                         <div class="settings-field">
-                          <div class="settings-label-row">
+                          <div class="settings-label-row is-single">
                             <label class="settings-label" for="log-level">Log detail</label>
-                            <span
-                              class="source-pill is-{{ log_source }}"
-                              data-settings-source-pill="log_level"
-                              title="Value source: {{ log_source }}"
-                            >
-                              {{ log_source }}
-                            </span>
                           </div>
                           <select
                             class="settings-input"
                             id="log-level"
                             name="log_level"
-                            {% if log_source == "env" %}disabled{% endif %}
+                            {% if log_locked %}disabled{% endif %}
                           >
                             {% for level in settings_snapshot.options.log_levels %}
                               <option
@@ -663,10 +608,12 @@
                               </option>
                             {% endfor %}
                           </select>
-                          <p class="settings-hint">
-                            Helpful for troubleshooting. Changes apply after restarting.
-                            {% if log_source == "env" %}Managed by <code>{{ settings_snapshot.meta.env_vars.log_level }}</code>.{% endif %}
-                          </p>
+                          <p class="settings-hint">Raise this only when troubleshooting.</p>
+                          {% if log_locked %}
+                            <p class="settings-lock-note">
+                              Managed by environment (<code>{{ settings_snapshot.meta.env_vars.log_level }}</code>).
+                            </p>
+                          {% endif %}
                         </div>
                       </section>
                     </div>
