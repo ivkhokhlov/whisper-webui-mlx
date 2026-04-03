@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -48,8 +49,9 @@ def test_settings_moves_low_frequency_controls_into_disclosures(
 
     assert response.status_code == 200
     assert 'data-settings-local-options' in response.text
+    assert 'data-cohere-setup' in response.text
+    assert 'data-telegram-setup' in response.text
     assert "Local engine options" in response.text
-    assert "Advanced Cohere options" in response.text
     assert "More cleanup tools" in response.text
 
     advanced = re.search(
@@ -58,6 +60,50 @@ def test_settings_moves_low_frequency_controls_into_disclosures(
     )
     assert advanced is not None
     assert " open" not in advanced.group(0)
+
+
+def test_settings_integrations_use_status_first_setup_disclosures(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    text = response.text
+
+    assert text.index("data-cohere-status") < text.index('id="cohere-api-key"')
+    assert text.index("data-telegram-status") < text.index('id="telegram-token"')
+    assert re.search(r'data-cohere-setup-title[^>]*>\s*Set up\s*<', text)
+    assert re.search(r'data-telegram-setup-title[^>]*>\s*Set up\s*<', text)
+
+
+def test_settings_integrations_switch_to_edit_setup_when_configured(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+    settings_path = tmp_path / "data" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps(
+            {
+                "cohere_api_key": "cohere-secret-key-123456",
+                "telegram_token": "123456:telegram-bot-token",
+                "telegram_chat_id": "-1001234567890",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    text = response.text
+
+    assert re.search(r'data-cohere-setup-title[^>]*>\s*Edit setup\s*<', text)
+    assert re.search(r'data-telegram-setup-title[^>]*>\s*Edit setup\s*<', text)
 
 
 def test_settings_demotes_source_metadata_in_default_view(tmp_path: Path) -> None:

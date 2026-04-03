@@ -111,6 +111,9 @@ template partials.
 - Field-level source metadata is now demoted: editable controls lead with plain
   labels, env-locked values explain that they are managed by environment, and
   repeated restart warnings are collapsed into section-level notes.
+- Cohere and Telegram now use status-first setup disclosures, so optional
+  integrations read as compact summaries until the user explicitly opens masked
+  setup details or clear actions.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be
