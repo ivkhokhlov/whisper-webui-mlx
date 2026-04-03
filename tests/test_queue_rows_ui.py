@@ -87,6 +87,8 @@ def test_root_queue_rows_use_compact_summary(tmp_path: Path, monkeypatch) -> Non
     assert "Queue #" not in response.text
     assert "items ahead" not in response.text
     assert 'data-started-at="' in response.text
+    assert 'class="spinner spinner--status"' in response.text
+    assert 'data-elapsed-label' in response.text
     assert "Elapsed …" in response.text
     assert "1 ahead" in response.text
     assert "2 ahead" in response.text

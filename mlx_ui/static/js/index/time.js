@@ -181,16 +181,32 @@
     });
   }
 
+  function setElapsedText(element, text) {
+    const label = element.querySelector("[data-elapsed-label]");
+    if (label) {
+      label.textContent = text;
+      return;
+    }
+    element.textContent = text;
+  }
+
+  function hydrateElapsedElement(element) {
+    if (!element) {
+      return;
+    }
+    const isoString = element.getAttribute("data-started-at");
+    if (!isoString) {
+      setElapsedText(element, "");
+      return;
+    }
+    const elapsed = formatElapsed(isoString);
+    setElapsedText(element, elapsed ? `Elapsed ${elapsed}` : "Elapsed …");
+  }
+
   function hydrateElapsed(root) {
     const scope = root || document;
     scope.querySelectorAll("[data-started-at]").forEach((element) => {
-      const isoString = element.getAttribute("data-started-at");
-      if (!isoString) {
-        element.textContent = "";
-        return;
-      }
-      const elapsed = formatElapsed(isoString);
-      element.textContent = elapsed ? `Elapsed ${elapsed}` : "Elapsed …";
+      hydrateElapsedElement(element);
     });
   }
 
@@ -202,6 +218,7 @@
     formatTimeMeta,
     hydrateTimeMeta,
     hydrateTimestamps,
+    hydrateElapsedElement,
     hydrateElapsed,
   };
 })();

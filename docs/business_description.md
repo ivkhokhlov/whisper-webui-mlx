@@ -111,6 +111,10 @@ shared project history while preserving the same user-facing data flow.
   cleanup semantics, including a transient `Stopping` state, removal of partial
   outputs, and a cancelled history entry instead of leaving hidden orphaned
   records in SQLite.
+- Running work now shows a small indeterminate activity spinner alongside the
+  elapsed timer in both the worker shell and the active queue row, reusing the
+  shared loader primitive and disabling the animation automatically when the
+  system requests reduced motion.
 - The Queue intake area now scales with workload: it stays prominent when idle
   and collapses into a tighter banner once jobs are queued or running, giving
   the worker and queue list more vertical priority without removing drag/drop.

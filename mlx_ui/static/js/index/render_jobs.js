@@ -292,7 +292,8 @@
       if (job.started_at) {
         parts.push(`
           <span class="job-elapsed" data-started-at="${escapeHtml(job.started_at)}">
-            Elapsed …
+            <span class="spinner spinner--status" aria-hidden="true"></span>
+            <span data-elapsed-label>Elapsed …</span>
           </span>
         `);
       } else {

@@ -26,7 +26,16 @@
       return;
     }
     if (!workerStartedAt) {
-      workerElapsed.textContent = "";
+      if (app.time && typeof app.time.hydrateElapsedElement === "function") {
+        app.time.hydrateElapsedElement(workerElapsed);
+      } else {
+        workerElapsed.textContent = "";
+      }
+      return;
+    }
+    if (app.time && typeof app.time.hydrateElapsedElement === "function") {
+      workerElapsed.dataset.startedAt = workerStartedAt;
+      app.time.hydrateElapsedElement(workerElapsed);
       return;
     }
     const elapsed = app.time ? app.time.formatElapsed(workerStartedAt) : "";
@@ -119,6 +128,11 @@
     if (workerElapsed) {
       workerElapsed.dataset.startedAt = workerStartedAt;
       workerElapsed.hidden = !workerStartedAt;
+      workerElapsed.classList.toggle("is-running", status === "Running");
+      const spinner = workerElapsed.querySelector(".spinner--status");
+      if (spinner) {
+        spinner.hidden = status !== "Running";
+      }
       updateWorkerElapsed();
     }
 

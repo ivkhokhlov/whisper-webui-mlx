@@ -245,12 +245,27 @@ def test_root_running_worker_card_shows_filename_elapsed_and_context(
     assert 'id="worker-current"' in response.text
     assert "alpha.txt" in response.text
     assert 'id="worker-elapsed"' in response.text
+    assert 'spinner spinner--status' in response.text
+    assert 'data-elapsed-label' in response.text
     assert 'id="worker-stop"' in response.text
     assert 'data-job-action="cancel"' in response.text
     assert "Elapsed …" in response.text
     assert "Cohere cloud · English" in response.text
     assert re.search(r'class="upload-card[^"]*is-compact', response.text)
     assert re.search(r'class="dropzone[^"]*is-compact', response.text)
+
+
+def test_root_disables_spinner_animation_for_reduced_motion(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "@media (prefers-reduced-motion: reduce)" in response.text
+    assert re.search(
+        r"@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.spinner \{\s*animation: none;",
+        response.text,
+    )
 
 
 def test_root_queue_rows_render_icon_remove_button(tmp_path: Path) -> None:

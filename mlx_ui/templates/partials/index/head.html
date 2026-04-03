@@ -270,6 +270,12 @@
         white-space: nowrap;
       }
 
+      .worker-pill.is-running {
+        border-color: var(--status-active-border);
+        background: var(--status-active-surface-soft);
+        color: var(--status-active-text);
+      }
+
       .worker-pill.is-strong {
         background: rgba(255, 240, 225, 0.56);
         border-color: rgba(185, 82, 44, 0.18);
@@ -1317,6 +1323,14 @@
         flex: 0 0 auto;
       }
 
+      .spinner--status {
+        width: 11px;
+        height: 11px;
+        border-color: var(--status-active-border);
+        border-top-color: var(--status-active-text);
+        opacity: 0.82;
+      }
+
       @keyframes spin {
         to {
           transform: rotate(360deg);
@@ -2162,7 +2176,7 @@
 
       .job-elapsed {
         font-weight: 600;
-        color: var(--accent-strong);
+        color: var(--status-active-text);
       }
 
       .job-summary-context {
@@ -2825,6 +2839,10 @@
       @media (prefers-reduced-motion: reduce) {
         .skip-link {
           transition: none;
+        }
+
+        .spinner {
+          animation: none;
         }
 
         .toast {

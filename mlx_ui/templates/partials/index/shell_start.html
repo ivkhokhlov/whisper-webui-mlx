@@ -71,7 +71,7 @@
             class="worker-meta"
             id="worker-meta"
             aria-label="Worker summary"
-            {% if worker.queue_length == 0 and (worker.status != "Running" or not worker.started_at) %}hidden{% endif %}
+            {% if worker.queue_length == 0 and (not worker_is_active or not worker.started_at) %}hidden{% endif %}
           >
             <span
               class="worker-pill is-strong"
@@ -81,12 +81,17 @@
               {{ worker.queue_length }} queued
             </span>
             <span
-              class="worker-pill"
+              class="worker-pill{% if worker.status == 'Running' %} is-running{% endif %}"
               id="worker-elapsed"
               data-started-at="{{ worker.started_at or '' }}"
               {% if not worker_is_active or not worker.started_at %}hidden{% endif %}
             >
-              Elapsed …
+              <span
+                class="spinner spinner--status"
+                aria-hidden="true"
+                {% if worker.status != "Running" %}hidden{% endif %}
+              ></span>
+              <span data-elapsed-label>Elapsed …</span>
             </span>
           </div>
           <div class="worker-context" id="worker-context" {% if not worker_context.value %}hidden{% endif %}>

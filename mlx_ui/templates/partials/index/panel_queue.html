@@ -144,7 +144,8 @@
                     <div class="job-subline">
                       {% if is_running and job.started_at %}
                         <span class="job-elapsed" data-started-at="{{ job.started_at }}">
-                          Elapsed …
+                          <span class="spinner spinner--status" aria-hidden="true"></span>
+                          <span data-elapsed-label>Elapsed …</span>
                         </span>
                       {% elif is_running %}
                         <span class="job-summary-text">Running</span>
