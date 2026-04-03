@@ -5,9 +5,6 @@ selection, and a truthful multi-engine runtime model. The app runs on
 `127.0.0.1`, stores its queue/history locally, and can process jobs with local
 or cloud engines depending on what you install and select.
 
-## Demo
-![Demo](docs/demo.gif)
-
 ## Origin / inspiration
 This repo’s core idea and MLX backend flow are based on JosefAlbers’s
 `whisper-turbo-mlx` project:

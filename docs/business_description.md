@@ -190,6 +190,9 @@ shared project history while preserving the same user-facing data flow.
   CPU and cloud options when that path is unavailable.
 - Operational simplicity: one-command setup on macOS, coherent settings, and a
   queue/history UX instead of raw CLIs.
+- Clear onboarding: the repo documentation stays text-first, so setup steps,
+  engine tradeoffs, and release paths are readable without relying on embedded
+  demo media.
 - Reliability: sequential processing avoids model re-init churn and resource
   spikes, while compact history keeps large job lists responsive.
 
