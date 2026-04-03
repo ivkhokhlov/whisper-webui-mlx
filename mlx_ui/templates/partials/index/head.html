@@ -295,8 +295,17 @@
       .settings-header {
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        margin-bottom: 12px;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+
+      .settings-header h2 {
+        margin: 0;
+      }
+
+      .settings-header p {
+        margin: 0;
+        max-width: 64ch;
       }
 
       .settings-banner {
@@ -317,44 +326,88 @@
 
       .settings-form {
         display: grid;
-        gap: 16px;
+        gap: 20px;
       }
 
       .settings-grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
       }
 
       .settings-card {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: var(--radius-lg);
-        padding: 18px 20px;
+        display: grid;
+        gap: 18px;
+        background: transparent;
+        border: 0;
+        border-top: 1px solid rgba(223, 212, 198, 0.92);
+        border-radius: 0;
+        padding: 22px 0 0;
         box-shadow: none;
       }
 
-      .settings-card.is-storage,
+      .settings-card:first-child {
+        border-top: none;
+        padding-top: 0;
+      }
+
+      .settings-card.is-primary {
+        padding: 20px 22px 22px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.28);
+      }
+
       .settings-card.is-about {
-        grid-column: 1 / -1;
+        border-top: none;
+        padding-top: 0;
       }
 
       .settings-card h3 {
-        margin: 0 0 12px;
-        font-size: 1.05rem;
+        margin: 0;
+        font-size: 1.06rem;
+        line-height: 1.25;
       }
 
       .settings-section-header {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin-bottom: 12px;
+        display: grid;
+        gap: 6px;
+        margin-bottom: 0;
       }
 
       .settings-section-desc {
         margin: 0;
         font-size: 0.9rem;
         color: var(--ink-muted);
+        max-width: 62ch;
+      }
+
+      .settings-subsection {
+        display: grid;
+        gap: 12px;
+      }
+
+      .settings-card > .settings-subsection + .settings-subsection,
+      .settings-disclosure-body > .settings-subsection + .settings-subsection {
+        border-top: 1px solid rgba(223, 212, 198, 0.78);
+        padding-top: 16px;
+      }
+
+      .settings-subsection-header {
+        display: grid;
+        gap: 4px;
+      }
+
+      .settings-subsection-header h4 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .settings-subsection-desc {
+        margin: 0;
+        font-size: 0.84rem;
+        color: var(--ink-muted);
+        max-width: 60ch;
       }
 
       .settings-label-row {
@@ -377,15 +430,15 @@
       .source-pill {
         display: inline-flex;
         align-items: center;
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         font-weight: 700;
-        padding: 2px 8px;
+        padding: 1px 7px;
         border-radius: 999px;
         border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.44);
+        background: rgba(255, 255, 255, 0.32);
         color: var(--ink-muted);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
         white-space: nowrap;
       }
 
@@ -414,10 +467,10 @@
       }
 
       .settings-readonly {
-        border: 1px dashed var(--line);
-        border-radius: var(--radius-sm);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
         padding: 10px 12px;
-        background: rgba(255, 255, 255, 0.54);
+        background: rgba(255, 255, 255, 0.24);
         font-size: 0.95rem;
         color: var(--ink);
       }
@@ -453,15 +506,15 @@
       .settings-meta-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 12px 16px;
-        margin-top: 10px;
+        gap: 10px 12px;
+        margin-top: 4px;
       }
 
       .settings-meta-item {
         border: 1px solid var(--line);
         border-radius: var(--radius-md);
         padding: 10px 12px;
-        background: rgba(255, 255, 255, 0.26);
+        background: rgba(255, 255, 255, 0.18);
       }
 
       .settings-meta-label {
@@ -482,21 +535,25 @@
       .settings-paths {
         list-style: none;
         padding: 0;
-        margin: 6px 0 0;
+        margin: 0;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 0;
       }
 
       .settings-path {
         display: grid;
-        grid-template-columns: 84px 1fr;
-        gap: 10px;
+        grid-template-columns: 86px 1fr;
+        gap: 12px;
         align-items: start;
-        padding: 8px 10px;
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.24);
-        border: 1px solid var(--line);
+        padding: 10px 0;
+        border-radius: 0;
+        background: transparent;
+        border: 0;
+      }
+
+      .settings-path + .settings-path {
+        border-top: 1px solid rgba(223, 212, 198, 0.78);
       }
 
       .settings-path-name {
@@ -524,19 +581,19 @@
 
       .settings-storage-layout {
         display: grid;
-        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-        gap: 16px 18px;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
         align-items: start;
       }
 
       .settings-danger-zone {
-        margin-top: 4px;
-        padding: 14px;
+        margin-top: 0;
+        padding: 16px;
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(139, 47, 47, 0.15);
-        background: rgba(255, 245, 245, 0.58);
+        border: 1px solid rgba(139, 47, 47, 0.12);
+        background: rgba(255, 245, 245, 0.42);
         display: grid;
-        gap: 12px;
+        gap: 14px;
       }
 
       .settings-danger-zone-header {
@@ -554,18 +611,22 @@
 
       .settings-danger-list {
         display: grid;
-        gap: 10px;
+        gap: 0;
       }
 
       .settings-danger-item {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 10px 14px;
-        align-items: center;
-        padding: 10px 12px;
-        border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.42);
-        border: 1px solid rgba(139, 47, 47, 0.12);
+        align-items: start;
+        padding: 12px 0;
+        border-radius: 0;
+        background: transparent;
+        border: 0;
+      }
+
+      .settings-danger-item + .settings-danger-item {
+        border-top: 1px solid rgba(139, 47, 47, 0.1);
       }
 
       .settings-danger-copy {
@@ -590,16 +651,6 @@
         justify-self: end;
       }
 
-      .settings-danger-zone details {
-        margin: 0;
-      }
-
-      .settings-danger-zone details > summary {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-
       .settings-save-bar {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -608,7 +659,7 @@
         padding: 14px 16px;
         border-radius: var(--radius-lg);
         border: 1px solid var(--line);
-        background: var(--surface);
+        background: rgba(255, 255, 255, 0.24);
         box-shadow: none;
       }
 
@@ -651,11 +702,76 @@
         margin-top: 10px;
       }
 
-      .settings-card details > summary {
-        cursor: pointer;
+      .settings-disclosure {
+        display: grid;
+        gap: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.16);
       }
 
-      .settings-card details > summary:focus-visible {
+      .settings-disclosure.is-advanced {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      .settings-disclosure > summary {
+        cursor: pointer;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        list-style: none;
+      }
+
+      .settings-disclosure > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .settings-disclosure-copy {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+
+      .settings-disclosure-title {
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: var(--ink);
+      }
+
+      .settings-disclosure-desc {
+        font-size: 0.83rem;
+        color: var(--ink-muted);
+      }
+
+      .settings-disclosure-chevron {
+        font-size: 0.8rem;
+        line-height: 1;
+        color: var(--ink-muted);
+        transition: transform 120ms ease;
+      }
+
+      .settings-disclosure[open] .settings-disclosure-chevron {
+        transform: rotate(180deg);
+      }
+
+      .settings-disclosure-body {
+        display: grid;
+        gap: 16px;
+        padding: 0 16px 16px;
+        border-top: 1px solid rgba(223, 212, 198, 0.78);
+      }
+
+      .settings-disclosure.is-inline {
+        margin-top: 2px;
+      }
+
+      .settings-disclosure.is-inline .settings-disclosure-body .settings-danger-item:first-child {
+        padding-top: 0;
+      }
+
+      .settings-disclosure > summary:focus-visible {
         outline: 2px solid var(--accent-strong);
         outline-offset: 4px;
         border-radius: 10px;
@@ -675,11 +791,11 @@
 
       .settings-input {
         border: 1px solid var(--line);
-        border-radius: var(--radius-sm);
+        border-radius: var(--radius-md);
         padding: 10px 12px;
         font-size: 0.95rem;
         font-family: inherit;
-        background: rgba(255, 255, 255, 0.78);
+        background: rgba(255, 255, 255, 0.72);
       }
 
       .settings-input.is-invalid {
@@ -2696,11 +2812,11 @@
         }
 
         .settings-card {
-          padding: 16px 16px;
+          padding-top: 18px;
         }
 
-        .settings-storage-layout {
-          grid-template-columns: 1fr;
+        .settings-card.is-primary {
+          padding: 16px 16px 18px;
         }
 
         .settings-label-row {
@@ -2714,6 +2830,14 @@
         .settings-path {
           grid-template-columns: 1fr;
           gap: 4px;
+        }
+
+        .settings-disclosure > summary {
+          padding: 12px 14px;
+        }
+
+        .settings-disclosure-body {
+          padding: 0 14px 14px;
         }
 
         .settings-danger-item {
