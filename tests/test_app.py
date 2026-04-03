@@ -186,17 +186,61 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
     assert 'id="clear-selection"' in response.text
 
 
-def test_root_worker_card_has_status_and_mode_text(tmp_path: Path) -> None:
+def test_root_worker_card_is_quiet_when_idle(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     with TestClient(app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
     assert "Worker" in response.text
+    assert 'id="worker-card"' in response.text
     assert 'id="worker-status"' in response.text
     assert 'id="worker-queued"' in response.text
-    assert "queued" in response.text
-    assert "One file at a time" in response.text
+    assert re.search(r'id="worker-queued"[\s\S]*?hidden', response.text)
+    assert re.search(r'id="worker-meta"[\s\S]*?hidden', response.text)
+    assert re.search(r'id="worker-current"[\s\S]*?hidden', response.text)
+    assert re.search(r'id="worker-context"[\s\S]*?hidden', response.text)
+
+
+def test_root_running_worker_card_shows_filename_elapsed_and_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr("mlx_ui.app.recover_running_jobs", lambda _db_path: 0)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    running_id = "job-running"
+    running_dir = Path(app.state.uploads_dir) / running_id
+    running_dir.mkdir(parents=True, exist_ok=True)
+    running_path = running_dir / "alpha.txt"
+    running_path.write_text("data", encoding="utf-8")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=running_id,
+            filename="alpha.txt",
+            status="running",
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(running_path),
+            language="en",
+            requested_engine="cohere",
+            effective_engine="cohere",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert re.search(r'class="status-card is-running"', response.text)
+    assert 'id="worker-current"' in response.text
+    assert "alpha.txt" in response.text
+    assert 'id="worker-elapsed"' in response.text
+    assert "Elapsed …" in response.text
+    assert "Cohere cloud · English" in response.text
 
 
 def test_root_history_filter_controls_present(tmp_path: Path) -> None:
@@ -292,11 +336,11 @@ def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
         response = client.get("/?tab=settings")
 
     assert response.status_code == 200
-    assert "Local-first transcription" in response.text
     assert (
-        "Files are stored here locally; cloud engines can send audio to their provider."
+        "Queue files, monitor the worker, and download results; files stay local unless you choose a cloud engine."
         in response.text
     )
+    assert "Local-first transcription" not in response.text
     assert "Local-only transcription" not in response.text
     assert "Local storage and local transcription by default." in response.text
 
@@ -375,8 +419,10 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
 
 def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     _configure_app(tmp_path)
+    monkeypatch.setattr("mlx_ui.app.recover_running_jobs", lambda _db_path: 0)
     db_path = Path(app.state.db_path)
     init_db(db_path)
 
@@ -451,8 +497,8 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
     assert "Whisper CPU local" in response.text
     assert "Requested Cohere cloud" in response.text
     assert "Used Whisper CPU local" in response.text
-    assert 'id="worker-engine"' in response.text
-    assert "Engine: Cohere · cloud" in response.text
+    assert 'id="worker-context"' in response.text
+    assert "Cohere cloud · English" in response.text
     assert "Language: English" in response.text
     assert 'title="Language: French"' in response.text
     assert (
