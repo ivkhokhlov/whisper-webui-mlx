@@ -16,6 +16,7 @@
     workerQueued,
     workerElapsed,
     workerContext,
+    workerStopButton,
   } = app.dom || {};
 
   let workerStartedAt = workerElapsed ? workerElapsed.dataset.startedAt || "" : "";
@@ -32,8 +33,8 @@
     workerElapsed.textContent = elapsed ? `Elapsed ${elapsed}` : "Elapsed …";
   }
 
-  function buildWorkerContext(currentJobUi, isRunning) {
-    if (!isRunning || !currentJobUi) {
+  function buildWorkerContext(currentJobUi, isActive) {
+    if (!isActive || !currentJobUi) {
       return "";
     }
 
@@ -66,9 +67,17 @@
     workerStatus.textContent = status;
     if (workerCardEl) {
       const normalizedStatus = String(status).trim().toLowerCase();
-      workerCardEl.classList.remove("is-running", "is-paused", "is-failed", "is-error");
+      workerCardEl.classList.remove(
+        "is-running",
+        "is-stopping",
+        "is-paused",
+        "is-failed",
+        "is-error"
+      );
       if (normalizedStatus === "running") {
         workerCardEl.classList.add("is-running");
+      } else if (normalizedStatus === "stopping") {
+        workerCardEl.classList.add("is-stopping");
       } else if (normalizedStatus === "paused") {
         workerCardEl.classList.add("is-paused");
       } else if (normalizedStatus === "failed") {
@@ -90,12 +99,12 @@
     }
 
     const filename = worker.filename || "";
-    const isRunning = status === "Running" && Boolean(filename);
+    const isActive = (status === "Running" || status === "Stopping") && Boolean(filename);
     if (workerCurrent) {
-      workerCurrent.hidden = !isRunning;
+      workerCurrent.hidden = !isActive;
     }
     if (workerFilename) {
-      if (isRunning) {
+      if (isActive) {
         workerFilename.textContent = filename;
         workerFilename.title = filename;
         workerFilename.setAttribute("aria-label", filename);
@@ -106,7 +115,7 @@
       }
     }
 
-    workerStartedAt = isRunning ? worker.started_at || "" : "";
+    workerStartedAt = isActive ? worker.started_at || "" : "";
     if (workerElapsed) {
       workerElapsed.dataset.startedAt = workerStartedAt;
       workerElapsed.hidden = !workerStartedAt;
@@ -118,9 +127,20 @@
       workerMeta.hidden = queuedCount <= 0 && !workerStartedAt;
     }
     if (workerContext) {
-      const contextText = buildWorkerContext(currentJobUi, isRunning);
+      const contextText = buildWorkerContext(currentJobUi, isActive);
       workerContext.textContent = contextText;
       workerContext.hidden = !contextText;
+    }
+    if (workerStopButton) {
+      const jobId = worker.job_id ? String(worker.job_id) : "";
+      const canCancel = Boolean(worker.can_cancel);
+      const stopLabel = status === "Stopping" ? "Stopping current task" : "Stop current task";
+      workerStopButton.hidden = !jobId || !isActive;
+      workerStopButton.dataset.jobId = jobId;
+      workerStopButton.disabled = !canCancel;
+      workerStopButton.setAttribute("aria-label", stopLabel);
+      workerStopButton.title = stopLabel;
+      workerStopButton.classList.toggle("is-pending", isActive && !canCancel);
     }
   }
 

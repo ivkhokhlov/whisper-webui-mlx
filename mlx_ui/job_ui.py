@@ -9,6 +9,7 @@ from mlx_ui.engine_registry import (
     resolve_backend_provider,
 )
 from mlx_ui.languages import language_label, normalize_language
+from mlx_ui.worker import get_worker_snapshot
 
 _ENGINE_SHORT_LABELS = {
     "whisper_mlx": "MLX",
@@ -21,7 +22,7 @@ _ENGINE_SHORT_LABELS = {
 
 def split_jobs(jobs: list[JobRecord]) -> tuple[list[JobRecord], list[JobRecord]]:
     queue_jobs = [job for job in jobs if job.status in {"queued", "running"}]
-    history_jobs = [job for job in jobs if job.status in {"done", "failed"}]
+    history_jobs = [job for job in jobs if job.status in {"done", "failed", "cancelled"}]
     history_jobs.sort(key=_history_sort_key, reverse=True)
     return queue_jobs, history_jobs
 
@@ -80,6 +81,37 @@ def queue_groups(jobs: list[JobRecord]) -> tuple[JobRecord | None, list[JobRecor
 
 def worker_state(jobs: list[JobRecord]) -> dict[str, object]:
     queued_count = sum(1 for job in jobs if job.status == "queued")
+    worker_snapshot = get_worker_snapshot()
+    running_job = None
+    if worker_snapshot is not None:
+        snapshot_job_id = str(worker_snapshot.get("job_id") or "")
+        running_job = next((job for job in jobs if job.id == snapshot_job_id), None)
+    if running_job or worker_snapshot is not None:
+        current_job_ui = build_job_ui(running_job) if running_job else None
+        cancel_requested = bool(worker_snapshot and worker_snapshot.get("cancel_requested"))
+        filename = (
+            str(worker_snapshot.get("filename") or "")
+            if worker_snapshot is not None
+            else ""
+        ) or (running_job.filename if running_job else None)
+        started_at = (
+            str(worker_snapshot.get("started_at") or "")
+            if worker_snapshot is not None
+            else ""
+        ) or (running_job.started_at if running_job else None)
+        return {
+            "status": "Stopping" if cancel_requested else "Running",
+            "job_id": (
+                str(worker_snapshot.get("job_id"))
+                if worker_snapshot is not None
+                else running_job.id
+            ),
+            "filename": filename,
+            "started_at": started_at,
+            "queue_length": queued_count,
+            "current_job_ui": current_job_ui,
+            "can_cancel": not cancel_requested,
+        }
     running_job = next((job for job in jobs if job.status == "running"), None)
     if running_job:
         current_job_ui = build_job_ui(running_job)
@@ -90,6 +122,7 @@ def worker_state(jobs: list[JobRecord]) -> dict[str, object]:
             "started_at": running_job.started_at,
             "queue_length": queued_count,
             "current_job_ui": current_job_ui,
+            "can_cancel": True,
         }
     return {
         "status": "Idle",
@@ -98,6 +131,7 @@ def worker_state(jobs: list[JobRecord]) -> dict[str, object]:
         "started_at": None,
         "queue_length": queued_count,
         "current_job_ui": None,
+        "can_cancel": False,
     }
 
 

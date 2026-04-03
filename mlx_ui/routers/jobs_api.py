@@ -23,6 +23,7 @@ from mlx_ui.app_context import (
 )
 from mlx_ui.db import (
     JobRecord,
+    cancel_running_job,
     delete_history_job,
     delete_history_jobs,
     delete_queued_job,
@@ -54,6 +55,7 @@ from mlx_ui.storage import (
     sanitize_filename,
 )
 from mlx_ui.uploads import cleanup_upload_path
+from mlx_ui.worker import cleanup_cancelled_job_artifacts, request_worker_cancel
 
 router = APIRouter()
 
@@ -214,6 +216,45 @@ def delete_job_from_queue(job_id: str) -> dict[str, bool]:
     return {"ok": True}
 
 
+@router.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict[str, object]:
+    if not is_safe_path_component(job_id):
+        raise HTTPException(status_code=404)
+    db_path = get_db_path()
+    job = get_job(db_path, job_id)
+    if job is None:
+        raise HTTPException(status_code=404)
+    if job.status not in {"running", "reserved"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Only running jobs can be stopped.",
+        )
+    cancel_snapshot = request_worker_cancel(job_id)
+    if cancel_snapshot is not None:
+        return {
+            "ok": True,
+            "state": "stopping",
+            "interrupted": bool(cancel_snapshot.get("interrupted")),
+            "already_requested": bool(cancel_snapshot.get("already_requested")),
+        }
+    if not cancel_running_job(db_path, job_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Job is no longer running.",
+        )
+    cleanup_cancelled_job_artifacts(
+        job,
+        uploads_dir=get_uploads_dir(),
+        results_dir=get_results_dir(),
+    )
+    return {
+        "ok": True,
+        "state": "cancelled",
+        "interrupted": False,
+        "already_requested": False,
+    }
+
+
 @router.delete("/api/history/{job_id}")
 def delete_history_item(job_id: str) -> dict[str, object]:
     if not is_safe_path_component(job_id):
@@ -222,10 +263,10 @@ def delete_history_item(job_id: str) -> dict[str, object]:
     job = get_job(db_path, job_id)
     if job is None:
         raise HTTPException(status_code=404)
-    if job.status not in {"done", "failed"}:
+    if job.status not in {"done", "failed", "cancelled"}:
         raise HTTPException(
             status_code=409,
-            detail="Only completed jobs can be removed.",
+            detail="Only completed or cancelled jobs can be removed.",
         )
     result_state = remove_results_dir(get_results_dir(), job.id)
     if result_state == "failed":

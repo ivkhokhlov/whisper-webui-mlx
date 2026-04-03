@@ -34,7 +34,7 @@
     }
     const queueCount = Array.isArray(queue) ? queue.length : 0;
     const workerStatus = worker && worker.status ? String(worker.status) : "";
-    const isBusy = queueCount > 0 || workerStatus === "Running";
+    const isBusy = queueCount > 0 || workerStatus === "Running" || workerStatus === "Stopping";
     app.uploads.setQueueBusy(isBusy);
   }
 

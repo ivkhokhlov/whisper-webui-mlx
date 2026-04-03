@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import threading
+import time
 
 from mlx_ui.db import (
     JobRecord,
@@ -9,8 +11,9 @@ from mlx_ui.db import (
     list_jobs,
     reorder_queue,
 )
-from mlx_ui.worker import Worker
+from mlx_ui.engine_registry import FAKE_ENGINE
 from mlx_ui.transcriber import FakeTranscriber
+from mlx_ui.worker import Worker, request_worker_cancel, start_worker, stop_worker
 
 
 def _make_job(
@@ -128,3 +131,67 @@ def test_worker_pause_skips_claim(tmp_path: Path) -> None:
     assert worker.run_once() is False
     jobs = list_jobs(db_path)
     assert jobs[0].status == "queued"
+
+
+def test_worker_cancel_request_marks_job_cancelled(tmp_path: Path) -> None:
+    class CancelAwareTranscriber:
+        engine_id = FAKE_ENGINE
+
+        def __init__(self) -> None:
+            self.started = threading.Event()
+            self.cancelled = threading.Event()
+
+        def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
+            self.started.set()
+            if not self.cancelled.wait(timeout=2):
+                raise AssertionError("Timed out waiting for cancellation.")
+            raise RuntimeError("cancelled")
+
+        def cancel(self, job_id: str | None = None) -> bool:
+            self.cancelled.set()
+            return True
+
+    db_path = tmp_path / "jobs.db"
+    uploads_dir = tmp_path / "uploads"
+    results_dir = tmp_path / "results"
+    init_db(db_path)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    job = _make_job(
+        "job-cancel",
+        "cancel.wav",
+        datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        uploads_dir,
+    )
+    insert_job(db_path, job)
+
+    transcriber = CancelAwareTranscriber()
+    start_worker(
+        db_path,
+        uploads_dir,
+        results_dir,
+        poll_interval=0.01,
+        transcriber=transcriber,
+    )
+    try:
+        assert transcriber.started.wait(timeout=1.5)
+        snapshot = request_worker_cancel(job.id)
+        assert snapshot is not None
+        assert snapshot["cancel_requested"] is True
+        assert snapshot["interrupted"] is True
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            updated = list_jobs(db_path)[0]
+            if updated.status == "cancelled":
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("Timed out waiting for cancelled job state.")
+    finally:
+        stop_worker(timeout=1)
+
+    updated = list_jobs(db_path)[0]
+    assert updated.status == "cancelled"
+    assert updated.completed_at is not None
+    assert not Path(job.upload_path).exists()

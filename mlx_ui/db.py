@@ -344,7 +344,7 @@ def delete_history_job(db_path: Path, job_id: str) -> bool:
         cursor = connection.execute(
             """
             DELETE FROM jobs
-            WHERE id = ? AND status IN ('done', 'failed')
+            WHERE id = ? AND status IN ('done', 'failed', 'cancelled')
             """,
             (job_id,),
         )
@@ -373,7 +373,7 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
                 source_path,
                 source_relpath
             FROM jobs
-            WHERE status IN ('done', 'failed')
+            WHERE status IN ('done', 'failed', 'cancelled')
             """
         ).fetchall()
     return [_job_record_from_row(row) for row in rows]
@@ -387,7 +387,7 @@ def delete_history_jobs(db_path: Path, job_ids: list[str]) -> int:
         cursor = connection.execute(
             f"""
             DELETE FROM jobs
-            WHERE status IN ('done', 'failed')
+            WHERE status IN ('done', 'failed', 'cancelled')
               AND id IN ({placeholders})
             """,
             job_ids,

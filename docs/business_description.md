@@ -103,6 +103,14 @@ shared project history while preserving the same user-facing data flow.
 - Task status colors now follow semantic design-system tokens, so running work
   reads as active/success, failed work stays clearly error-coded, and idle or
   queued states remain visually neutral.
+- Active and queued work now has direct control affordances: the worker card
+  exposes a native stop button for the running task, queued rows use subtle
+  icon-only remove buttons, and both flows route through confirmation modals so
+  mistakes are recoverable before local files are deleted.
+- Cancelling a running job now uses a real backend API path with worker-owned
+  cleanup semantics, including a transient `Stopping` state, removal of partial
+  outputs, and a cancelled history entry instead of leaving hidden orphaned
+  records in SQLite.
 - The Queue intake area now scales with workload: it stays prominent when idle
   and collapses into a tighter banner once jobs are queued or running, giving
   the worker and queue list more vertical priority without removing drag/drop.
@@ -193,4 +201,4 @@ shared project history while preserving the same user-facing data flow.
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.
-- Out of scope for v1: diarization, advanced timestamping, pause/cancel queue.
+- Out of scope for v1: diarization, advanced timestamping, queue pause/resume.

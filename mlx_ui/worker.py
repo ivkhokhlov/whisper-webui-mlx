@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import threading
 
-from mlx_ui.db import claim_next_job, mark_job_done, mark_job_failed, mark_job_running
+from mlx_ui.db import (
+    claim_next_job,
+    mark_job_done,
+    mark_job_failed,
+    mark_job_running,
+    update_job_status,
+)
 from mlx_ui.engine_registry import create_transcriber
 from mlx_ui.hot_folder import (
     export_hot_folder_transcript,
@@ -19,6 +25,7 @@ from mlx_ui.settings import (
     resolve_job_transcriber_spec_with_settings,
 )
 from mlx_ui.telegram import maybe_send_telegram
+from mlx_ui.storage import remove_results_dir
 from mlx_ui.transcriber import Transcriber
 from mlx_ui.uploads import cleanup_upload_path
 
@@ -60,6 +67,12 @@ class Worker:
         self._stop_event = threading.Event()
         self._paused_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._state_lock = threading.Lock()
+        self._current_job_id: str | None = None
+        self._current_job_filename: str | None = None
+        self._current_job_started_at: str | None = None
+        self._current_transcriber: Transcriber | None = None
+        self._cancel_requested = False
 
     def start(self) -> None:
         if self.is_running():
@@ -89,6 +102,34 @@ class Worker:
 
     def is_paused(self) -> bool:
         return self._paused_event.is_set()
+
+    def snapshot(self) -> dict[str, object] | None:
+        with self._state_lock:
+            if not self._current_job_id:
+                return None
+            return {
+                "job_id": self._current_job_id,
+                "filename": self._current_job_filename,
+                "started_at": self._current_job_started_at,
+                "cancel_requested": self._cancel_requested,
+            }
+
+    def request_cancel(self, job_id: str) -> dict[str, object] | None:
+        with self._state_lock:
+            if self._current_job_id != job_id:
+                return None
+            transcriber = self._current_transcriber
+            already_requested = self._cancel_requested
+            self._cancel_requested = True
+        interrupted = False
+        if not already_requested:
+            interrupted = _request_transcriber_cancel(transcriber, job_id)
+        snapshot = self.snapshot()
+        if snapshot is None:
+            return None
+        snapshot["interrupted"] = interrupted
+        snapshot["already_requested"] = already_requested
+        return snapshot
 
     def _resolve_transcriber_for_job(
         self,
@@ -138,6 +179,10 @@ class Worker:
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         started_at = _now_utc()
+        job.started_at = started_at
+        job.effective_engine = effective_engine
+        job.effective_implementation_id = effective_implementation_id
+        self._set_current_job(job, transcriber)
         if not mark_job_running(
             self.db_path,
             job.id,
@@ -149,49 +194,117 @@ class Worker:
                 "Worker lost reservation for job %s before starting transcription",
                 job.id,
             )
+            self._clear_current_job(job.id)
             restore_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
-        job.started_at = started_at
-        job.effective_engine = effective_engine
-        job.effective_implementation_id = effective_implementation_id
         try:
-            result_path = transcriber.transcribe(job, self.results_dir)
-        except Exception as exc:
-            logger.exception("Worker failed to transcribe job %s", job.id)
-            mark_job_failed(
+            try:
+                result_path = transcriber.transcribe(job, self.results_dir)
+            except Exception as exc:
+                if self._is_cancel_requested(job.id):
+                    logger.info("Worker cancelled job %s during transcription", job.id)
+                    self._mark_job_cancelled(job.id)
+                    cleanup_cancelled_job_artifacts(
+                        job,
+                        uploads_dir=self.uploads_dir,
+                        results_dir=self.results_dir,
+                    )
+                    return True
+                logger.exception("Worker failed to transcribe job %s", job.id)
+                mark_job_failed(
+                    self.db_path,
+                    job.id,
+                    completed_at=_now_utc(),
+                    error_message=_truncate_error(str(exc) or exc.__class__.__name__),
+                )
+                restore_failed_hot_folder_upload(job)
+                cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
+                return True
+            if self._is_cancel_requested(job.id):
+                logger.info("Worker cancelled job %s after transcription", job.id)
+                self._mark_job_cancelled(job.id)
+                cleanup_cancelled_job_artifacts(
+                    job,
+                    uploads_dir=self.uploads_dir,
+                    results_dir=self.results_dir,
+                )
+                return True
+            try:
+                maybe_send_telegram(job, result_path)
+            except Exception:
+                logger.exception(
+                    "Worker failed to deliver Telegram message for job %s", job.id
+                )
+            if self._is_cancel_requested(job.id):
+                logger.info("Worker cancelled job %s before export", job.id)
+                self._mark_job_cancelled(job.id)
+                cleanup_cancelled_job_artifacts(
+                    job,
+                    uploads_dir=self.uploads_dir,
+                    results_dir=self.results_dir,
+                )
+                return True
+            if job.source_path:
+                output_dir = resolve_hot_folder_output_dir(
+                    base_dir=self.base_dir,
+                    env=self.env,
+                )
+                if output_dir is not None:
+                    export_hot_folder_transcript(
+                        job=job,
+                        result_path=result_path,
+                        output_dir=output_dir,
+                    )
+            if self._is_cancel_requested(job.id):
+                logger.info("Worker cancelled job %s before completion", job.id)
+                self._mark_job_cancelled(job.id)
+                cleanup_cancelled_job_artifacts(
+                    job,
+                    uploads_dir=self.uploads_dir,
+                    results_dir=self.results_dir,
+                )
+                return True
+            mark_job_done(
                 self.db_path,
                 job.id,
                 completed_at=_now_utc(),
-                error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
-            restore_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
-        try:
-            maybe_send_telegram(job, result_path)
-        except Exception:
-            logger.exception(
-                "Worker failed to deliver Telegram message for job %s", job.id
-            )
-        if job.source_path:
-            output_dir = resolve_hot_folder_output_dir(
-                base_dir=self.base_dir,
-                env=self.env,
-            )
-            if output_dir is not None:
-                export_hot_folder_transcript(
-                    job=job,
-                    result_path=result_path,
-                    output_dir=output_dir,
-                )
-        mark_job_done(
+        finally:
+            self._clear_current_job(job.id)
+
+    def _set_current_job(self, job, transcriber: Transcriber) -> None:
+        with self._state_lock:
+            self._current_job_id = job.id
+            self._current_job_filename = job.filename
+            self._current_job_started_at = job.started_at
+            self._current_transcriber = transcriber
+            self._cancel_requested = False
+
+    def _clear_current_job(self, job_id: str) -> None:
+        with self._state_lock:
+            if self._current_job_id != job_id:
+                return
+            self._current_job_id = None
+            self._current_job_filename = None
+            self._current_job_started_at = None
+            self._current_transcriber = None
+            self._cancel_requested = False
+
+    def _is_cancel_requested(self, job_id: str) -> bool:
+        with self._state_lock:
+            return self._current_job_id == job_id and self._cancel_requested
+
+    def _mark_job_cancelled(self, job_id: str) -> None:
+        update_job_status(
             self.db_path,
-            job.id,
+            job_id,
+            "cancelled",
             completed_at=_now_utc(),
+            error_message="",
         )
-        cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
-        return True
 
 
 def start_worker(
@@ -231,6 +344,35 @@ def stop_worker(timeout: float | None = None) -> None:
             return
         _worker_instance.stop(timeout=timeout)
         _worker_instance = None
+
+
+def get_worker_snapshot() -> dict[str, object] | None:
+    with _worker_lock:
+        worker = _worker_instance
+    if worker is None or not worker.is_running():
+        return None
+    return worker.snapshot()
+
+
+def request_worker_cancel(job_id: str) -> dict[str, object] | None:
+    with _worker_lock:
+        worker = _worker_instance
+    if worker is None or not worker.is_running():
+        return None
+    return worker.request_cancel(job_id)
+
+
+def cleanup_cancelled_job_artifacts(
+    job,
+    *,
+    uploads_dir: Path,
+    results_dir: Path,
+) -> None:
+    result_state = remove_results_dir(results_dir, job.id)
+    if result_state == "failed":
+        logger.warning("Failed to remove results for cancelled job %s", job.id)
+    restore_failed_hot_folder_upload(job)
+    cleanup_upload_path(job.upload_path, uploads_dir, job.id)
 
 
 def _now_utc() -> str:
@@ -286,3 +428,19 @@ def _cached_transcriber(
             )
         cache[resolved.cache_key] = transcriber
     return transcriber
+
+
+def _request_transcriber_cancel(transcriber: Transcriber | None, job_id: str) -> bool:
+    cancel = getattr(transcriber, "cancel", None)
+    if not callable(cancel):
+        return False
+    try:
+        result = cancel(job_id)
+    except TypeError:
+        result = cancel()
+    except Exception:
+        logger.exception("Worker failed to signal cancellation for job %s", job_id)
+        return False
+    if isinstance(result, bool):
+        return result
+    return True

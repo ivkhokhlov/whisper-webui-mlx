@@ -118,13 +118,15 @@
       label = "Completed";
     } else if (normalized === "failed") {
       label = "Failed";
+    } else if (normalized === "cancelled") {
+      label = "Cancelled";
     } else if (normalized === "running") {
       label = "Running";
     } else if (normalized === "queued") {
       label = "Queued";
     }
     const anchorIso =
-      normalized === "done" || normalized === "failed"
+      normalized === "done" || normalized === "failed" || normalized === "cancelled"
         ? completedAt || startedAt || createdAt
         : normalized === "running"
           ? startedAt || createdAt
@@ -135,7 +137,10 @@
       return { text: "", title: "" };
     }
     let text = `${label} ${timeText}`;
-    if ((normalized === "done" || normalized === "failed") && completedAt) {
+    if (
+      (normalized === "done" || normalized === "failed" || normalized === "cancelled") &&
+      completedAt
+    ) {
       const duration = calculateDuration(startedAt || createdAt, completedAt);
       if (duration) {
         text += ` · ${duration}`;
@@ -200,4 +205,3 @@
     hydrateElapsed,
   };
 })();
-

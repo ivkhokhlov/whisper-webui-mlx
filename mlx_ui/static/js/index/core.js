@@ -52,6 +52,7 @@
     workerQueued: document.getElementById("worker-queued"),
     workerElapsed: document.getElementById("worker-elapsed"),
     workerContext: document.getElementById("worker-context"),
+    workerStopButton: document.getElementById("worker-stop"),
     queueCountEls: document.querySelectorAll("[data-queue-count]"),
     toastStack: document.getElementById("toast-stack"),
     previewModal: document.getElementById("preview-modal"),

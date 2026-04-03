@@ -193,11 +193,15 @@ def test_wtm_transcriber_runs_and_returns_txt(tmp_path: Path, monkeypatch) -> No
     results_dir = tmp_path / "results"
     captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
-        captured["cmd"] = list(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="hello", stderr="")
+    class FakePopen:
+        def __init__(self, cmd, stdout, stderr, text):  # type: ignore[no-untyped-def]
+            captured["cmd"] = list(cmd)
+            self.returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def communicate(self):  # type: ignore[no-untyped-def]
+            return ("hello", "")
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
     monkeypatch.delenv("WTM_QUICK", raising=False)
 
     transcriber = WtmTranscriber(wtm_path="wtm")
@@ -218,11 +222,15 @@ def test_wtm_transcriber_respects_quick_env(tmp_path: Path, monkeypatch) -> None
     results_dir = tmp_path / "results"
     captured: dict[str, list[str]] = {}
 
-    def fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
-        captured["cmd"] = list(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="hello", stderr="")
+    class FakePopen:
+        def __init__(self, cmd, stdout, stderr, text):  # type: ignore[no-untyped-def]
+            captured["cmd"] = list(cmd)
+            self.returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def communicate(self):  # type: ignore[no-untyped-def]
+            return ("hello", "")
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
     monkeypatch.setenv("WTM_QUICK", "true")
 
     transcriber = WtmTranscriber(wtm_path="wtm")
@@ -237,10 +245,14 @@ def test_wtm_transcriber_honors_output_formats_without_faking_timestamps(
     job = _make_job(tmp_path)
     results_dir = tmp_path / "results"
 
-    def fake_run(cmd, capture_output, text, check):  # type: ignore[no-untyped-def]
-        return subprocess.CompletedProcess(cmd, 0, stdout="hello", stderr="")
+    class FakePopen:
+        def __init__(self, cmd, stdout, stderr, text):  # type: ignore[no-untyped-def]
+            self.returncode = 0
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def communicate(self):  # type: ignore[no-untyped-def]
+            return ("hello", "")
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
 
     transcriber = WtmTranscriber(
         wtm_path="wtm",

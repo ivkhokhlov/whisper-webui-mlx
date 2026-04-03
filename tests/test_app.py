@@ -245,10 +245,43 @@ def test_root_running_worker_card_shows_filename_elapsed_and_context(
     assert 'id="worker-current"' in response.text
     assert "alpha.txt" in response.text
     assert 'id="worker-elapsed"' in response.text
+    assert 'id="worker-stop"' in response.text
+    assert 'data-job-action="cancel"' in response.text
     assert "Elapsed …" in response.text
     assert "Cohere cloud · English" in response.text
     assert re.search(r'class="upload-card[^"]*is-compact', response.text)
     assert re.search(r'class="dropzone[^"]*is-compact', response.text)
+
+
+def test_root_queue_rows_render_icon_remove_button(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-queued-row"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "queued.wav"
+    upload_path.write_text("data", encoding="utf-8")
+    insert_job(
+        db_path,
+        JobRecord(
+            id=job_id,
+            filename="queued.wav",
+            status="queued",
+            created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            upload_path=str(upload_path),
+            language="en",
+        ),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-job-action="remove"' in response.text
+    assert 'class="job-bin-icon"' in response.text
+    assert "Remove from queue" in response.text
 
 
 def test_root_history_filter_controls_present(tmp_path: Path) -> None:
@@ -1096,6 +1129,57 @@ def test_delete_queued_job_removes_upload(tmp_path: Path) -> None:
     assert list_jobs(db_path) == []
     assert not upload_path.exists()
     assert not uploads_dir.exists()
+
+
+def test_cancel_running_job_api_marks_history_and_cleans_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.setattr("mlx_ui.app.recover_running_jobs", lambda _db_path: 0)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    job_id = "job-running-cancel"
+    uploads_dir = Path(app.state.uploads_dir) / job_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / "alpha.txt"
+    upload_path.write_text("data", encoding="utf-8")
+
+    job = JobRecord(
+        id=job_id,
+        filename="alpha.txt",
+        status="running",
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        upload_path=str(upload_path),
+        language="en",
+    )
+    insert_job(db_path, job)
+
+    results_dir = Path(app.state.results_dir) / job_id
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / "alpha.txt").write_text("partial transcript", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/jobs/{job_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "cancelled"
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].status == "cancelled"
+    assert not upload_path.exists()
+    assert not uploads_dir.exists()
+    assert not results_dir.exists()
+
+    with TestClient(app) as client:
+        state_response = client.get("/api/state")
+
+    assert state_response.status_code == 200
+    payload = state_response.json()
+    assert payload["queue"] == []
+    assert [job["status"] for job in payload["history"]] == ["cancelled"]
 
 
 def test_delete_history_job_removes_results(tmp_path: Path) -> None:
