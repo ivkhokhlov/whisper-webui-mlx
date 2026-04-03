@@ -72,6 +72,8 @@ template partials.
 - Distinct task surfaces: Queue is for adding work, History is for retrieving
   results, Settings is for configuration, and `/live` stays intentionally
   separate from the stable saved workflow.
+- Shared visual chrome is intentionally calmer and flatter, so actions and
+  transcript content read before decorative cards, shadows, and borders.
 - Queue-first onboarding that keeps one dominant “Select files…” action above
   the fold while preserving folder batch upload and drag-and-drop as secondary
   affordances.
