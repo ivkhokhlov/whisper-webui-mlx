@@ -5,21 +5,6 @@
           <h1>Whisper WebUI (MLX)</h1>
           <p>Queue files, watch the worker, and get results; cloud engines upload audio.</p>
         </div>
-        {% set worker_is_active = worker.status in ["Running", "Stopping"] %}
-        {% set worker_context = namespace(value="") %}
-        {% if worker_is_active and worker.current_job_ui %}
-          {% set worker_engine = worker.current_job_ui.effective_engine or worker.current_job_ui.requested_engine %}
-          {% if worker_engine %}
-            {% set worker_context.value = worker_engine.short_label ~ (" cloud" if worker_engine.cloud else "") %}
-          {% endif %}
-          {% if worker.current_job_ui.language and worker.current_job_ui.language.label != "Detect automatically" %}
-            {% if worker_context.value %}
-              {% set worker_context.value = worker_context.value ~ " · " ~ worker.current_job_ui.language.label %}
-            {% else %}
-              {% set worker_context.value = worker.current_job_ui.language.label %}
-            {% endif %}
-          {% endif %}
-        {% endif %}
         <div
           class="status-card{% if worker.status == 'Running' %} is-running{% elif worker.status == 'Stopping' %} is-stopping{% elif worker.status == 'Paused' %} is-paused{% elif worker.status == 'Error' or worker.status == 'Failed' %} is-failed{% endif %}"
           id="worker-card"
@@ -27,75 +12,15 @@
           aria-label="Worker status"
         >
           <div class="status-head">
-            <div class="status-head-main">
-              <div class="status-label">Worker</div>
-              <div class="status" id="worker-status">{{ worker.status }}</div>
-            </div>
-            <button
-              class="job-bin job-bin--card job-bin--danger{% if not worker.can_cancel and worker_is_active %} is-pending{% endif %}"
-              id="worker-stop"
-              type="button"
-              data-job-id="{{ worker.job_id or '' }}"
-              data-job-action="cancel"
-              aria-label="{% if worker.status == 'Stopping' %}Stopping current task{% else %}Stop current task{% endif %}"
-              title="{% if worker.status == 'Stopping' %}Stopping current task{% else %}Stop current task{% endif %}"
-              {% if not worker_is_active or not worker.job_id %}hidden{% endif %}
-              {% if not worker.can_cancel %}disabled{% endif %}
-            >
-              <span class="job-bin-icon" aria-hidden="true">
-                <svg viewBox="0 0 20 20" width="16" height="16" focusable="false">
-                  <path
-                    d="M5.5 4.25h9A1.25 1.25 0 0 1 15.75 5.5v9a1.25 1.25 0 0 1-1.25 1.25h-9A1.25 1.25 0 0 1 4.25 14.5v-9A1.25 1.25 0 0 1 5.5 4.25Z"
-                    fill="currentColor"
-                  ></path>
-                </svg>
-              </span>
-              <span class="sr-only">{% if worker.status == "Stopping" %}Stopping current task{% else %}Stop current task{% endif %}</span>
-            </button>
-          </div>
-          <div
-            class="worker-current"
-            id="worker-current"
-            {% if not worker_is_active or not worker.filename %}hidden{% endif %}
-            role="group"
-            aria-label="Current file"
-          >
-            <div
-              class="worker-current-name"
-              id="worker-filename"
-              title="{{ worker.filename or '' }}"
-              aria-label="{{ worker.filename or '' }}"
-            >{{ worker.filename or '' }}</div>
-          </div>
-          <div
-            class="worker-meta"
-            id="worker-meta"
-            aria-label="Worker summary"
-            {% if worker.queue_length == 0 and (not worker_is_active or not worker.started_at) %}hidden{% endif %}
-          >
-            <span
-              class="worker-pill is-strong"
-              id="worker-queued"
-              {% if worker.queue_length == 0 %}hidden{% endif %}
-            >
-              {{ worker.queue_length }} queued
-            </span>
-            <span
-              class="worker-pill{% if worker.status == 'Running' %} is-running{% endif %}"
-              id="worker-elapsed"
-              data-started-at="{{ worker.started_at or '' }}"
-              {% if not worker_is_active or not worker.started_at %}hidden{% endif %}
-            >
+            <div class="status-label">Worker</div>
+            <div class="status">
               <span
-                class="spinner spinner--status"
+                class="status-indicator{% if worker.status == 'Running' %} is-running{% elif worker.status == 'Stopping' %} is-stopping{% endif %}"
+                id="worker-indicator"
                 aria-hidden="true"
-                {% if worker.status != "Running" %}hidden{% endif %}
               ></span>
-              <span data-elapsed-label>Elapsed …</span>
-            </span>
-          </div>
-          <div class="worker-context" id="worker-context" {% if not worker_context.value %}hidden{% endif %}>
-            {{ worker_context.value }}
+              <span id="worker-status">{{ worker.status }}</span>
+            </div>
           </div>
         </div>
       </header>

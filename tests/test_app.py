@@ -207,11 +207,13 @@ def test_root_worker_card_is_quiet_when_idle(tmp_path: Path) -> None:
     assert "Worker" in response.text
     assert 'id="worker-card"' in response.text
     assert 'id="worker-status"' in response.text
-    assert 'id="worker-queued"' in response.text
-    assert re.search(r'id="worker-queued"[\s\S]*?hidden', response.text)
-    assert re.search(r'id="worker-meta"[\s\S]*?hidden', response.text)
-    assert re.search(r'id="worker-current"[\s\S]*?hidden', response.text)
-    assert re.search(r'id="worker-context"[\s\S]*?hidden', response.text)
+    assert 'id="worker-indicator"' in response.text
+    indicator_tag = re.search(r'<span[^>]*id="worker-indicator"[^>]*>', response.text)
+    assert indicator_tag is not None
+    assert not re.search(r"(?:^|\\s)hidden(?:\\s|=|>)", indicator_tag.group(0))
+    assert 'id="worker-current"' not in response.text
+    assert 'id="worker-context"' not in response.text
+    assert 'id="worker-stop"' not in response.text
 
 
 def test_root_running_worker_card_shows_filename_elapsed_and_context(
@@ -248,15 +250,17 @@ def test_root_running_worker_card_shows_filename_elapsed_and_context(
 
     assert response.status_code == 200
     assert re.search(r'class="status-card is-running"', response.text)
-    assert 'id="worker-current"' in response.text
+    assert 'id="worker-indicator"' in response.text
+    assert 'id="worker-current"' not in response.text
+    assert 'id="worker-elapsed"' not in response.text
+    assert 'id="worker-stop"' not in response.text
     assert "alpha.txt" in response.text
-    assert 'id="worker-elapsed"' in response.text
-    assert 'spinner spinner--status' in response.text
-    assert 'data-elapsed-label' in response.text
-    assert 'id="worker-stop"' in response.text
+    assert "spinner spinner--status" in response.text
+    assert "data-elapsed-label" in response.text
     assert 'data-job-action="cancel"' in response.text
     assert "Elapsed …" in response.text
-    assert "Cohere cloud · English" in response.text
+    assert "Cohere cloud · English" not in response.text
+    assert "Cohere cloud · EN" in response.text
     assert re.search(r'class="upload-card[^"]*is-compact', response.text)
     assert re.search(r'class="dropzone[^"]*is-compact', response.text)
 
@@ -401,7 +405,10 @@ def test_root_queue_tooltip_stays_local_by_default(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Audio uploads to the provider only when a cloud engine is selected." in response.text
+    assert (
+        "Audio uploads to the provider only when a cloud engine is selected."
+        in response.text
+    )
     assert "Cloud engines upload audio only when selected." not in response.text
 
 
@@ -586,8 +593,9 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
         response = client.get("/")
 
     assert response.status_code == 200
-    assert 'id="worker-context"' in response.text
-    assert "Cohere cloud · English" in response.text
+    assert 'id="worker-indicator"' in response.text
+    assert 'id="worker-context"' not in response.text
+    assert "Cohere cloud · English" not in response.text
     assert "Cohere cloud · EN" in response.text
     assert (
         'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French · Backend: whisper"'

@@ -74,14 +74,28 @@
               <div class="file-list" id="file-list" aria-live="polite"></div>
               <button class="file-toggle" id="file-list-toggle" type="button">Show all</button>
               <div class="upload-config">
-                <div class="upload-config-field">
-                  {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
-                    {% set upload_cloud_note = "The selected cloud engine uploads audio to the provider." %}
-                  {% else %}
-                    {% set upload_cloud_note = "Audio uploads to the provider only when a cloud engine is selected." %}
-                  {% endif %}
-                  <div class="settings-label-row">
-                    <label class="settings-label" for="upload-language">Language</label>
+                {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
+                  {% set upload_cloud_note = "The selected cloud engine uploads audio to the provider." %}
+                {% else %}
+                  {% set upload_cloud_note = "Audio uploads to the provider only when a cloud engine is selected." %}
+                {% endif %}
+                {% set upload_default_language = settings_snapshot.settings.default_language %}
+                {% if settings_snapshot.settings.engine == "parakeet_tdt_v3" %}
+                  {% set upload_default_language = "auto" %}
+                {% endif %}
+                <div class="upload-config-row">
+                  <label class="settings-label" for="upload-language">Language</label>
+                  <div class="upload-config-controls">
+                    <select class="settings-input" id="upload-language" name="language">
+                      {% for language_option in settings_snapshot.options.languages %}
+                        <option
+                          value="{{ language_option.id }}"
+                          {% if upload_default_language == language_option.id %}selected{% endif %}
+                        >
+                          {{ language_option.label }}
+                        </option>
+                      {% endfor %}
+                    </select>
                     <div class="tooltip">
                       <button
                         class="job-bin tooltip-trigger"
@@ -104,20 +118,6 @@
                       </span>
                     </div>
                   </div>
-                  {% set upload_default_language = settings_snapshot.settings.default_language %}
-                  {% if settings_snapshot.settings.engine == "parakeet_tdt_v3" %}
-                    {% set upload_default_language = "auto" %}
-                  {% endif %}
-                  <select class="settings-input" id="upload-language" name="language">
-                    {% for language_option in settings_snapshot.options.languages %}
-                      <option
-                        value="{{ language_option.id }}"
-                        {% if upload_default_language == language_option.id %}selected{% endif %}
-                      >
-                        {{ language_option.label }}
-                      </option>
-                    {% endfor %}
-                  </select>
                 </div>
                 <p class="upload-config-note">Saved with each job. Set a language only when needed.</p>
               </div>
@@ -146,6 +146,9 @@
                   {% set queue_index.value = queue_index.value + 1 %}
                   {% set queue_position = queue_index.value + offset %}
                 {% endif %}
+                {% set is_active_worker_job = is_running and worker.job_id and worker.job_id == job.id %}
+                {% set is_stopping = is_active_worker_job and worker.status == "Stopping" %}
+                {% set running_can_cancel = worker.can_cancel if is_active_worker_job else true %}
                 {% if context_engine and context_engine.cloud %}
                   {% set summary_context.value = context_engine.short_label ~ " cloud" %}
                 {% endif %}
@@ -156,20 +159,22 @@
                     {% set summary_context.value = job_view.language.short_label %}
                   {% endif %}
                 {% endif %}
-                <div class="job-row{% if is_running %} is-running{% endif %}">
+                <div class="job-row{% if is_stopping %} is-stopping{% elif is_running %} is-running{% endif %}">
                   <div class="job-body">
                     <div class="job-topline">
                       <div class="job-name" title="{{ job.filename }}">{{ job.filename }}</div>
-                      <span class="status-badge is-{{ job.status }}">{{ job.status | capitalize }}</span>
                     </div>
                     <div class="job-subline">
                       {% if is_running and job.started_at %}
-                        <span class="job-elapsed" data-started-at="{{ job.started_at }}">
-                          <span class="spinner spinner--status" aria-hidden="true"></span>
+                        <span
+                          class="job-elapsed{% if is_stopping %} is-stopping{% endif %}"
+                          data-started-at="{{ job.started_at }}"
+                        >
+                          {% if not is_stopping %}<span class="spinner spinner--status" aria-hidden="true"></span>{% endif %}
                           <span data-elapsed-label>Elapsed …</span>
                         </span>
                       {% elif is_running %}
-                        <span class="job-summary-text">Running</span>
+                        <span class="job-summary-text">{% if is_stopping %}Stopping{% else %}Running{% endif %}</span>
                       {% elif job.status == "queued" %}
                         <span class="job-summary-text">
                           {% if queue_position <= 1 %}Next{% else %}{{ queue_position - 1 }} ahead{% endif %}
@@ -184,16 +189,36 @@
                     </div>
                   </div>
                   <div class="job-actions">
-                    {% if job.status == "queued" %}
+                    <span class="status-badge is-{% if is_stopping %}stopping{% else %}{{ job.status }}{% endif %}">
+                      {% if is_stopping %}Stopping{% else %}{{ job.status | capitalize }}{% endif %}
+                    </span>
+                    {% if is_running %}
                       <button
-                        class="job-bin"
+                        class="job-bin job-bin--action job-bin--danger{% if not running_can_cancel %} is-pending{% endif %}"
+                        type="button"
+                        data-job-id="{{ job.id }}"
+                        data-job-action="cancel"
+                        aria-label="{% if is_stopping %}Stopping current task{% else %}Stop current task{% endif %}"
+                        title="{% if is_stopping %}Stopping current task{% else %}Stop current task{% endif %}"
+                        {% if not running_can_cancel %}disabled{% endif %}
+                      >
+                        <span class="job-bin-icon is-stop" aria-hidden="true">
+                          <svg viewBox="0 0 20 20" width="16" height="16" focusable="false">
+                            <rect x="3" y="3" width="14" height="14" rx="2.5" fill="currentColor"></rect>
+                          </svg>
+                        </span>
+                        <span class="sr-only">{% if is_stopping %}Stopping current task{% else %}Stop current task{% endif %}</span>
+                      </button>
+                    {% elif job.status == "queued" %}
+                      <button
+                        class="job-bin job-bin--action"
                         type="button"
                         data-job-id="{{ job.id }}"
                         data-job-action="remove"
                         aria-label="Remove from queue"
                         title="Remove from queue"
                       >
-                        <span class="job-bin-icon" aria-hidden="true">
+                        <span class="job-bin-icon is-remove" aria-hidden="true">
                           <svg viewBox="0 0 20 20" width="16" height="16" focusable="false">
                             <path
                               d="M6.5 3.75h7a1 1 0 0 1 .98.804l.22 1.096h2.05a.75.75 0 0 1 0 1.5h-.81l-.52 7.191A2 2 0 0 1 13.426 16H6.574a2 2 0 0 1-1.994-1.659L4.06 7.15h-.81a.75.75 0 0 1 0-1.5H5.3l.22-1.096a1 1 0 0 1 .98-.804Zm-.916 3.4.489 6.974a.5.5 0 0 0 .5.426h6.852a.5.5 0 0 0 .5-.426l.489-6.974H5.584Zm1.397-1.5h5.038l-.13-.65H7.11l-.129.65Zm.894 2.05c.4 0 .725.325.725.725v3.7a.725.725 0 1 1-1.45 0v-3.7c0-.4.324-.725.725-.725Zm4.25 0c.4 0 .725.325.725.725v3.7a.725.725 0 1 1-1.45 0v-3.7c0-.4.324-.725.725-.725Z"

@@ -22,7 +22,9 @@ _ENGINE_SHORT_LABELS = {
 
 def split_jobs(jobs: list[JobRecord]) -> tuple[list[JobRecord], list[JobRecord]]:
     queue_jobs = [job for job in jobs if job.status in {"queued", "running"}]
-    history_jobs = [job for job in jobs if job.status in {"done", "failed", "cancelled"}]
+    history_jobs = [
+        job for job in jobs if job.status in {"done", "failed", "cancelled"}
+    ]
     history_jobs.sort(key=_history_sort_key, reverse=True)
     return queue_jobs, history_jobs
 
@@ -88,7 +90,9 @@ def worker_state(jobs: list[JobRecord]) -> dict[str, object]:
         running_job = next((job for job in jobs if job.id == snapshot_job_id), None)
     if running_job or worker_snapshot is not None:
         current_job_ui = build_job_ui(running_job) if running_job else None
-        cancel_requested = bool(worker_snapshot and worker_snapshot.get("cancel_requested"))
+        cancel_requested = bool(
+            worker_snapshot and worker_snapshot.get("cancel_requested")
+        )
         filename = (
             str(worker_snapshot.get("filename") or "")
             if worker_snapshot is not None

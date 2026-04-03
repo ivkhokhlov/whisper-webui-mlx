@@ -76,11 +76,12 @@ shared project history while preserving the same user-facing data flow.
   input file on failed jobs). In repo/dev mode, hot folder defaults to
   `./input` → `./output` and is enabled automatically.
 - Batch-level language selector plus a persisted default language setting.
-- Requested/effective engine tracking per job, exposed in the worker shell,
-  queue, history, and preview metadata.
+- Requested/effective engine tracking per job, exposed in the queue/history
+  lists and preview metadata.
 - Compact utility header with a short operational sentence plus a worker status
-  area that stays quiet when idle and only shows queue depth, elapsed time,
-  filename, and minimal engine/language context when that information helps.
+  pill that stays a fixed height and only reflects the global worker state
+  (Idle/Running/Stopping), while per-job details and controls live in the Queue
+  list.
 - Compact top-level navigation for Queue, History, and Settings that stays
   usable on mobile while `/live` remains a direct beta-preview route.
 - Distinct task surfaces: Queue is for adding work, History is for retrieving
@@ -103,8 +104,8 @@ shared project history while preserving the same user-facing data flow.
 - Task status colors now follow semantic design-system tokens, so running work
   reads as active/success, failed work stays clearly error-coded, and idle or
   queued states remain visually neutral.
-- Active and queued work now has direct control affordances: the worker card
-  exposes a native stop button for the running task, queued rows use subtle
+- Active and queued work now has direct control affordances: the active queue
+  row exposes a stop icon button for the running task, queued rows use subtle
   icon-only remove buttons, and both flows route through confirmation modals so
   mistakes are recoverable before local files are deleted.
 - Cancelling a running job now uses a real backend API path with worker-owned
@@ -112,9 +113,9 @@ shared project history while preserving the same user-facing data flow.
   outputs, and a cancelled history entry instead of leaving hidden orphaned
   records in SQLite.
 - Running work now shows a small indeterminate activity spinner alongside the
-  elapsed timer in both the worker shell and the active queue row, reusing the
-  shared loader primitive and disabling the animation automatically when the
-  system requests reduced motion.
+  elapsed timer in the active queue row, reusing the shared loader primitive
+  and disabling the animation automatically when the system requests reduced
+  motion.
 - Main navigation is now typography-led instead of container-led: Queue,
   History, and Settings sit directly on the page background with lighter
   spacing, a thin active underline, and stronger active weight instead of a

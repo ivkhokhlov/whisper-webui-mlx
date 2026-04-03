@@ -16,6 +16,11 @@
       ></path>
     </svg>
   `;
+  const ICON_STOP = `
+    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" focusable="false">
+      <rect x="3" y="3" width="14" height="14" rx="2.5" fill="currentColor"></rect>
+    </svg>
+  `;
 
   function pickDefaultResult(results) {
     if (!results || results.length === 0) {
@@ -216,22 +221,51 @@
     return ui && ui.preview_meta ? String(ui.preview_meta) : "";
   }
 
-  function buildQueueActions(job) {
-    const canDelete = job.status === "queued";
-    if (!canDelete) {
-      return '<div class="job-actions"></div>';
+  function buildQueueActions(job, options) {
+    const opts = options || {};
+    const isRunning = Boolean(opts.isRunning);
+    const canCancel = opts.canCancel !== false;
+    const isStopping = Boolean(opts.isStopping);
+    const badgeHtml = opts.badgeHtml ? String(opts.badgeHtml) : "";
+    const parts = [];
+    if (badgeHtml) {
+      parts.push(badgeHtml);
+    }
+    if (isRunning) {
+      const actionLabel = isStopping ? "Stopping current task" : "Stop current task";
+      return `
+        <div class="job-actions">
+          ${parts.join("")}
+          <button
+            class="job-bin job-bin--action job-bin--danger${canCancel ? "" : " is-pending"}"
+            type="button"
+            data-job-id="${escapeHtml(job.id)}"
+            data-job-action="cancel"
+            aria-label="${escapeHtml(actionLabel)}"
+            title="${escapeHtml(actionLabel)}"
+            ${canCancel ? "" : "disabled"}
+          >
+            <span class="job-bin-icon is-stop" aria-hidden="true">${ICON_STOP}</span>
+            <span class="sr-only">${escapeHtml(actionLabel)}</span>
+          </button>
+        </div>
+      `;
+    }
+    if (job.status !== "queued") {
+      return `<div class="job-actions">${parts.join("")}</div>`;
     }
     return `
       <div class="job-actions">
+        ${parts.join("")}
         <button
-          class="job-bin"
+          class="job-bin job-bin--action"
           type="button"
           data-job-id="${escapeHtml(job.id)}"
           data-job-action="remove"
           aria-label="Remove from queue"
           title="Remove from queue"
         >
-          <span class="job-bin-icon" aria-hidden="true">${ICON_TRASH}</span>
+          <span class="job-bin-icon is-remove" aria-hidden="true">${ICON_TRASH}</span>
           <span class="sr-only">Remove from queue</span>
         </button>
       </div>
@@ -285,19 +319,22 @@
   function buildQueueSummary(job, options) {
     const opts = options || {};
     const isRunning = Boolean(opts.isRunning);
+    const isStopping = Boolean(opts.isStopping);
     const queuePosition = opts.queuePosition || 0;
     const context = buildQueueContext(job, isRunning);
     const parts = [];
     if (isRunning) {
       if (job.started_at) {
         parts.push(`
-          <span class="job-elapsed" data-started-at="${escapeHtml(job.started_at)}">
-            <span class="spinner spinner--status" aria-hidden="true"></span>
+          <span class="job-elapsed${isStopping ? " is-stopping" : ""}" data-started-at="${escapeHtml(
+            job.started_at
+          )}">
+            ${isStopping ? "" : '<span class="spinner spinner--status" aria-hidden="true"></span>'}
             <span data-elapsed-label>Elapsed …</span>
           </span>
         `);
       } else {
-        parts.push('<span class="job-summary-text">Running</span>');
+        parts.push(`<span class="job-summary-text">${isStopping ? "Stopping" : "Running"}</span>`);
       }
     } else {
       parts.push(`<span class="job-summary-text">${escapeHtml(buildQueueLabel(queuePosition))}</span>`);
@@ -314,20 +351,32 @@
   function buildQueueRow(job, options) {
     const opts = options || {};
     const isRunning = Boolean(opts.isRunning);
+    const workerState =
+      opts.workerState && typeof opts.workerState === "object" ? opts.workerState : null;
     const queuePosition = opts.queuePosition || 0;
-    const statusRaw = String(job.status || "").toLowerCase();
+    const workerStatusRaw = String((workerState && workerState.status) || "").trim().toLowerCase();
+    const isStopping = isRunning && workerStatusRaw === "stopping";
+    const canCancel = isRunning ? !(workerState && workerState.can_cancel === false) : false;
+    const statusRaw = isStopping ? "stopping" : String(job.status || "").toLowerCase();
     const statusLabel = statusRaw ? statusRaw[0].toUpperCase() + statusRaw.slice(1) : "Unknown";
-    const statusClass = statusRaw === "running" ? "is-running" : statusRaw === "queued" ? "is-queued" : "";
+    const statusClass =
+      statusRaw === "running"
+        ? "is-running"
+        : statusRaw === "stopping"
+          ? "is-stopping"
+          : statusRaw === "queued"
+            ? "is-queued"
+            : "";
     const badgeClass = statusClass ? `status-badge ${statusClass}` : "status-badge";
+    const badgeHtml = `<span class="${badgeClass}">${escapeHtml(statusLabel)}</span>`;
     const safeFilename = escapeHtml(job.filename || "Untitled file");
-    const summary = buildQueueSummary(job, { isRunning, queuePosition });
-    const actions = buildQueueActions(job);
+    const summary = buildQueueSummary(job, { isRunning, isStopping, queuePosition });
+    const actions = buildQueueActions(job, { isRunning, isStopping, canCancel, badgeHtml });
     return `
-      <div class="job-row${isRunning ? " is-running" : ""}">
+      <div class="job-row${isStopping ? " is-stopping" : isRunning ? " is-running" : ""}">
         <div class="job-body">
           <div class="job-topline">
             <div class="job-name" title="${safeFilename}">${safeFilename}</div>
-            <span class="${badgeClass}">${escapeHtml(statusLabel)}</span>
           </div>
           <div class="job-subline">
             ${summary}

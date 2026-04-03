@@ -67,7 +67,7 @@
     }
   }
 
-  function renderQueue(listEl, placeholderEl, jobs) {
+  function renderQueue(listEl, placeholderEl, jobs, worker) {
     if (!listEl) {
       return;
     }
@@ -82,10 +82,12 @@
       placeholderEl.style.display = "none";
     }
     const hasRunning = jobs.some((job) => job.status === "running");
+    const workerJobId = worker && worker.job_id ? String(worker.job_id) : "";
     let queuedIndex = 0;
     const rendered = [];
     for (const job of jobs) {
       const isRunning = job.status === "running";
+      const workerState = isRunning && workerJobId && String(job.id) === workerJobId ? worker : null;
       let queuePosition = 0;
       if (job.status === "queued") {
         queuedIndex += 1;
@@ -95,6 +97,7 @@
         app.renderJobs.buildQueueRow(job, {
           queuePosition,
           isRunning,
+          workerState,
         })
       );
     }
@@ -162,7 +165,7 @@
       const resultsByJob = payload.results_by_job || {};
       const queue = payload.queue || [];
       const workerState = payload.worker && payload.worker.status ? payload.worker.status : "Idle";
-      renderQueue(queueList, queuePlaceholder, queue);
+      renderQueue(queueList, queuePlaceholder, queue, payload.worker || null);
       renderHistory(historyList, historyPlaceholder, payload.history || [], resultsByJob);
       if (app.toasts) {
         app.toasts.handleNotifications(payload.history || [], resultsByJob);
