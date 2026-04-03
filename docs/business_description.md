@@ -88,9 +88,9 @@ template partials.
 - The top shell avoids permanent “pill soup”: zero-value queue counts stay
   hidden, always-on mode labels are removed, and the worker area never shows
   more than two secondary metadata tokens at once.
-- Queue-first onboarding that keeps one dominant “Select files…” action above
-  the fold while preserving folder batch upload and drag-and-drop as secondary
-  affordances.
+- Queue upload uses one large drag-and-drop target that also opens the file
+  picker on click, reducing redundant buttons while preserving folder batches
+  via drag-and-drop.
 - Upload selection summary now keeps the file count primary, hides skipped
   items when none were filtered out, and removes size/batch estimates from the
   default surface.

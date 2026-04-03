@@ -20,7 +20,7 @@
                 <div class="upload-header-main">
                   <h3 class="upload-title" id="upload-title">Add files</h3>
                   <p class="upload-subtitle" id="upload-subtitle">
-                    Select files. Use a folder for batches.
+                    Drag files here or click to choose.
                   </p>
                 </div>
               </div>
@@ -37,24 +37,6 @@
                 required
                 accept="audio/*,video/*"
               >
-              <input
-                id="folder-input"
-                class="upload-input"
-                type="file"
-                multiple
-                webkitdirectory
-              >
-              <div class="upload-select" role="group" aria-label="Choose files or a folder">
-                <button class="select-button is-primary" type="button" data-upload-pick="files">
-                  Select files…
-                </button>
-                <div class="upload-secondary">
-                  <button class="select-button is-secondary" type="button" data-upload-pick="folder">
-                    Select folder…
-                  </button>
-                  <span class="upload-note">Scans subfolders.</span>
-                </div>
-              </div>
               <label
                 class="dropzone"
                 id="dropzone"
@@ -65,7 +47,7 @@
               >
                 <div class="dropzone-title">Drag files here</div>
                 <div class="dropzone-subtitle" id="dropzone-hint">
-                  Audio and video only.
+                  Click to choose files. Audio and video only.
                 </div>
                 <div class="dropzone-helper" id="dropzone-helper">Unsupported items are skipped.</div>
               </label>
