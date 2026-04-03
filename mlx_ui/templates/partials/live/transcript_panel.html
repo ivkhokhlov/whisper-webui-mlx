@@ -1,35 +1,26 @@
 
                   <div class="live-stage__body">
-                    <div class="live-stage__anchor" aria-hidden="true">
-                      <div class="live-stage__anchor-mark">Live</div>
-                      <div class="live-stage__anchor-label">Capture</div>
-                      <div class="live-stage__anchor-subtitle">Microphone or browser audio will land here.</div>
-                    </div>
-
                     <div class="live-stage__monitor">
                       <div class="live-stage__status">
-                        <strong id="live-status">{{ "Ready for experimental capture." if live_snapshot.active else "Live capture is unavailable here." }}</strong>
-                        <span class="live-stage__chip">{{ live_snapshot.engine_label }} local</span>
-                        <span class="live-stage__chip">Auto language</span>
-                        <span class="live-stage__chip">~{{ "%.1f"|format(live_snapshot.latency_secs) }}s latency</span>
-                      </div>
-
-                      <div class="live-meter" aria-hidden="true">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                        <span></span>
+                        <strong id="live-status">{{ "Ready for live capture." if live_snapshot.active else "Live capture is unavailable here." }}</strong>
+                        <span class="live-stage__status-copy">
+                          {% if live_snapshot.active %}
+                            {{ live_snapshot.engine_label }} runs locally on this Mac.
+                          {% else %}
+                            Saved transcripts still go through Queue.
+                          {% endif %}
+                        </span>
                       </div>
 
                       <div class="live-transcript">
-                        <div class="live-transcript__label">Partial transcript</div>
-                        <pre class="live-transcript__content" id="live-transcript-output">{% if live_snapshot.active %}Waiting for microphone input. This beta does not save to History yet.{% else %}Experimental Parakeet live capture is not active on this machine. Use Queue for the stable saved workflow.{% endif %}</pre>
+                        <div class="live-transcript__label">Transcript</div>
+                        <pre class="live-transcript__content" id="live-transcript-output">{% if live_snapshot.active %}Waiting for microphone input.{% else %}Live capture is unavailable on this machine.{% endif %}</pre>
                         <div class="live-transcript__meta" id="live-session-meta">
-                          Engine: {{ live_snapshot.engine_label }} · Model: {{ live_snapshot.configured_model }}
+                          {% if live_snapshot.active %}
+                            {{ live_snapshot.engine_label }} · Local session only
+                          {% else %}
+                            Queue and History remain the saved workflow.
+                          {% endif %}
                         </div>
                       </div>
                     </div>

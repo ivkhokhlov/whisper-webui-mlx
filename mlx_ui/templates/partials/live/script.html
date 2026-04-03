@@ -25,22 +25,21 @@
 
         const updateSession = (session) => {
           transcriptEl.textContent = session.transcript || "Listening for speech...";
-          metaEl.textContent =
-            `Chunks: ${session.received_chunks} · Windows: ${session.processed_windows} · Engine: ${session.engine_label}`;
+          metaEl.textContent = `${session.engine_label} · Local session only`;
           if (session.error) {
-            statusEl.textContent = "Live beta hit an error.";
+            statusEl.textContent = "Live capture hit an error.";
             noteEl.textContent = session.error;
             return;
           }
           if (session.status === "stopped") {
-            statusEl.textContent = "Experimental capture stopped.";
-            noteEl.textContent = "This beta session stayed in memory only. Use Queue for saved transcripts.";
+            statusEl.textContent = "Live session ended.";
+            noteEl.textContent = "This session stayed in memory only. Use Queue for saved transcripts.";
             return;
           }
-          if (session.processed_windows > 0) {
-            statusEl.textContent = "Streaming experimental partial transcript.";
+          if (session.transcript) {
+            statusEl.textContent = "Listening and updating transcript.";
           } else {
-            statusEl.textContent = "Listening. Waiting for the first streaming window.";
+            statusEl.textContent = "Listening for speech.";
           }
         };
 
@@ -54,7 +53,7 @@
 
         const handleError = (error) => {
           const message = error instanceof Error ? error.message : String(error);
-          statusEl.textContent = "Live beta unavailable.";
+          statusEl.textContent = "Live capture unavailable.";
           noteEl.textContent = message;
           cleanupStream();
           sessionId = null;
@@ -112,7 +111,7 @@
         if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
           setButtonState(startButton, true);
           noteEl.textContent =
-            "This browser does not expose the MediaRecorder microphone path required for the live beta.";
+            "This browser does not expose the microphone capture path needed for live preview.";
           return;
         }
 
@@ -148,8 +147,7 @@
             });
             recorder.start(liveConfig.timeslice_ms);
             statusEl.textContent = "Microphone capture is live.";
-            noteEl.textContent =
-              "Experimental beta in progress. Keep this tab active and expect first partials after the initial buffer fills.";
+            noteEl.textContent = "Speak normally and watch the transcript update here.";
             setButtonState(startButton, true);
             setButtonState(stopButton, false);
           } catch (error) {
@@ -161,7 +159,7 @@
           if (!recorder || recorder.state === "inactive") {
             return;
           }
-          statusEl.textContent = "Stopping experimental capture...";
+          statusEl.textContent = "Stopping live capture...";
           setButtonState(stopButton, true);
           recorder.stop();
         });

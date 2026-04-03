@@ -15,8 +15,7 @@
                     </div>
                     <p class="live-stage__note" id="live-note">
                       {% if live_snapshot.active %}
-                        {{ live_snapshot.note }} First partial text usually appears after about
-                        {{ "%.1f"|format(live_snapshot.latency_secs) }} seconds.
+                        Allow microphone access, then speak normally.
                       {% else %}
                         {{ live_snapshot.reason }}
                       {% endif %}
