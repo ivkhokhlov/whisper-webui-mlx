@@ -483,6 +483,7 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
             language="fr",
             requested_engine="cohere",
             effective_engine="whisper_cpu",
+            effective_implementation_id="whisper",
         ),
     )
     results_dir = Path(app.state.results_dir) / done_id
@@ -493,16 +494,11 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Cohere cloud" in response.text
-    assert "Whisper CPU local" in response.text
-    assert "Requested Cohere cloud" in response.text
-    assert "Used Whisper CPU local" in response.text
     assert 'id="worker-context"' in response.text
     assert "Cohere cloud · English" in response.text
     assert "Cohere cloud · EN" in response.text
-    assert 'title="Language: French"' in response.text
     assert (
-        'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French"'
+        'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French · Backend: whisper"'
         in response.text
     )
 

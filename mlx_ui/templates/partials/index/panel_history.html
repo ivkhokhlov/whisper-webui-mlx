@@ -72,23 +72,7 @@
                   <div class="history-main">
                     <div class="history-title">
                       <div class="history-filename" title="{{ job.filename }}">{{ job.filename }}</div>
-                      <div class="history-badges">
-                        <div class="status-badge is-{{ job.status }}">{{ job.status }}</div>
-                        {% if results %}
-                          <div class="output-chips">
-                            {% set chip_ns = namespace(exts=[]) %}
-                            {% for result in results %}
-                              {% set ext = result.rsplit('.', 1)[-1] | upper %}
-                              {% if ext not in chip_ns.exts %}
-                                {% set chip_ns.exts = chip_ns.exts + [ext] %}
-                                <span class="output-chip">
-                                  {{ ext }}
-                                </span>
-                              {% endif %}
-                            {% endfor %}
-                          </div>
-                        {% endif %}
-                      </div>
+                      <div class="status-badge is-{{ job.status }}">{{ job.status | capitalize }}</div>
                     </div>
                     <div class="history-subline">
                       <div
@@ -99,28 +83,9 @@
                         {% if job.started_at %}data-started-at="{{ job.started_at }}"{% endif %}
                         {% if job.completed_at %}data-completed-at="{{ job.completed_at }}"{% endif %}
                       ></div>
-                      {% if job_view.engine_badges %}
-                        <div class="meta-chips" aria-label="Engine">
-                          {% for badge in job_view.engine_badges %}
-                            <span
-                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
-                              title="{{ badge.title }}"
-                            >
-                              {{ badge.label }}
-                            </span>
-                          {% endfor %}
-                        </div>
-                      {% endif %}
-                      {% if job_view.language %}
-                        <span
-                          class="meta-chip is-language"
-                          title="Language: {{ job_view.language.label }}"
-                        >
-                          {{ job_view.language.short_label }}
-                        </span>
-                      {% endif %}
                       {% if job.status == "failed" and job.error_message %}
                         {% set error_summary = job.error_message.splitlines()[0] %}
+                        <span class="history-summary-separator" aria-hidden="true">·</span>
                         <div class="history-error-summary" title="{{ error_summary }}">{{ error_summary }}</div>
                       {% endif %}
                     </div>
@@ -128,19 +93,6 @@
                   <div class="history-actions">
                     <div class="history-actions-main">
                       {% if job.status == "done" and result_ns.default %}
-                        <button
-                          class="job-primary is-secondary js-only"
-                          type="button"
-                          data-action="preview"
-                          data-job-id="{{ job.id }}"
-                          data-preview-url="/api/jobs/{{ job.id }}/preview?chars=1200"
-                          data-default-url="/results/{{ job.id }}/{{ result_ns.default }}"
-                          data-default-filename="{{ result_ns.default }}"
-                          data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
-                          aria-haspopup="dialog"
-                        >
-                          Preview
-                        </button>
                         <a
                           class="job-primary"
                           href="/results/{{ job.id }}/{{ result_ns.default }}"
@@ -158,6 +110,19 @@
                       <summary aria-label="More actions">⋯</summary>
                       <div class="job-menu-panel">
                         {% if job.status == "done" and result_ns.default %}
+                          <button
+                            class="job-menu-item js-only"
+                            type="button"
+                            data-action="preview"
+                            data-job-id="{{ job.id }}"
+                            data-preview-url="/api/jobs/{{ job.id }}/preview?chars=1200"
+                            data-default-url="/results/{{ job.id }}/{{ result_ns.default }}"
+                            data-default-filename="{{ result_ns.default }}"
+                            data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
+                            aria-haspopup="dialog"
+                          >
+                            Preview
+                          </button>
                           <a
                             class="job-menu-item"
                             href="/results/{{ job.id }}/{{ result_ns.default }}"
@@ -227,6 +192,14 @@
                           ></div>
                         {% endif %}
                       </div>
+                      {% if job_view and job_view.effective_implementation and job_view.effective_implementation.id and not (job.status == "done" and result_ns.default) %}
+                        <div class="detail-block">
+                          <div class="detail-label">Runtime</div>
+                          <div class="detail-line" title="{{ job_view.effective_implementation.title }}">
+                            Backend: <code>{{ job_view.effective_implementation.id }}</code>
+                          </div>
+                        </div>
+                      {% endif %}
                       {% if job.status == "done" and result_ns.default %}
                         <div
                           class="detail-block"
