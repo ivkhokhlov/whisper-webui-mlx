@@ -19,24 +19,15 @@
               <div class="upload-header">
                 <div class="upload-header-main">
                   <h3 class="upload-title" id="upload-title">
-                    {% if not queue_jobs %}Your queue is empty{% else %}Start a transcription{% endif %}
+                    {% if not queue_jobs %}Add files to start{% else %}Add more files{% endif %}
                   </h3>
                   <p class="upload-subtitle" id="upload-subtitle">
                     {% if not queue_jobs %}
-                      Start with files for a quick upload, or choose a folder for batch work.
-                      Download transcripts from History when done.
+                      Select files first. Use a folder when you need a batch.
                     {% else %}
-                      Select files for the fastest start. Use a folder when you want to batch many
-                      items and subfolders.
+                      Select files to queue more work. Use a folder for larger batches.
                     {% endif %}
                   </p>
-                  {% if not queue_jobs %}
-                    <div class="empty-guide" aria-label="How queue works">
-                      <span class="empty-guide-item"><strong>1</strong> Select</span>
-                      <span class="empty-guide-item"><strong>2</strong> Queue</span>
-                      <span class="empty-guide-item"><strong>3</strong> Download</span>
-                    </div>
-                  {% endif %}
                 </div>
               </div>
               <label class="sr-only" for="file-input">Select audio or video files</label>
@@ -60,12 +51,14 @@
                 <button class="select-button is-primary" type="button" data-upload-pick="files">
                   Select files…
                 </button>
-                <button class="select-button is-secondary" type="button" data-upload-pick="folder">
-                  Select folder…
-                </button>
-              </div>
-              <div class="upload-note">
-                Folder upload scans subfolders too. Drag and drop is available below if you prefer it.
+                <div class="upload-secondary">
+                  <button class="select-button is-secondary" type="button" data-upload-pick="folder">
+                    Select folder…
+                  </button>
+                  <span class="upload-note">
+                    Folder upload scans subfolders for batch work.
+                  </span>
+                </div>
               </div>
               <label
                 class="dropzone"
@@ -75,23 +68,20 @@
                 for="file-input"
                 aria-describedby="dropzone-hint dropzone-helper"
               >
-                <div class="dropzone-title">Prefer drag & drop?</div>
+                <div class="dropzone-title">Or drag files here</div>
                 <div class="dropzone-subtitle" id="dropzone-hint">
-                  Drop files from Finder here.
+                  Audio and video files only.
                 </div>
-                <div class="dropzone-helper" id="dropzone-helper">
-                  Common formats: MP3, M4A, WAV, MP4, MOV, MKV. Anything else is skipped.
-                </div>
+                <div class="dropzone-helper" id="dropzone-helper">Unsupported items are skipped.</div>
               </label>
               <div class="selection-summary" id="selection-summary" aria-live="polite" aria-atomic="true">
-                <div class="selection-chips" aria-label="Selection summary">
-                  <span class="selection-chip is-strong" id="selection-valid">0 files</span>
-                  <span class="selection-chip" id="selection-size">0 B</span>
-                  <span class="selection-chip" id="selection-batch">Small batch</span>
+                <div class="selection-overview" aria-label="Selection summary">
+                  <span class="selection-chip is-strong" id="selection-valid">0 files selected</span>
                   <span
-                    class="selection-chip is-muted"
+                    class="selection-chip is-skipped"
                     id="selection-skipped"
                     title="Skipped items are not audio/video, hidden, or unsupported."
+                    hidden
                   >Skipped 0</span>
                 </div>
                 <div class="selection-state" id="selection-state" hidden>
@@ -116,8 +106,7 @@
                   </select>
                 </div>
                 <p class="upload-config-note">
-                  Saved on each job. Use automatic detection for local engines, or choose a fixed
-                  language before queueing jobs for providers that require one.
+                  Saved per job. Choose a fixed language only when your provider requires one.
                 </p>
               </div>
               <div class="upload-actions">
@@ -129,9 +118,9 @@
                 </div>
                 <span class="hint">
                   {% if runtime_snapshot.about.configured_engine and runtime_snapshot.about.configured_engine.cloud %}
-                    Cloud engine selected. It requires network access and is not local/offline.
+                    Cloud engine selected. Audio uploads to the provider.
                   {% else %}
-                    Processed locally. Nothing is uploaded.
+                    Local by default. Cloud engines upload only when selected.
                   {% endif %}
                 </span>
               </div>

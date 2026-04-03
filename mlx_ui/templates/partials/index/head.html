@@ -846,10 +846,9 @@
       }
 
       .upload-select {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
         gap: 10px;
-        align-items: center;
+        align-items: start;
       }
 
       .select-button {
@@ -881,10 +880,19 @@
         color: #fff;
         box-shadow: none;
         padding-inline: 18px;
+        min-height: 46px;
+        justify-content: center;
+        width: 100%;
       }
 
       .select-button.is-primary:hover {
         background: var(--accent-strong);
+      }
+
+      .select-button.is-guided {
+        border-color: transparent;
+        background: var(--accent-strong);
+        color: #fff;
       }
 
       .select-button.is-secondary {
@@ -892,12 +900,20 @@
         border-color: var(--line);
         color: var(--ink-muted);
         box-shadow: none;
+        padding: 7px 10px;
+        font-size: 0.82rem;
+      }
+
+      .upload-secondary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        align-items: center;
       }
 
       .upload-note {
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         color: var(--ink-muted);
-        margin-top: -2px;
       }
 
       .upload-config {
@@ -923,10 +939,10 @@
       .dropzone {
         border: 1px dashed var(--line-strong);
         border-radius: var(--radius-lg);
-        padding: 14px 16px;
-        background: rgba(255, 255, 255, 0.32);
+        padding: 11px 14px;
+        background: rgba(255, 255, 255, 0.2);
         display: grid;
-        gap: 4px;
+        gap: 3px;
         cursor: pointer;
         transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
       }
@@ -947,17 +963,17 @@
       }
 
       .dropzone-title {
-        font-weight: 700;
-        font-size: 0.92rem;
+        font-weight: 600;
+        font-size: 0.84rem;
       }
 
       .dropzone-subtitle {
-        font-size: 0.84rem;
+        font-size: 0.8rem;
         color: var(--ink-muted);
       }
 
       .dropzone-helper {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         color: var(--ink-muted);
       }
 
@@ -972,29 +988,29 @@
 
       .selection-summary {
         display: grid;
-        gap: 10px;
-        padding: 12px 14px;
+        gap: 8px;
+        padding: 10px 12px;
         border-radius: var(--radius-lg);
-        background: rgba(255, 255, 255, 0.34);
+        background: rgba(255, 255, 255, 0.24);
         border: 1px solid var(--line);
       }
 
-      .selection-chips {
+      .selection-overview {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
+        gap: 7px;
       }
 
       .selection-chip {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 5px 10px;
+        padding: 4px 9px;
         border-radius: 999px;
         border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.4);
-        font-size: 0.82rem;
+        background: rgba(255, 255, 255, 0.32);
+        font-size: 0.78rem;
         font-weight: 700;
         color: var(--ink-muted);
         white-space: nowrap;
@@ -1004,12 +1020,6 @@
         background: rgba(255, 240, 225, 0.56);
         border-color: rgba(185, 82, 44, 0.18);
         color: var(--accent-strong);
-      }
-
-      .selection-chip.is-muted {
-        background: transparent;
-        border-color: var(--line);
-        color: var(--ink-muted);
       }
 
       .selection-chip.is-skipped {
@@ -1147,7 +1157,7 @@
       }
 
       .hint {
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         color: var(--ink-muted);
       }
 
@@ -2706,17 +2716,16 @@
         }
 
         .upload-select {
-          flex-direction: column;
-          align-items: stretch;
+          gap: 8px;
         }
 
         .select-button.is-primary {
           width: 100%;
         }
 
-        .select-button.is-secondary {
-          width: auto;
-          align-self: flex-start;
+        .upload-secondary {
+          flex-direction: column;
+          align-items: flex-start;
         }
 
         .upload-actions-buttons {
