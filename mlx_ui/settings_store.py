@@ -29,6 +29,19 @@ from mlx_ui.update_check import DISABLE_UPDATE_CHECK_ENV, is_update_check_disabl
 
 _SETTINGS_LOCK = threading.Lock()
 
+_HOT_FOLDER_ENABLED_ENV = "HOT_FOLDER_ENABLED"
+_HOT_FOLDER_INPUT_ENV = "HOT_FOLDER_INPUT_DIR"
+_HOT_FOLDER_OUTPUT_ENV = "HOT_FOLDER_OUTPUT_DIR"
+
+
+def _resolve_repo_hot_folder_defaults(base_dir: Path) -> tuple[bool, str, str] | None:
+    repo_marker = (base_dir / "mlx_ui").is_dir() and (base_dir / "run.sh").is_file()
+    if not repo_marker:
+        return None
+    if not (base_dir / "input").is_dir() or not (base_dir / "output").is_dir():
+        return None
+    return True, "input", "output"
+
 
 def get_settings_path(base_dir: Path | None = None) -> Path:
     if base_dir is None:
@@ -150,6 +163,10 @@ def compute_effective_settings(
 ) -> tuple[dict[str, object], dict[str, str], dict[str, object]]:
     if env is None:
         env = os.environ
+    resolved_base_dir = (
+        Path(__file__).resolve().parent.parent if base_dir is None else Path(base_dir)
+    )
+    repo_hot_folder_defaults = _resolve_repo_hot_folder_defaults(resolved_base_dir)
     path = get_settings_path(base_dir)
     file_settings = read_settings_file(path)
     effective: dict[str, object] = {}
@@ -216,7 +233,7 @@ def compute_effective_settings(
         effective["default_language"] = DEFAULT_SETTINGS["default_language"]
         sources["default_language"] = "default"
 
-    hot_folder_enabled_env = env.get("HOT_FOLDER_ENABLED")
+    hot_folder_enabled_env = env.get(_HOT_FOLDER_ENABLED_ENV)
     if hot_folder_enabled_env is not None and hot_folder_enabled_env.strip() != "":
         parsed = parse_bool(hot_folder_enabled_env)
         effective["hot_folder_enabled"] = (
@@ -227,10 +244,15 @@ def compute_effective_settings(
         effective["hot_folder_enabled"] = bool(file_settings["hot_folder_enabled"])
         sources["hot_folder_enabled"] = "file"
     else:
-        effective["hot_folder_enabled"] = DEFAULT_SETTINGS["hot_folder_enabled"]
+        default_enabled = (
+            repo_hot_folder_defaults[0]
+            if repo_hot_folder_defaults is not None
+            else DEFAULT_SETTINGS["hot_folder_enabled"]
+        )
+        effective["hot_folder_enabled"] = default_enabled
         sources["hot_folder_enabled"] = "default"
 
-    hot_folder_input_env = env.get("HOT_FOLDER_INPUT_DIR")
+    hot_folder_input_env = env.get(_HOT_FOLDER_INPUT_ENV)
     if hot_folder_input_env is not None and hot_folder_input_env.strip() != "":
         effective["hot_folder_input_dir"] = hot_folder_input_env.strip()
         sources["hot_folder_input_dir"] = "env"
@@ -238,10 +260,15 @@ def compute_effective_settings(
         effective["hot_folder_input_dir"] = str(file_settings["hot_folder_input_dir"])
         sources["hot_folder_input_dir"] = "file"
     else:
-        effective["hot_folder_input_dir"] = DEFAULT_SETTINGS["hot_folder_input_dir"]
+        default_input = (
+            repo_hot_folder_defaults[1]
+            if repo_hot_folder_defaults is not None
+            else DEFAULT_SETTINGS["hot_folder_input_dir"]
+        )
+        effective["hot_folder_input_dir"] = default_input
         sources["hot_folder_input_dir"] = "default"
 
-    hot_folder_output_env = env.get("HOT_FOLDER_OUTPUT_DIR")
+    hot_folder_output_env = env.get(_HOT_FOLDER_OUTPUT_ENV)
     if hot_folder_output_env is not None and hot_folder_output_env.strip() != "":
         effective["hot_folder_output_dir"] = hot_folder_output_env.strip()
         sources["hot_folder_output_dir"] = "env"
@@ -249,7 +276,12 @@ def compute_effective_settings(
         effective["hot_folder_output_dir"] = str(file_settings["hot_folder_output_dir"])
         sources["hot_folder_output_dir"] = "file"
     else:
-        effective["hot_folder_output_dir"] = DEFAULT_SETTINGS["hot_folder_output_dir"]
+        default_output = (
+            repo_hot_folder_defaults[2]
+            if repo_hot_folder_defaults is not None
+            else DEFAULT_SETTINGS["hot_folder_output_dir"]
+        )
+        effective["hot_folder_output_dir"] = default_output
         sources["hot_folder_output_dir"] = "default"
 
     cohere_model_env = env.get(COHERE_MODEL_ENV)
