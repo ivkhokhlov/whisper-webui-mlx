@@ -117,6 +117,9 @@ template partials.
 - Storage now leads with cleanup actions while raw local paths live behind a
   disclosure; destructive buttons use plain labels and counts stay in muted
   helper text.
+- Live preview now uses one clear status area, one action area, and one
+  transcript area, with latency and chunk/window metrics removed from the
+  default surface while the unsaved-session limitation stays explicit.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be

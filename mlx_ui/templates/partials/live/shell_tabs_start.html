@@ -10,21 +10,15 @@
           <section class="panel">
             <div class="live-shell">
               <div class="live-lead">
-                <h2>Live mode (experimental Parakeet beta)</h2>
-                <p>
-                  This path uses the Parakeet streaming interface with short rolling browser-recorded chunks and
-                  in-memory partial transcript updates. It does not touch the batch queue or save sessions back into
-                  History yet, so Queue remains the stable workflow for production use.
-                </p>
+                <h2>Live preview</h2>
+                <p>This beta stays separate from Queue and does not save sessions to History yet.</p>
               </div>
 
               <div class="live-preview-layout" aria-label="Live mode preview">
                 <section class="live-stage" aria-labelledby="live-stage-title">
                   <div class="live-stage__header">
                     <div>
-                      <div class="live-stage__kicker">Experimental capture surface</div>
-                      <h3 class="live-stage__title" id="live-stage-title">One focused place to start, watch, and stop a local beta session.</h3>
+                      <div class="live-stage__kicker">Session</div>
+                      <h3 class="live-stage__title" id="live-stage-title">Start, stop, and watch one local live session.</h3>
                     </div>
-                    <span class="live-stage__pill">{{ "Experimental beta" if live_snapshot.active else "Beta preview" }}</span>
                   </div>
-
