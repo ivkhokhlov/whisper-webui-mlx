@@ -499,7 +499,7 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
     assert "Used Whisper CPU local" in response.text
     assert 'id="worker-context"' in response.text
     assert "Cohere cloud · English" in response.text
-    assert "Language: English" in response.text
+    assert "Cohere cloud · EN" in response.text
     assert 'title="Language: French"' in response.text
     assert (
         'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French"'

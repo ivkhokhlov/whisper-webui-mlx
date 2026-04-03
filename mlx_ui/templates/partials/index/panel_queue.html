@@ -131,61 +131,48 @@
               {% for job in queue_jobs %}
                 {% set job_view = job_views.get(job.id, {}) %}
                 {% set is_running = job.status == "running" %}
+                {% set summary_context = namespace(value="") %}
+                {% if is_running %}
+                  {% set context_engine = job_view.effective_engine or job_view.requested_engine %}
+                {% else %}
+                  {% set context_engine = job_view.requested_engine or job_view.effective_engine %}
+                {% endif %}
                 {% if job.status == "queued" %}
                   {% set queue_index.value = queue_index.value + 1 %}
+                  {% set queue_position = queue_index.value + offset %}
+                {% endif %}
+                {% if context_engine and context_engine.cloud %}
+                  {% set summary_context.value = context_engine.short_label ~ " cloud" %}
+                {% endif %}
+                {% if job_view.language and job_view.language.id != "auto" %}
+                  {% if summary_context.value %}
+                    {% set summary_context.value = summary_context.value ~ " · " ~ job_view.language.short_label %}
+                  {% else %}
+                    {% set summary_context.value = job_view.language.short_label %}
+                  {% endif %}
                 {% endif %}
                 <div class="job-row{% if is_running %} is-running{% endif %}">
-                  {% if is_running %}
-                    <div class="job-icon" aria-hidden="true">⏳</div>
-                  {% endif %}
                   <div class="job-body">
                     <div class="job-topline">
                       <div class="job-name" title="{{ job.filename }}">{{ job.filename }}</div>
                       <span class="status-badge is-{{ job.status }}">{{ job.status | capitalize }}</span>
                     </div>
                     <div class="job-subline">
-                      <div class="job-meta" data-iso="{{ job.created_at }}" data-label="Added">
-                        Added {{ job.created_at }}
-                      </div>
-                      {% if job.started_at %}
-                        <div class="job-meta" data-iso="{{ job.started_at }}" data-label="Started">
-                          Started {{ job.started_at }}
-                        </div>
-                      {% endif %}
-                      {% if job.status == "queued" %}
-                        {% set queue_position = queue_index.value + offset %}
-                        {% set items_ahead = queue_position - 1 %}
-                        <span class="job-chip is-strong">Queue #{{ queue_position }}</span>
-                        <span class="job-chip">
-                          {{ items_ahead }} {{ "item" if items_ahead == 1 else "items" }} ahead
-                        </span>
-                      {% endif %}
                       {% if is_running and job.started_at %}
-                        <span
-                          class="job-chip is-strong job-elapsed"
-                          data-started-at="{{ job.started_at }}"
-                        >
+                        <span class="job-elapsed" data-started-at="{{ job.started_at }}">
                           Elapsed …
                         </span>
-                      {% endif %}
-                      {% if job_view.engine_badges %}
-                        <span class="meta-chips" aria-label="Engine">
-                          {% for badge in job_view.engine_badges %}
-                            <span
-                              class="meta-chip is-{{ badge.kind }} is-{{ badge.mode }}"
-                              title="{{ badge.title }}"
-                            >
-                              {{ badge.label }}
-                            </span>
-                          {% endfor %}
+                      {% elif is_running %}
+                        <span class="job-summary-text">Running now</span>
+                      {% elif job.status == "queued" %}
+                        <span class="job-summary-text">
+                          {% if queue_position <= 1 %}Next{% else %}{{ queue_position - 1 }} ahead{% endif %}
                         </span>
                       {% endif %}
-                      {% if job_view.language %}
-                        <span
-                          class="meta-chip is-language"
-                          title="Language: {{ job_view.language.label }}"
-                        >
-                          {{ job_view.language.short_label }}
+                      {% if summary_context.value %}
+                        <span class="job-summary-separator" aria-hidden="true">·</span>
+                        <span class="job-summary-context" title="{{ summary_context.value }}">
+                          {{ summary_context.value }}
                         </span>
                       {% endif %}
                     </div>
@@ -199,9 +186,6 @@
                         aria-label="Remove from queue"
                         title="Remove from queue"
                       >
-                        <svg class="job-bin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                          <path d="M9 3h6l1 2h5v2H3V5h5l1-2zm-2 6h2v9H7V9zm4 0h2v9h-2V9zm4 0h2v9h-2V9z"></path>
-                        </svg>
                         <span class="job-bin-text">Remove</span>
                       </button>
                     {% endif %}

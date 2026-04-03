@@ -81,6 +81,9 @@ template partials.
 - Upload selection summary now keeps the file count primary, hides skipped
   items when none were filtered out, and removes size/batch estimates from the
   default surface.
+- Queue rows now collapse to a filename/status line plus one short contextual
+  summary, replacing duplicate queue numbers and chip-heavy engine/language
+  metadata with calmer scan-first labels.
 - Compact History view with status, filename, time, output labels, and one-click
   primary actions, plus overflow actions that stay inside the viewport near
   screen edges.

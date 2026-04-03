@@ -1,0 +1,563 @@
+(function () {
+  const app = window.mlxUiIndex;
+  if (!app) {
+    return;
+  }
+  if (app.renderJobs) {
+    return;
+  }
+
+  const escapeHtml = app.utils ? app.utils.escapeHtml : (value) => String(value);
+
+  function pickDefaultResult(results) {
+    if (!results || results.length === 0) {
+      return "";
+    }
+    const preferred = results.find((result) => result.toLowerCase().endsWith(".txt"));
+    return preferred || results[0];
+  }
+
+  function summarizeError(message, limit = 160) {
+    if (!message) {
+      return "";
+    }
+    const firstLine = String(message).split(/\r?\n/)[0].trim();
+    if (!firstLine) {
+      return "";
+    }
+    const condensed = firstLine.replace(/\s+/g, " ");
+    if (condensed.length <= limit) {
+      return condensed;
+    }
+    return `${condensed.slice(0, Math.max(limit - 1, 0))}…`;
+  }
+
+  function buildOutputChips(_jobId, results) {
+    if (!results || results.length === 0) {
+      return "";
+    }
+    const seen = new Set();
+    const chips = [];
+    results.forEach((result) => {
+      const parts = String(result).split(".");
+      const ext = parts.length > 1 ? parts[parts.length - 1] : "file";
+      const label = ext.toUpperCase();
+      if (seen.has(label)) {
+        return;
+      }
+      seen.add(label);
+      chips.push(`<span class="output-chip">${escapeHtml(label)}</span>`);
+    });
+    if (chips.length === 0) {
+      return "";
+    }
+    return `<div class="output-chips">${chips.join("")}</div>`;
+  }
+
+  function buildOutputList(jobId, results) {
+    if (!results || results.length === 0) {
+      return "";
+    }
+    const encodedJobId = encodeURIComponent(jobId);
+    const items = results
+      .map((result) => {
+        const encodedResult = encodeURIComponent(result);
+        const safeResult = escapeHtml(result);
+        return `
+          <li class="detail-result-item">
+            <a
+              class="detail-result-link"
+              href="/results/${encodedJobId}/${encodedResult}"
+              target="_blank"
+              rel="noopener"
+            >
+              ${safeResult}
+            </a>
+          </li>
+        `;
+      })
+      .join("");
+    return `
+      <div class="detail-block">
+        <div class="detail-label">Outputs</div>
+        <ul class="detail-results">${items}</ul>
+      </div>
+    `;
+  }
+
+  function buildMetaLine(label, isoString, className) {
+    if (!isoString) {
+      return "";
+    }
+    const classLabel = className || "job-meta";
+    return `
+      <div class="${classLabel}" data-iso="${escapeHtml(isoString)}" data-label="${escapeHtml(
+        label
+      )}"></div>
+    `;
+  }
+
+  function buildMetaLines(job) {
+    const lines = [buildMetaLine("Added", job.created_at, "job-meta")];
+    if (job.started_at) {
+      lines.push(buildMetaLine("Started", job.started_at, "job-meta"));
+    }
+    if (job.completed_at) {
+      lines.push(buildMetaLine("Completed", job.completed_at, "job-meta"));
+    }
+    return lines.join("");
+  }
+
+  function buildJobMetaChips(job) {
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    if (!ui) {
+      return "";
+    }
+    const chips = [];
+    const engineBadges = Array.isArray(ui.engine_badges) ? ui.engine_badges : [];
+    if (engineBadges.length > 0) {
+      const engineMarkup = engineBadges
+        .map((badge) => {
+          const kind = escapeHtml(badge.kind || "engine");
+          const mode = escapeHtml(badge.mode || "unknown");
+          const title = escapeHtml(badge.title || badge.label || "");
+          const label = escapeHtml(badge.label || "");
+          return `
+            <span class="meta-chip is-${kind} is-${mode}" title="${title}">
+              ${label}
+            </span>
+          `;
+        })
+        .join("");
+      chips.push(`<span class="meta-chips" aria-label="Engine">${engineMarkup}</span>`);
+    }
+    const language = ui.language && typeof ui.language === "object" ? ui.language : null;
+    if (language && language.short_label) {
+      chips.push(`
+        <span
+          class="meta-chip is-language"
+          title="Language: ${escapeHtml(language.label || language.short_label)}"
+        >
+          ${escapeHtml(language.short_label)}
+        </span>
+      `);
+    }
+    return chips.join("");
+  }
+
+  function buildPreviewMetaText(job) {
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    return ui && ui.preview_meta ? String(ui.preview_meta) : "";
+  }
+
+  function buildQueueActions(job) {
+    const canDelete = job.status === "queued";
+    if (!canDelete) {
+      return '<div class="job-actions"></div>';
+    }
+    return `
+      <div class="job-actions">
+        <button
+          class="job-bin"
+          type="button"
+          data-job-id="${escapeHtml(job.id)}"
+          aria-label="Remove from queue"
+          title="Remove from queue"
+        >
+          <span class="job-bin-text">Remove</span>
+        </button>
+      </div>
+    `;
+  }
+
+  function buildQueueLabel(position) {
+    if (!position || position <= 1) {
+      return "Next";
+    }
+    return `${Math.max(position - 1, 0)} ahead`;
+  }
+
+  function pickQueueContextEngine(job, isRunning) {
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    if (!ui) {
+      return null;
+    }
+    const effective =
+      ui.effective_engine && typeof ui.effective_engine === "object" ? ui.effective_engine : null;
+    const requested =
+      ui.requested_engine && typeof ui.requested_engine === "object" ? ui.requested_engine : null;
+    if (isRunning) {
+      return effective || requested;
+    }
+    return requested || effective;
+  }
+
+  function buildQueueContext(job, isRunning) {
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    if (!ui) {
+      return "";
+    }
+    const parts = [];
+    const engine = pickQueueContextEngine(job, isRunning);
+    if (engine && String(engine.mode || "").toLowerCase() === "cloud") {
+      const engineLabel = String(engine.short_label || engine.label || "").trim();
+      if (engineLabel) {
+        parts.push(`${engineLabel} cloud`);
+      }
+    }
+    const language = ui.language && typeof ui.language === "object" ? ui.language : null;
+    const languageId = String((language && language.id) || "").toLowerCase();
+    const languageLabel = String((language && language.short_label) || "").trim();
+    if (languageLabel && languageId && languageId !== "auto") {
+      parts.push(languageLabel);
+    }
+    return parts.join(" · ");
+  }
+
+  function buildQueueSummary(job, options) {
+    const opts = options || {};
+    const isRunning = Boolean(opts.isRunning);
+    const queuePosition = opts.queuePosition || 0;
+    const context = buildQueueContext(job, isRunning);
+    const parts = [];
+    if (isRunning) {
+      if (job.started_at) {
+        parts.push(`
+          <span class="job-elapsed" data-started-at="${escapeHtml(job.started_at)}">
+            Elapsed …
+          </span>
+        `);
+      } else {
+        parts.push('<span class="job-summary-text">Running now</span>');
+      }
+    } else {
+      parts.push(`<span class="job-summary-text">${escapeHtml(buildQueueLabel(queuePosition))}</span>`);
+    }
+    if (context) {
+      parts.push('<span class="job-summary-separator" aria-hidden="true">·</span>');
+      parts.push(
+        `<span class="job-summary-context" title="${escapeHtml(context)}">${escapeHtml(context)}</span>`
+      );
+    }
+    return parts.join("");
+  }
+
+  function buildQueueRow(job, options) {
+    const opts = options || {};
+    const isRunning = Boolean(opts.isRunning);
+    const queuePosition = opts.queuePosition || 0;
+    const statusRaw = String(job.status || "").toLowerCase();
+    const statusLabel = statusRaw ? statusRaw[0].toUpperCase() + statusRaw.slice(1) : "Unknown";
+    const statusClass = statusRaw === "running" ? "is-running" : statusRaw === "queued" ? "is-queued" : "";
+    const badgeClass = statusClass ? `status-badge ${statusClass}` : "status-badge";
+    const safeFilename = escapeHtml(job.filename || "Untitled file");
+    const summary = buildQueueSummary(job, { isRunning, queuePosition });
+    const actions = buildQueueActions(job);
+    return `
+      <div class="job-row${isRunning ? " is-running" : ""}">
+        <div class="job-body">
+          <div class="job-topline">
+            <div class="job-name" title="${safeFilename}">${safeFilename}</div>
+            <span class="${badgeClass}">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div class="job-subline">
+            ${summary}
+          </div>
+        </div>
+        ${actions}
+      </div>
+    `;
+  }
+
+  function buildHistoryMenu(job, results, defaultResult, isOpen) {
+    const status = (job.status || "").toLowerCase();
+    const encodedJobId = encodeURIComponent(job.id);
+    const safeFilename = escapeHtml(job.filename || "Untitled file");
+    const openAttr = isOpen ? " open" : "";
+    const items = [];
+    if (status === "done" && defaultResult) {
+      const encodedResult = encodeURIComponent(defaultResult);
+      items.push(`
+        <a
+          class="job-menu-item"
+          href="/results/${encodedJobId}/${encodedResult}"
+          target="_blank"
+          rel="noopener"
+        >
+          Open transcript
+        </a>
+      `);
+    }
+    if (results && results.length > 0) {
+      results.forEach((result) => {
+        const encodedResult = encodeURIComponent(result);
+        const parts = String(result).split(".");
+        const ext = parts.length > 1 ? parts[parts.length - 1].toUpperCase() : "FILE";
+        items.push(`
+          <a
+            class="job-menu-item"
+            href="/results/${encodedJobId}/${encodedResult}"
+            download="${escapeHtml(result)}"
+          >
+            Download ${escapeHtml(ext)}
+          </a>
+        `);
+      });
+    }
+    if (status === "done" && defaultResult) {
+      items.push(`
+        <button
+          class="job-menu-item"
+          type="button"
+          data-action="copy-preview"
+          data-job-id="${escapeHtml(job.id)}"
+        >
+          Copy preview
+        </button>
+      `);
+    }
+    items.push(`
+      <button
+        class="job-menu-item"
+        type="button"
+        data-action="copy-filename"
+        data-filename="${safeFilename}"
+      >
+        Copy filename
+      </button>
+    `);
+    items.push('<div class="job-menu-divider" aria-hidden="true"></div>');
+    items.push(`
+      <button
+        class="job-menu-item is-danger"
+        type="button"
+        data-action="delete-history"
+      >
+        Delete...
+      </button>
+    `);
+    return `
+      <details class="job-menu"${openAttr}>
+        <summary aria-label="More actions">⋯</summary>
+        <div class="job-menu-panel">
+          ${items.join("")}
+        </div>
+      </details>
+    `;
+  }
+
+  function buildHistoryDetails(job, results, defaultResult, isOpen) {
+    const status = (job.status || "").toLowerCase();
+    const encodedJobId = encodeURIComponent(job.id);
+    const safeFilename = escapeHtml(job.filename || "Untitled file");
+    const openAttr = isOpen ? " open" : "";
+    const previewMeta = escapeHtml(buildPreviewMetaText(job));
+    const ui = job && job.ui && typeof job.ui === "object" ? job.ui : null;
+    const implementation =
+      ui && ui.effective_implementation && typeof ui.effective_implementation === "object"
+        ? ui.effective_implementation
+        : null;
+    const implementationId = implementation && implementation.id ? String(implementation.id) : "";
+    const implementationTitle =
+      implementation && implementation.title
+        ? String(implementation.title)
+        : implementationId
+          ? `Backend: ${implementationId}`
+          : "";
+    const timelineLines = [
+      buildMetaLine("Added", job.created_at, "detail-line"),
+      job.started_at ? buildMetaLine("Started", job.started_at, "detail-line") : "",
+      job.completed_at
+        ? buildMetaLine(
+            status === "failed" ? "Failed" : "Completed",
+            job.completed_at,
+            "detail-line"
+          )
+        : "",
+    ].join("");
+    const runtimeBlock =
+      implementationId && !(status === "done" && defaultResult)
+        ? `
+          <div class="detail-block">
+            <div class="detail-label">Runtime</div>
+            <div class="detail-line" title="${escapeHtml(implementationTitle)}">
+              Backend: <code>${escapeHtml(implementationId)}</code>
+            </div>
+          </div>
+        `
+        : "";
+
+    const previewBlock =
+      status === "done" && defaultResult
+        ? `
+          <div
+            class="detail-block"
+            data-preview-block
+            data-preview-url="/api/jobs/${encodedJobId}/preview?chars=300"
+          >
+            <div class="detail-label">Preview</div>
+            ${previewMeta ? `<div class="preview-meta-note">${previewMeta}</div>` : ""}
+            <div class="preview-snippet is-loading" data-preview-snippet>
+              Preview will load when expanded.
+            </div>
+            <div class="preview-actions">
+              <button
+                class="preview-action"
+                type="button"
+                data-action="copy-preview"
+                data-job-id="${escapeHtml(job.id)}"
+              >
+                Copy preview
+              </button>
+              <a
+                class="preview-action"
+                href="/results/${encodeURIComponent(job.id)}/${encodeURIComponent(defaultResult)}"
+                target="_blank"
+                rel="noopener"
+              >
+                Open
+              </a>
+            </div>
+          </div>
+        `
+        : "";
+
+    const outputsBlock = buildOutputList(job.id, results);
+    const logBlock =
+      status === "failed" && job.error_message
+        ? `
+          <div class="detail-block">
+            <div class="detail-label">Log</div>
+            <div class="detail-log" data-log>${escapeHtml(job.error_message)}</div>
+          </div>
+        `
+        : "";
+
+    return `
+      <details class="job-details" data-job-id="${escapeHtml(job.id)}"${openAttr}>
+        <summary aria-label="Details for ${safeFilename}">
+          <span>Details</span>
+          <span class="details-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="job-details-body">
+          <div class="detail-block">
+            <div class="detail-label">Timeline</div>
+            ${timelineLines}
+          </div>
+          ${runtimeBlock}
+          ${previewBlock}
+          ${outputsBlock}
+          ${logBlock}
+        </div>
+      </details>
+    `;
+  }
+
+  function buildHistoryRow(job, resultsByJob, openJobs, openMenus) {
+    const results = (resultsByJob || {})[job.id] || [];
+    const defaultResult = pickDefaultResult(results);
+    const safeFilename = escapeHtml(job.filename || "Untitled file");
+    const encodedJobId = encodeURIComponent(job.id);
+    const status = (job.status || "unknown").toLowerCase();
+    const statusClass = `is-${escapeHtml(status)}`;
+    const errorSummaryText = status === "failed" && job.error_message ? summarizeError(job.error_message) : "";
+    const isOpen = openJobs ? openJobs.has(job.id) : false;
+    const isMenuOpen = openMenus ? openMenus.has(job.id) : false;
+    const timeMeta = `
+      <div
+        class="history-time"
+        data-time-meta
+        data-status="${escapeHtml(status)}"
+        data-created-at="${escapeHtml(job.created_at || "")}"
+        data-started-at="${escapeHtml(job.started_at || "")}"
+        data-completed-at="${escapeHtml(job.completed_at || "")}"
+      ></div>
+    `;
+    const errorSummary = errorSummaryText
+      ? `
+        <div class="history-error-summary" title="${escapeHtml(errorSummaryText)}">
+          ${escapeHtml(errorSummaryText)}
+        </div>
+      `
+      : "";
+    const metaChips = buildJobMetaChips(job);
+    const chips = buildOutputChips(job.id, results);
+    const previewMeta = escapeHtml(buildPreviewMetaText(job));
+    const defaultHref =
+      status === "done" && defaultResult
+        ? `/results/${encodedJobId}/${encodeURIComponent(defaultResult)}`
+        : "";
+    const previewAction =
+      status === "done" && defaultResult
+        ? `
+          <button
+            class="job-primary is-secondary js-only"
+            type="button"
+            data-action="preview"
+            data-job-id="${escapeHtml(job.id)}"
+            data-preview-url="/api/jobs/${encodedJobId}/preview?chars=1200"
+            data-default-url="${escapeHtml(defaultHref)}"
+            data-default-filename="${escapeHtml(defaultResult)}"
+            data-preview-meta="${previewMeta}"
+            aria-haspopup="dialog"
+          >
+            Preview
+          </button>
+        `
+        : "";
+    const downloadAction =
+      status === "done" && defaultResult
+        ? `
+          <a class="job-primary" href="${escapeHtml(defaultHref)}" download="${escapeHtml(defaultResult)}">
+            Download
+          </a>
+        `
+        : "";
+    const viewLogAction =
+      status === "failed"
+        ? `
+          <button class="job-primary is-secondary" type="button" data-action="view-log">
+            Log
+          </button>
+        `
+        : "";
+    const primaryAction = [previewAction, downloadAction, viewLogAction].filter(Boolean).join("");
+
+    return `
+      <div
+        class="history-row"
+        data-job-id="${escapeHtml(job.id)}"
+        data-preview-meta="${previewMeta}"
+      >
+        <div class="history-main">
+          <div class="history-title">
+            <div class="history-filename" title="${safeFilename}">${safeFilename}</div>
+            <div class="history-badges">
+              <div class="status-badge ${statusClass}">${escapeHtml(status)}</div>
+              ${chips}
+            </div>
+          </div>
+          <div class="history-subline">
+            ${timeMeta}
+            ${metaChips}
+            ${errorSummary}
+          </div>
+        </div>
+        <div class="history-actions">
+          <div class="history-actions-main">
+            ${primaryAction}
+          </div>
+          ${buildHistoryMenu(job, results, defaultResult, isMenuOpen)}
+        </div>
+        ${buildHistoryDetails(job, results, defaultResult, isOpen)}
+      </div>
+    `;
+  }
+
+  app.renderJobs = {
+    pickDefaultResult,
+    summarizeError,
+    buildQueueRow,
+    buildHistoryRow,
+  };
+})();
