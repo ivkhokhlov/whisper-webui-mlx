@@ -101,7 +101,9 @@ def _implementation_snapshot(provider) -> dict[str, object]:
             "disabled_label": None,
         }
     implementation_implemented = implementation.is_implemented()
-    implementation_available = implementation_implemented and implementation.is_available()
+    implementation_available = (
+        implementation_implemented and implementation.is_available()
+    )
     implementation_reason = None
     if not implementation_available:
         detail = implementation.unavailable_reason()
@@ -114,4 +116,3 @@ def _implementation_snapshot(provider) -> dict[str, object]:
         "reason": implementation_reason,
         "disabled_label": implementation.disabled_label,
     }
-

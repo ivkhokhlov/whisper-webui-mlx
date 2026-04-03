@@ -30,6 +30,9 @@
               {% set queue_count_total = queue_jobs | length %}
               {% set update_locked = settings_snapshot.sources.update_check_enabled == "env" %}
               {% set log_locked = settings_snapshot.sources.log_level == "env" %}
+              {% set hot_folder_enabled_locked = settings_snapshot.sources.hot_folder_enabled == "env" %}
+              {% set hot_folder_input_locked = settings_snapshot.sources.hot_folder_input_dir == "env" %}
+              {% set hot_folder_output_locked = settings_snapshot.sources.hot_folder_output_dir == "env" %}
               {% set parakeet_snapshot = settings_snapshot.local_models.parakeet %}
               <div class="settings-grid">
                 <section class="settings-card is-primary" aria-labelledby="settings-transcription-title">
@@ -435,6 +438,80 @@
                     <p class="settings-section-note">
                       Cloud engines upload audio. Other files stay here.
                     </p>
+                    <section class="settings-subsection" aria-labelledby="settings-hot-folder-title">
+                      <header class="settings-subsection-header">
+                        <h4 id="settings-hot-folder-title">Hot folder</h4>
+                        <p class="settings-subsection-desc">Auto-queue files from a watched folder.</p>
+                      </header>
+                      <p class="settings-hint">
+                        Drop audio/video files into the input folder. Files move into the queue and are removed after
+                        processing. Transcripts (.txt) are exported to the output folder. Applies after restart.
+                      </p>
+                      {% if not hot_folder_enabled_locked %}
+                        <input type="hidden" name="hot_folder_enabled_present" value="1">
+                      {% endif %}
+                      <div class="settings-field">
+                        <div class="settings-label-row is-single">
+                          <label class="settings-toggle" for="hot-folder-enabled">
+                            <input
+                              id="hot-folder-enabled"
+                              type="checkbox"
+                              name="hot_folder_enabled"
+                              value="1"
+                              {% if settings_snapshot.settings.hot_folder_enabled %}checked{% endif %}
+                              {% if hot_folder_enabled_locked %}disabled{% endif %}
+                            >
+                            Enable hot folder
+                          </label>
+                        </div>
+                        {% if hot_folder_enabled_locked %}
+                          <p class="settings-lock-note">
+                            Managed by environment (<code>{{ settings_snapshot.meta.env_vars.hot_folder_enabled }}</code>).
+                          </p>
+                        {% endif %}
+                      </div>
+                      <div class="settings-field">
+                        <div class="settings-label-row is-single">
+                          <label class="settings-label" for="hot-folder-input-dir">Input folder</label>
+                        </div>
+                        <input
+                          class="settings-input"
+                          id="hot-folder-input-dir"
+                          name="hot_folder_input_dir"
+                          type="text"
+                          placeholder="data/hot/input"
+                          value="{{ settings_snapshot.settings.hot_folder_input_dir }}"
+                          {% if hot_folder_input_locked %}disabled{% endif %}
+                        >
+                        <p class="settings-hint">Files are moved from here into the queue.</p>
+                        {% if hot_folder_input_locked %}
+                          <p class="settings-lock-note">
+                            Managed by environment (<code>{{ settings_snapshot.meta.env_vars.hot_folder_input_dir }}</code>).
+                          </p>
+                        {% endif %}
+                      </div>
+                      <div class="settings-field">
+                        <div class="settings-label-row is-single">
+                          <label class="settings-label" for="hot-folder-output-dir">Output folder</label>
+                        </div>
+                        <input
+                          class="settings-input"
+                          id="hot-folder-output-dir"
+                          name="hot_folder_output_dir"
+                          type="text"
+                          placeholder="data/hot/output"
+                          value="{{ settings_snapshot.settings.hot_folder_output_dir }}"
+                          {% if hot_folder_output_locked %}disabled{% endif %}
+                        >
+                        <p class="settings-hint">Exports .txt transcripts here.</p>
+                        {% if hot_folder_output_locked %}
+                          <p class="settings-lock-note">
+                            Managed by environment (<code>{{ settings_snapshot.meta.env_vars.hot_folder_output_dir }}</code>).
+                          </p>
+                        {% endif %}
+                        <div class="settings-error" id="settings-error-hot-folder" hidden></div>
+                      </div>
+                    </section>
                     <div class="settings-danger-zone" aria-labelledby="settings-storage-danger-title">
                       <div class="settings-danger-zone-header">
                         <div class="settings-danger-zone-label" id="settings-storage-danger-title">

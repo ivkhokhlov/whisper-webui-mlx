@@ -28,7 +28,9 @@ def _extract_history_row(html: str, job_id: str) -> str:
     return match.group(0)
 
 
-def test_root_history_rows_use_lighter_summary_and_single_primary_action(tmp_path: Path) -> None:
+def test_root_history_rows_use_lighter_summary_and_single_primary_action(
+    tmp_path: Path,
+) -> None:
     _configure_app(tmp_path)
     db_path = Path(app.state.db_path)
     init_db(db_path)
@@ -85,21 +87,23 @@ def test_root_history_rows_use_lighter_summary_and_single_primary_action(tmp_pat
 
     assert 'class="status-badge is-done">Done<' in done_row
     assert 'class="status-badge is-failed">Failed<' in failed_row
-    assert 'data-time-meta' in done_row
-    assert 'data-time-meta' in failed_row
+    assert "data-time-meta" in done_row
+    assert "data-time-meta" in failed_row
     assert 'class="job-primary"' in done_row
     assert len(re.findall(r'class="job-primary', done_row)) == 1
     assert len(re.findall(r'class="job-primary', failed_row)) == 1
     assert 'data-action="preview"' in done_row
     assert 'class="job-primary is-secondary js-only"' not in done_row
-    assert 'output-chip' not in done_row
-    assert 'output-chip' not in failed_row
-    assert 'meta-chip' not in done_row
-    assert 'meta-chip' not in failed_row
+    assert "output-chip" not in done_row
+    assert "output-chip" not in failed_row
+    assert "meta-chip" not in done_row
+    assert "meta-chip" not in failed_row
     assert "Decoder crashed on frame 1" in failed_row
 
 
-def test_root_history_details_group_secondary_metadata_on_demand(tmp_path: Path) -> None:
+def test_root_history_details_group_secondary_metadata_on_demand(
+    tmp_path: Path,
+) -> None:
     _configure_app(tmp_path)
     db_path = Path(app.state.db_path)
     init_db(db_path)

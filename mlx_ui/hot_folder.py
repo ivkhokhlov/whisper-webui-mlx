@@ -283,7 +283,9 @@ class HotFolderWatcher:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 _move_file(destination, Path(source_path))
             except Exception:
-                logger.exception("Hot folder failed to restore %s after enqueue failure", source_path)
+                logger.exception(
+                    "Hot folder failed to restore %s after enqueue failure", source_path
+                )
             return False
 
         logger.info("Hot folder queued %s as job %s", source_relpath, job_id)
@@ -406,7 +408,9 @@ def restore_failed_hot_folder_upload(job: JobRecord) -> Path | None:
     except OSError:
         pass
     except Exception:
-        logger.exception("Failed to remove hot-folder upload directory for job %s", job.id)
+        logger.exception(
+            "Failed to remove hot-folder upload directory for job %s", job.id
+        )
     return resolved_target
 
 

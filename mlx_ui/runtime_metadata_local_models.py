@@ -308,4 +308,3 @@ def _resolve_hf_cache_dir(env: Mapping[str, str]) -> Path:
     if xdg_cache:
         return Path(xdg_cache) / "huggingface" / "hub"
     return Path.home() / ".cache" / "huggingface" / "hub"
-

@@ -37,4 +37,3 @@ def test_index_script_partial_loads_external_modules() -> None:
     ]
     for name in expected_files:
         assert (static_dir / name).is_file()
-

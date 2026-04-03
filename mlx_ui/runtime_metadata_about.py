@@ -132,4 +132,3 @@ def read_build_date(base_dir: Path) -> str | None:
     return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat(
         timespec="seconds"
     )
-

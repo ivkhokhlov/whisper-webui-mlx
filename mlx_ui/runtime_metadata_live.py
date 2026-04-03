@@ -98,4 +98,3 @@ def build_live_transcription_snapshot(
             "chunk delivery, and partial updates are beta-quality and may still be fragile."
         ),
     }
-

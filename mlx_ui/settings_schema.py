@@ -44,6 +44,9 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "wtm_quick": False,
     "output_formats": ["txt"],
     "default_language": DEFAULT_JOB_LANGUAGE,
+    "hot_folder_enabled": False,
+    "hot_folder_input_dir": "",
+    "hot_folder_output_dir": "",
     "cohere_model": DEFAULT_COHERE_MODEL,
     "whisper_model": DEFAULT_WHISPER_MODEL,
     "parakeet_model": DEFAULT_PARAKEET_MODEL,
@@ -184,6 +187,27 @@ def validate_settings_payload(payload: object) -> tuple[dict[str, object], list[
             errors.append("default_language must be 'auto' or an ISO language code")
         else:
             updates["default_language"] = value
+
+    if "hot_folder_enabled" in payload:
+        value = payload["hot_folder_enabled"]
+        if isinstance(value, bool):
+            updates["hot_folder_enabled"] = value
+        else:
+            errors.append("hot_folder_enabled must be a boolean")
+
+    if "hot_folder_input_dir" in payload:
+        value = payload["hot_folder_input_dir"]
+        if isinstance(value, str):
+            updates["hot_folder_input_dir"] = value.strip()
+        else:
+            errors.append("hot_folder_input_dir must be a string")
+
+    if "hot_folder_output_dir" in payload:
+        value = payload["hot_folder_output_dir"]
+        if isinstance(value, str):
+            updates["hot_folder_output_dir"] = value.strip()
+        else:
+            errors.append("hot_folder_output_dir must be a string")
 
     if "cohere_model" in payload:
         value = payload["cohere_model"]

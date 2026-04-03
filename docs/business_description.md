@@ -68,6 +68,10 @@ template partials.
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
+- Optional “hot folder” ingestion: watch an input folder, move detected
+  audio/video files into the queue for processing, and export `.txt`
+  transcripts into a configured output folder (mirrors subfolders; restores the
+  input file on failed jobs).
 - Batch-level language selector plus a persisted default language setting.
 - Requested/effective engine tracking per job, exposed in the worker shell,
   queue, history, and preview metadata.

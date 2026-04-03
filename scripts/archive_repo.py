@@ -81,9 +81,7 @@ def _write_symlink(
     zip_info.date_time = time.localtime(stat_result.st_mtime)[:6]
     zip_info.create_system = 3
     zip_info.compress_type = zipfile.ZIP_DEFLATED
-    zip_info.external_attr = (
-        stat.S_IFLNK | stat.S_IMODE(stat_result.st_mode)
-    ) << 16
+    zip_info.external_attr = (stat.S_IFLNK | stat.S_IMODE(stat_result.st_mode)) << 16
     archive.writestr(zip_info, link_target.encode("utf-8"))
 
 

@@ -31,7 +31,9 @@ def test_live_backend_resolution_on_linux_without_experimental_flag_does_not_pro
     monkeypatch,
 ) -> None:
     monkeypatch.setattr("mlx_ui.live_backend_runtime.sys.platform", "linux")
-    monkeypatch.delenv(engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, raising=False)
+    monkeypatch.delenv(
+        engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, raising=False
+    )
     monkeypatch.setattr(
         "mlx_ui.live_backend_runtime._parakeet_nemo_cuda_live_unavailability_reason",
         _unexpected_nemo_probe,
@@ -74,7 +76,9 @@ def test_parakeet_engine_options_keep_mlx_primary_on_apple_silicon(monkeypatch) 
     monkeypatch.setattr(engine_registry.sys, "platform", "darwin")
     monkeypatch.setattr(engine_registry.platform, "machine", lambda: "arm64")
     monkeypatch.setenv(engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, "1")
-    monkeypatch.setattr(engine_registry, "is_parakeet_mlx_runtime_usable", lambda: False)
+    monkeypatch.setattr(
+        engine_registry, "is_parakeet_mlx_runtime_usable", lambda: False
+    )
 
     options = build_registry_engine_options()
     parakeet = next(option for option in options if option["id"] == "parakeet_tdt_v3")

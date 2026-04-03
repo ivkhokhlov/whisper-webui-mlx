@@ -67,13 +67,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         settings_snapshot = build_settings_snapshot(base_dir=base_dir)
-        hot_folder_settings = settings_snapshot.get("settings", {}) if settings_snapshot else {}
+        hot_folder_settings = (
+            settings_snapshot.get("settings", {}) if settings_snapshot else {}
+        )
         hot_folder_enabled = bool(hot_folder_settings.get("hot_folder_enabled", False))
-        hot_folder_input_dir = str(hot_folder_settings.get("hot_folder_input_dir", "")).strip()
-        hot_folder_output_dir = str(hot_folder_settings.get("hot_folder_output_dir", "")).strip()
+        hot_folder_input_dir = str(
+            hot_folder_settings.get("hot_folder_input_dir", "")
+        ).strip()
+        hot_folder_output_dir = str(
+            hot_folder_settings.get("hot_folder_output_dir", "")
+        ).strip()
         if worker_enabled and hot_folder_enabled:
             if not hot_folder_input_dir or not hot_folder_output_dir:
-                logger.warning("Hot folder is enabled but input/output paths are not configured.")
+                logger.warning(
+                    "Hot folder is enabled but input/output paths are not configured."
+                )
             else:
                 input_dir = Path(hot_folder_input_dir)
                 if not input_dir.is_absolute():

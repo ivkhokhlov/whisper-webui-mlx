@@ -68,6 +68,15 @@ def read_settings_file(path: Path) -> dict[str, object]:
     default_language = parse_language(payload.get("default_language"))
     if default_language is not None:
         parsed["default_language"] = default_language
+    hot_folder_enabled = payload.get("hot_folder_enabled")
+    if isinstance(hot_folder_enabled, bool):
+        parsed["hot_folder_enabled"] = hot_folder_enabled
+    hot_folder_input_dir = payload.get("hot_folder_input_dir")
+    if isinstance(hot_folder_input_dir, str):
+        parsed["hot_folder_input_dir"] = hot_folder_input_dir.strip()
+    hot_folder_output_dir = payload.get("hot_folder_output_dir")
+    if isinstance(hot_folder_output_dir, str):
+        parsed["hot_folder_output_dir"] = hot_folder_output_dir.strip()
     cohere_model = payload.get("cohere_model")
     if isinstance(cohere_model, str):
         parsed["cohere_model"] = cohere_model.strip()
@@ -206,6 +215,42 @@ def compute_effective_settings(
     else:
         effective["default_language"] = DEFAULT_SETTINGS["default_language"]
         sources["default_language"] = "default"
+
+    hot_folder_enabled_env = env.get("HOT_FOLDER_ENABLED")
+    if hot_folder_enabled_env is not None and hot_folder_enabled_env.strip() != "":
+        parsed = parse_bool(hot_folder_enabled_env)
+        effective["hot_folder_enabled"] = (
+            parsed if parsed is not None else DEFAULT_SETTINGS["hot_folder_enabled"]
+        )
+        sources["hot_folder_enabled"] = "env"
+    elif "hot_folder_enabled" in file_settings:
+        effective["hot_folder_enabled"] = bool(file_settings["hot_folder_enabled"])
+        sources["hot_folder_enabled"] = "file"
+    else:
+        effective["hot_folder_enabled"] = DEFAULT_SETTINGS["hot_folder_enabled"]
+        sources["hot_folder_enabled"] = "default"
+
+    hot_folder_input_env = env.get("HOT_FOLDER_INPUT_DIR")
+    if hot_folder_input_env is not None and hot_folder_input_env.strip() != "":
+        effective["hot_folder_input_dir"] = hot_folder_input_env.strip()
+        sources["hot_folder_input_dir"] = "env"
+    elif "hot_folder_input_dir" in file_settings:
+        effective["hot_folder_input_dir"] = str(file_settings["hot_folder_input_dir"])
+        sources["hot_folder_input_dir"] = "file"
+    else:
+        effective["hot_folder_input_dir"] = DEFAULT_SETTINGS["hot_folder_input_dir"]
+        sources["hot_folder_input_dir"] = "default"
+
+    hot_folder_output_env = env.get("HOT_FOLDER_OUTPUT_DIR")
+    if hot_folder_output_env is not None and hot_folder_output_env.strip() != "":
+        effective["hot_folder_output_dir"] = hot_folder_output_env.strip()
+        sources["hot_folder_output_dir"] = "env"
+    elif "hot_folder_output_dir" in file_settings:
+        effective["hot_folder_output_dir"] = str(file_settings["hot_folder_output_dir"])
+        sources["hot_folder_output_dir"] = "file"
+    else:
+        effective["hot_folder_output_dir"] = DEFAULT_SETTINGS["hot_folder_output_dir"]
+        sources["hot_folder_output_dir"] = "default"
 
     cohere_model_env = env.get(COHERE_MODEL_ENV)
     if cohere_model_env is not None and cohere_model_env.strip() != "":
