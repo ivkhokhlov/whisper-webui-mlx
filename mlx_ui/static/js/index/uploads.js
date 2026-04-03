@@ -242,7 +242,7 @@
     const validCount = pendingItems.length;
     const fileLabel = validCount === 1 ? "file" : "files";
 
-    selectionValid.textContent = `${validCount} ${fileLabel} selected`;
+    selectionValid.textContent = `Add files (${validCount} selected)`;
     selectionSkipped.textContent = `Skipped ${skippedCount}`;
     selectionSkipped.hidden = skippedCount <= 0;
     if (skippedCount > 0) {

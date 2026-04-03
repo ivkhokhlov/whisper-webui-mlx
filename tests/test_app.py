@@ -182,10 +182,14 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
 
     assert 'id="selection-summary"' in response.text
     assert 'id="selection-valid"' in response.text
+    assert "Add files (0 selected)" in response.text
+    assert "0 files selected" not in response.text
     assert 'id="selection-skipped"' in response.text
     assert 'id="selection-size"' not in response.text
     assert 'id="selection-batch"' not in response.text
     assert 'id="upload-language"' in response.text
+    assert 'id="upload-language-tooltip"' in response.text
+    assert 'role="tooltip"' in response.text
     assert 'name="language"' in response.text
     assert "Detect automatically" in response.text
     assert 'id="upload-submit"' in response.text
@@ -390,17 +394,18 @@ def test_root_settings_shows_parakeet_model_cache_readiness(
     assert "Ready locally." in response.text
 
 
-def test_root_queue_hint_stays_local_by_default(tmp_path: Path) -> None:
+def test_root_queue_tooltip_stays_local_by_default(tmp_path: Path) -> None:
     _configure_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Cloud engines upload audio only when selected." in response.text
+    assert "Audio uploads to the provider only when a cloud engine is selected." in response.text
+    assert "Cloud engines upload audio only when selected." not in response.text
 
 
-def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> None:
+def test_root_queue_tooltip_mentions_cloud_when_cohere_selected(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     settings_path = tmp_path / "data" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -410,7 +415,7 @@ def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> 
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Audio uploads to the provider." in response.text
+    assert "The selected cloud engine uploads audio to the provider." in response.text
 
 
 def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:

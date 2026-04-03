@@ -119,6 +119,9 @@ shared project history while preserving the same user-facing data flow.
   History, and Settings sit directly on the page background with lighter
   spacing, a thin active underline, and stronger active weight instead of a
   boxed segmented strip.
+- Queue form polish now treats the file-count summary as muted inline text,
+  moves cloud-upload guidance into a small info tooltip beside the Language
+  field, and keeps disabled queue actions readable without looking active.
 - The Queue intake area now scales with workload: it stays prominent when idle
   and collapses into a tighter banner once jobs are queued or running, giving
   the worker and queue list more vertical priority without removing drag/drop.

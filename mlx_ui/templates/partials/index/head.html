@@ -37,6 +37,9 @@
         --status-error-bg-soft: #fff5f5;
         --status-error-border: #f4d2d2;
         --status-error-text: #8b2f2f;
+        --button-disabled-bg: rgba(255, 255, 255, 0.62);
+        --button-disabled-border: var(--line-strong);
+        --button-disabled-text: var(--ink-muted);
         --radius-sm: 10px;
         --radius-md: 12px;
         --radius-lg: 14px;
@@ -1294,6 +1297,13 @@
         gap: 7px;
       }
 
+      .selection-inline {
+        font-size: 0.84rem;
+        font-weight: 600;
+        color: var(--ink-muted);
+        white-space: nowrap;
+      }
+
       .selection-chip {
         display: inline-flex;
         align-items: center;
@@ -1306,12 +1316,6 @@
         font-weight: 700;
         color: var(--ink-muted);
         white-space: nowrap;
-      }
-
-      .selection-chip.is-strong {
-        background: rgba(255, 240, 225, 0.56);
-        border-color: rgba(185, 82, 44, 0.18);
-        color: var(--accent-strong);
       }
 
       .selection-chip.is-skipped {
@@ -1441,7 +1445,7 @@
 
       .cta {
         appearance: none;
-        border: none;
+        border: 1px solid transparent;
         border-radius: var(--radius-md);
         padding: 10px 16px;
         background: var(--accent);
@@ -1456,14 +1460,73 @@
       }
 
       .cta:disabled {
-        opacity: 0.6;
+        opacity: 1;
         cursor: not-allowed;
-        background: #d9c1b6;
+        background: var(--button-disabled-bg);
+        border: 1px solid var(--button-disabled-border);
+        color: var(--button-disabled-text);
       }
 
       .hint {
         font-size: 0.82rem;
         color: var(--ink-muted);
+      }
+
+      .tooltip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .job-bin.tooltip-trigger {
+        min-width: 28px;
+        min-height: 28px;
+        padding: 5px;
+        border-color: var(--line);
+        background: rgba(255, 255, 255, 0.38);
+      }
+
+      .job-bin.tooltip-trigger:hover {
+        background: rgba(255, 255, 255, 0.82);
+        border-color: var(--accent);
+      }
+
+      .job-bin.tooltip-trigger:focus-visible {
+        outline: 2px solid var(--accent-strong);
+        outline-offset: 2px;
+      }
+
+      .tooltip-content {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 12;
+        width: min(250px, calc(100vw - 40px));
+        padding: 10px 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--shadow-soft);
+        color: var(--ink);
+        font-size: 0.8rem;
+        line-height: 1.45;
+        text-align: left;
+        white-space: normal;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translateY(-4px);
+        transition:
+          opacity 0.18s ease,
+          transform 0.18s ease,
+          visibility 0.18s ease;
+      }
+
+      .tooltip:hover .tooltip-content,
+      .tooltip:focus-within .tooltip-content {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
       }
 
       .queue-header {
@@ -1828,8 +1891,11 @@
       }
 
       .job-primary:disabled {
-        opacity: 0.6;
+        opacity: 1;
         cursor: not-allowed;
+        background: var(--button-disabled-bg);
+        border-color: var(--button-disabled-border);
+        color: var(--button-disabled-text);
       }
 
       .job-menu {
@@ -2285,10 +2351,19 @@
         color: var(--status-warning-text);
       }
 
+      .job-bin.is-pending:disabled {
+        background: var(--status-warning-bg);
+        border-color: var(--status-warning-border);
+        color: var(--status-warning-text);
+      }
+
       .job-bin:disabled {
-        opacity: 0.6;
+        opacity: 1;
         cursor: not-allowed;
         transform: none;
+        background: rgba(255, 255, 255, 0.42);
+        border-color: var(--button-disabled-border);
+        color: var(--button-disabled-text);
       }
 
       @media (max-width: 720px) {
@@ -2861,6 +2936,10 @@
           animation: none;
         }
 
+        .tooltip-content {
+          transition: none;
+        }
+
         .toast {
           transition: none;
           transform: none;
@@ -3179,6 +3258,10 @@
         .selection-chip {
           padding: 4px 9px;
           font-size: 0.78rem;
+        }
+
+        .selection-inline {
+          font-size: 0.8rem;
         }
 
         .dropzone {
