@@ -12,7 +12,7 @@
                         </span>
                       </div>
 
-                      <div class="live-transcript">
+                      <div class="live-transcript{% if not live_snapshot.active %} is-inactive{% endif %}">
                         <div class="live-transcript__label">Transcript</div>
                         <pre class="live-transcript__content" id="live-transcript-output">{% if live_snapshot.active %}Waiting for microphone input.{% else %}Live capture is unavailable on this machine.{% endif %}</pre>
                         <div class="live-transcript__meta" id="live-session-meta">
