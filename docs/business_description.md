@@ -114,6 +114,9 @@ template partials.
 - Cohere and Telegram now use status-first setup disclosures, so optional
   integrations read as compact summaries until the user explicitly opens masked
   setup details or clear actions.
+- Storage now leads with cleanup actions while raw local paths live behind a
+  disclosure; destructive buttons use plain labels and counts stay in muted
+  helper text.
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be

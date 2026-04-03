@@ -431,52 +431,31 @@
                 <section class="settings-card is-storage" aria-labelledby="settings-storage-title">
                   <header class="settings-section-header">
                     <h3 id="settings-storage-title">Storage</h3>
-                    <p class="settings-section-desc">Manage local folders and destructive cleanup actions.</p>
+                    <p class="settings-section-desc">Manage local data and cleanup actions on this Mac.</p>
                   </header>
                   <div class="settings-storage-layout">
-                    <section class="settings-subsection" aria-labelledby="settings-storage-folders-title">
-                      <header class="settings-subsection-header">
-                        <h4 id="settings-storage-folders-title">Local folders</h4>
-                        <p class="settings-subsection-desc">Everything is stored locally. Clearing storage deletes files from this Mac only.</p>
-                      </header>
-                      <ul class="settings-paths">
-                        <li class="settings-path">
-                          <span class="settings-path-name">Uploads</span>
-                          <code>{{ storage_snapshot.uploads_dir }}</code>
-                        </li>
-                        <li class="settings-path">
-                          <span class="settings-path-name">Results</span>
-                          <code>{{ storage_snapshot.results_dir }}</code>
-                        </li>
-                        <li class="settings-path">
-                          <span class="settings-path-name">Logs</span>
-                          <code>{{ storage_snapshot.log_dir }}</code>
-                        </li>
-                        <li class="settings-path">
-                          <span class="settings-path-name">Database</span>
-                          <code>{{ storage_snapshot.db_path }}</code>
-                        </li>
-                        <li class="settings-path">
-                          <span class="settings-path-name">Settings</span>
-                          <code>{{ settings_snapshot.file.path }}</code>
-                        </li>
-                      </ul>
-                    </section>
+                    <p class="settings-section-note">
+                      Files, results, and settings stay on this Mac unless you choose a cloud engine.
+                    </p>
                     <div class="settings-danger-zone" aria-labelledby="settings-storage-danger-title">
                       <div class="settings-danger-zone-header">
                         <div class="settings-danger-zone-label" id="settings-storage-danger-title">
-                          Destructive actions
+                          Delete local data
                         </div>
                         <p class="settings-hint">
-                          These remove local data from this Mac. Review labels before continuing.
+                          Each action asks for confirmation before removing files from this Mac.
                         </p>
                       </div>
                       <div class="settings-danger-list">
                         <div class="settings-danger-item">
                           <div class="settings-danger-copy">
                             <div class="settings-danger-title">Delete completed history</div>
-                            <p class="settings-danger-hint">
-                              Removes {{ history_count }} saved {{ "entry" if history_count == 1 else "entries" }} from History.
+                            <p class="settings-danger-hint" data-storage-history-hint>
+                              {% if history_count == 0 %}
+                                No saved history to remove.
+                              {% else %}
+                                Removes {{ history_count }} saved {{ "entry" if history_count == 1 else "entries" }} from History.
+                              {% endif %}
                             </p>
                           </div>
                           <button
@@ -486,14 +465,18 @@
                             data-item-count="{{ history_count }}"
                             {% if history_count == 0 %}disabled{% endif %}
                           >
-                            Delete history ({{ history_count }})
+                            Delete history
                           </button>
                         </div>
                         <div class="settings-danger-item">
                           <div class="settings-danger-copy">
                             <div class="settings-danger-title">Clear queued uploads</div>
-                            <p class="settings-danger-hint">
-                              Deletes local processing copies. Available only when the queue is empty.
+                            <p class="settings-danger-hint" data-storage-uploads-hint>
+                              {% if queue_count_total > 0 %}
+                                Unavailable while {{ queue_count_total }} {{ "item is" if queue_count_total == 1 else "items are" }} still in Queue.
+                              {% else %}
+                                Deletes local processing copies after the queue is empty.
+                              {% endif %}
                             </p>
                           </div>
                           <button
@@ -503,7 +486,7 @@
                             data-item-count="{{ queue_count_total }}"
                             {% if queue_count_total > 0 %}disabled{% endif %}
                           >
-                            Clear queued uploads
+                            Clear uploads
                           </button>
                         </div>
                       </div>
@@ -534,6 +517,45 @@
                         </div>
                       </details>
                     </div>
+                    <details class="settings-disclosure is-inline" data-storage-paths>
+                      <summary>
+                        <span class="settings-disclosure-copy">
+                          <span class="settings-disclosure-title">View local paths</span>
+                          <span class="settings-disclosure-desc">Uploads, results, logs, database, and settings file locations.</span>
+                        </span>
+                        <span class="settings-disclosure-chevron" aria-hidden="true">▾</span>
+                      </summary>
+                      <div class="settings-disclosure-body">
+                        <section class="settings-subsection" aria-labelledby="settings-storage-folders-title">
+                          <header class="settings-subsection-header">
+                            <h4 id="settings-storage-folders-title">Local paths</h4>
+                            <p class="settings-subsection-desc">Useful when you need to inspect or back up local app data.</p>
+                          </header>
+                          <ul class="settings-paths">
+                            <li class="settings-path">
+                              <span class="settings-path-name">Uploads</span>
+                              <code>{{ storage_snapshot.uploads_dir }}</code>
+                            </li>
+                            <li class="settings-path">
+                              <span class="settings-path-name">Results</span>
+                              <code>{{ storage_snapshot.results_dir }}</code>
+                            </li>
+                            <li class="settings-path">
+                              <span class="settings-path-name">Logs</span>
+                              <code>{{ storage_snapshot.log_dir }}</code>
+                            </li>
+                            <li class="settings-path">
+                              <span class="settings-path-name">Database</span>
+                              <code>{{ storage_snapshot.db_path }}</code>
+                            </li>
+                            <li class="settings-path">
+                              <span class="settings-path-name">Settings</span>
+                              <code>{{ settings_snapshot.file.path }}</code>
+                            </li>
+                          </ul>
+                        </section>
+                      </div>
+                    </details>
                   </div>
                 </section>
 

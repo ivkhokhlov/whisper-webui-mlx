@@ -51,8 +51,10 @@ def test_settings_moves_low_frequency_controls_into_disclosures(
     assert 'data-settings-local-options' in response.text
     assert 'data-cohere-setup' in response.text
     assert 'data-telegram-setup' in response.text
+    assert 'data-storage-paths' in response.text
     assert "Local engine options" in response.text
     assert "More cleanup tools" in response.text
+    assert "View local paths" in response.text
 
     advanced = re.search(
         r'<details[^>]*class="settings-disclosure is-advanced"[^>]*data-settings-advanced[^>]*>',
@@ -104,6 +106,24 @@ def test_settings_integrations_switch_to_edit_setup_when_configured(
 
     assert re.search(r'data-cohere-setup-title[^>]*>\s*Edit setup\s*<', text)
     assert re.search(r'data-telegram-setup-title[^>]*>\s*Edit setup\s*<', text)
+
+
+def test_settings_storage_prioritizes_actions_over_raw_paths(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    text = response.text
+
+    assert "Delete local data" in text
+    assert "Delete history (" not in text
+    assert re.search(r'>\s*Delete history\s*<', text)
+    assert re.search(r'>\s*Clear uploads\s*<', text)
+    assert text.index("Delete local data") < text.index("View local paths")
 
 
 def test_settings_demotes_source_metadata_in_default_view(tmp_path: Path) -> None:
