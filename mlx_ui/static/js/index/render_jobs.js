@@ -32,28 +32,6 @@
     return `${condensed.slice(0, Math.max(limit - 1, 0))}…`;
   }
 
-  function buildOutputChips(_jobId, results) {
-    if (!results || results.length === 0) {
-      return "";
-    }
-    const seen = new Set();
-    const chips = [];
-    results.forEach((result) => {
-      const parts = String(result).split(".");
-      const ext = parts.length > 1 ? parts[parts.length - 1] : "file";
-      const label = ext.toUpperCase();
-      if (seen.has(label)) {
-        return;
-      }
-      seen.add(label);
-      chips.push(`<span class="output-chip">${escapeHtml(label)}</span>`);
-    });
-    if (chips.length === 0) {
-      return "";
-    }
-    return `<div class="output-chips">${chips.join("")}</div>`;
-  }
-
   function buildOutputList(jobId, results) {
     if (!results || results.length === 0) {
       return "";
@@ -273,9 +251,25 @@
     const status = (job.status || "").toLowerCase();
     const encodedJobId = encodeURIComponent(job.id);
     const safeFilename = escapeHtml(job.filename || "Untitled file");
+    const previewMeta = escapeHtml(buildPreviewMetaText(job));
     const openAttr = isOpen ? " open" : "";
     const items = [];
     if (status === "done" && defaultResult) {
+      items.push(`
+        <button
+          class="job-menu-item js-only"
+          type="button"
+          data-action="preview"
+          data-job-id="${escapeHtml(job.id)}"
+          data-preview-url="/api/jobs/${encodedJobId}/preview?chars=1200"
+          data-default-url="/results/${encodedJobId}/${encodeURIComponent(defaultResult)}"
+          data-default-filename="${escapeHtml(defaultResult)}"
+          data-preview-meta="${previewMeta}"
+          aria-haspopup="dialog"
+        >
+          Preview
+        </button>
+      `);
       const encodedResult = encodeURIComponent(defaultResult);
       items.push(`
         <a
@@ -459,8 +453,10 @@
     const safeFilename = escapeHtml(job.filename || "Untitled file");
     const encodedJobId = encodeURIComponent(job.id);
     const status = (job.status || "unknown").toLowerCase();
+    const statusLabel = status ? status[0].toUpperCase() + status.slice(1) : "Unknown";
     const statusClass = `is-${escapeHtml(status)}`;
-    const errorSummaryText = status === "failed" && job.error_message ? summarizeError(job.error_message) : "";
+    const errorSummaryText =
+      status === "failed" && job.error_message ? summarizeError(job.error_message, 96) : "";
     const isOpen = openJobs ? openJobs.has(job.id) : false;
     const isMenuOpen = openMenus ? openMenus.has(job.id) : false;
     const timeMeta = `
@@ -475,35 +471,16 @@
     `;
     const errorSummary = errorSummaryText
       ? `
+        <span class="history-summary-separator" aria-hidden="true">·</span>
         <div class="history-error-summary" title="${escapeHtml(errorSummaryText)}">
           ${escapeHtml(errorSummaryText)}
         </div>
       `
       : "";
-    const metaChips = buildJobMetaChips(job);
-    const chips = buildOutputChips(job.id, results);
     const previewMeta = escapeHtml(buildPreviewMetaText(job));
     const defaultHref =
       status === "done" && defaultResult
         ? `/results/${encodedJobId}/${encodeURIComponent(defaultResult)}`
-        : "";
-    const previewAction =
-      status === "done" && defaultResult
-        ? `
-          <button
-            class="job-primary is-secondary js-only"
-            type="button"
-            data-action="preview"
-            data-job-id="${escapeHtml(job.id)}"
-            data-preview-url="/api/jobs/${encodedJobId}/preview?chars=1200"
-            data-default-url="${escapeHtml(defaultHref)}"
-            data-default-filename="${escapeHtml(defaultResult)}"
-            data-preview-meta="${previewMeta}"
-            aria-haspopup="dialog"
-          >
-            Preview
-          </button>
-        `
         : "";
     const downloadAction =
       status === "done" && defaultResult
@@ -521,7 +498,7 @@
           </button>
         `
         : "";
-    const primaryAction = [previewAction, downloadAction, viewLogAction].filter(Boolean).join("");
+    const primaryAction = [downloadAction, viewLogAction].filter(Boolean).join("");
 
     return `
       <div
@@ -532,14 +509,10 @@
         <div class="history-main">
           <div class="history-title">
             <div class="history-filename" title="${safeFilename}">${safeFilename}</div>
-            <div class="history-badges">
-              <div class="status-badge ${statusClass}">${escapeHtml(status)}</div>
-              ${chips}
-            </div>
+            <div class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</div>
           </div>
           <div class="history-subline">
             ${timeMeta}
-            ${metaChips}
             ${errorSummary}
           </div>
         </div>

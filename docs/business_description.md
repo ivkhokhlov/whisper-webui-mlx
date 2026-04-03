@@ -75,6 +75,9 @@ template partials.
   separate from the stable saved workflow.
 - Shared visual chrome is intentionally calmer and flatter, so actions and
   transcript content read before decorative cards, shadows, and borders.
+- The top shell avoids permanent “pill soup”: zero-value queue counts stay
+  hidden, always-on mode labels are removed, and the worker area never shows
+  more than two secondary metadata tokens at once.
 - Queue-first onboarding that keeps one dominant “Select files…” action above
   the fold while preserving folder batch upload and drag-and-drop as secondary
   affordances.
@@ -84,12 +87,9 @@ template partials.
 - Queue rows now collapse to a filename/status line plus one short contextual
   summary, replacing duplicate queue numbers and chip-heavy engine/language
   metadata with calmer scan-first labels.
-- Compact History view with status, filename, time, output labels, and one-click
-  primary actions, plus overflow actions that stay inside the viewport near
-  screen edges.
-- The top shell avoids permanent “pill soup”: zero-value queue counts stay
-  hidden, always-on mode labels are removed, and the worker area never shows
-  more than two secondary metadata tokens at once.
+- Compact History view with filename, one clear status marker, one primary row
+  action, and quieter toolbar controls, while output formats and metadata move
+  behind overflow actions or details.
 - Details-on-demand panel for full timestamps, outputs list, and error logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
