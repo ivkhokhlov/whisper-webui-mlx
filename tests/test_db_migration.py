@@ -39,9 +39,10 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "error_message" in columns
         assert "requested_engine" in columns
         assert "effective_engine" in columns
+        assert "effective_implementation_id" in columns
         row = connection.execute(
             """
-            SELECT language, requested_engine, effective_engine
+            SELECT language, requested_engine, effective_engine, effective_implementation_id
             FROM jobs
             WHERE id = 'job-1'
             """
@@ -50,12 +51,74 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert row[0] == "auto"
         assert row[1] is None
         assert row[2] is None
+        assert row[3] is None
 
     jobs = list_jobs(db_path)
     assert len(jobs) == 1
     assert jobs[0].language == "auto"
     assert jobs[0].requested_engine is None
     assert jobs[0].effective_engine is None
+    assert jobs[0].effective_implementation_id is None
+
+
+def test_init_db_backfills_effective_implementation_id_from_legacy_backend(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "jobs.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                upload_path TEXT NOT NULL,
+                language TEXT NOT NULL,
+                effective_engine TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO jobs (
+                id,
+                filename,
+                status,
+                created_at,
+                upload_path,
+                language,
+                effective_engine
+            )
+            VALUES (
+                'job-1',
+                'alpha.wav',
+                'done',
+                '2024-01-01T00:00:00Z',
+                'x',
+                'en',
+                'wtm'
+            )
+            """
+        )
+        connection.commit()
+
+    init_db(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        row = connection.execute(
+            """
+            SELECT effective_engine, effective_implementation_id
+            FROM jobs
+            WHERE id = 'job-1'
+            """
+        ).fetchone()
+        assert row == ("whisper_mlx", "wtm")
+
+    jobs = list_jobs(db_path)
+    assert len(jobs) == 1
+    assert jobs[0].effective_engine == "whisper_mlx"
+    assert jobs[0].effective_implementation_id == "wtm"
 
 
 def test_init_db_normalizes_legacy_any_language(tmp_path: Path) -> None:
@@ -108,6 +171,7 @@ def test_init_db_is_idempotent_on_current_schema(tmp_path: Path) -> None:
 
     assert "requested_engine" in columns
     assert "effective_engine" in columns
+    assert "effective_implementation_id" in columns
 
 
 def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:

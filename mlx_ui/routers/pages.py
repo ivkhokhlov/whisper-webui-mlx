@@ -25,7 +25,11 @@ from mlx_ui.settings import (
     normalize_log_level,
     update_settings_file,
 )
-from mlx_ui.languages import parse_language
+from mlx_ui.languages import (
+    language_label,
+    list_parakeet_tdt_v3_supported_languages,
+    parse_language,
+)
 from mlx_ui.storage import list_result_files
 
 router = APIRouter()
@@ -62,6 +66,17 @@ def read_root(request: Request):
     settings_saved = request.query_params.get("saved") == "1"
     tab_param = request.query_params.get("tab")
     active_tab = tab_param if tab_param in {"queue", "history", "settings"} else "queue"
+    queue_error_message = None
+    queue_error = request.query_params.get("queue_error")
+    queue_error_language = request.query_params.get("queue_error_language")
+    if queue_error == "parakeet_language" and queue_error_language:
+        supported = ", ".join(list_parakeet_tdt_v3_supported_languages())
+        chosen_label = language_label(queue_error_language)
+        queue_error_message = (
+            "Parakeet TDT v3 supports automatic language detection (auto) and 25 "
+            f"European languages ({supported}). You selected {chosen_label} "
+            f"({queue_error_language}). Choose auto or switch to a different engine."
+        )
     storage_snapshot = {
         "uploads_dir": str(get_uploads_dir()),
         "results_dir": str(get_results_dir()),
@@ -86,6 +101,7 @@ def read_root(request: Request):
             "downloaded_models": downloaded_models,
             "settings_saved": settings_saved,
             "active_tab": active_tab,
+            "queue_error_message": queue_error_message,
         },
     )
 

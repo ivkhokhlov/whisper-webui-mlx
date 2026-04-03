@@ -8,8 +8,9 @@
 # - A "release artifact" is the file attached to a GitHub release (typically a zip).
 # - The zip is expected to contain a single .app bundle at the top level.
 #
-# Non-goals:
-# - Parakeet local support on macOS is intentionally NOT part of this contract.
+# Notes:
+# - Parakeet local support is included for Apple Silicon via the MLX backend.
+# - Intel artifacts intentionally do not embed Parakeet MLX.
 
 [macos]
 product_name = "Whisper WebUI (MLX)"
@@ -28,7 +29,7 @@ artifact_prefix = "whisper-webui-mlx"
 arch = "arm64"
 minimum_macos = "12.0"
 default_local_engine = "whisper_mlx"
-optional_engines = ["whisper_cpu", "cohere"]
+optional_engines = ["parakeet_tdt_v3", "cohere"]
 bundle_identifier_suffix = "" # full bundle id: com.whisperwebui.mlx
 artifact_name = "whisper-webui-mlx-v{version}-macos-arm64.zip"
 dmg_artifact_name = "whisper-webui-mlx-v{version}-macos-arm64.dmg"

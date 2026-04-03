@@ -20,6 +20,14 @@ RUNTIME_DIR_NAME = "runtime"
 EMBEDDED_PYTHON_DIRNAME = "python"
 EMBEDDED_VENV_DIRNAME = "venv"
 
+CLOUD_ENGINE_IDS = {"cohere"}
+REQUIREMENTS_PROFILE_ENGINE_IDS = {
+    "requirements-whisper-mlx.txt": "whisper_mlx",
+    "requirements-whisper-cpu.txt": "whisper_cpu",
+    "requirements-parakeet-mlx.txt": "parakeet_tdt_v3",
+    "requirements-cohere.txt": "cohere",
+}
+
 
 def _load_contract(path: Path) -> dict[str, object]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
@@ -48,11 +56,21 @@ def _requirements_for_target(target: str, *, with_cohere: bool) -> list[str]:
     profile = _target_engine_profile(target)
     if profile == "whisper_mlx":
         base.append("requirements-whisper-mlx.txt")
+        base.append("requirements-parakeet-mlx.txt")
     elif profile == "whisper_cpu":
         base.append("requirements-whisper-cpu.txt")
     if with_cohere:
         base.append("requirements-cohere.txt")
     return base
+
+
+def _engine_ids_for_requirements(requirement_files: list[str]) -> list[str]:
+    engine_ids: list[str] = []
+    for rel_path in requirement_files:
+        engine_id = REQUIREMENTS_PROFILE_ENGINE_IDS.get(rel_path)
+        if engine_id and engine_id not in engine_ids:
+            engine_ids.append(engine_id)
+    return engine_ids
 
 
 def _run_json(
@@ -194,10 +212,15 @@ def _write_runtime_metadata(
 ) -> None:
     runtime_dir = payload_dir / RUNTIME_DIR_NAME
     runtime_dir.mkdir(parents=True, exist_ok=True)
+    included_engines = _engine_ids_for_requirements(requirement_files)
     metadata = {
         "target": target,
         "with_cohere": with_cohere,
         "engine_profile": _target_engine_profile(target),
+        "included_engines": included_engines,
+        "included_local_engines": [
+            engine for engine in included_engines if engine not in CLOUD_ENGINE_IDS
+        ],
         "python": python_info,
         "requirements": list(requirement_files),
         "venv_dir": f"{RUNTIME_DIR_NAME}/{EMBEDDED_VENV_DIRNAME}",

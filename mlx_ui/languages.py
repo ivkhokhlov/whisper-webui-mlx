@@ -42,6 +42,36 @@ _COMMON_LANGUAGE_LABELS = {
     if option.id != AUTO_LANGUAGE
 }
 
+PARAKEET_TDT_V3_SUPPORTED_LANGUAGES: frozenset[str] = frozenset(
+    {
+        "bg",
+        "cs",
+        "da",
+        "de",
+        "el",
+        "en",
+        "es",
+        "et",
+        "fi",
+        "fr",
+        "hr",
+        "hu",
+        "it",
+        "lt",
+        "lv",
+        "mt",
+        "nl",
+        "pl",
+        "pt",
+        "ro",
+        "ru",
+        "sk",
+        "sl",
+        "sv",
+        "uk",
+    }
+)
+
 
 def parse_language(value: object) -> str | None:
     if not isinstance(value, str):
@@ -65,6 +95,17 @@ def normalize_language(value: object, *, default: str = DEFAULT_LANGUAGE) -> str
 
 def is_auto_language(value: object) -> bool:
     return normalize_language(value) == AUTO_LANGUAGE
+
+
+def is_parakeet_tdt_v3_language_supported(value: object) -> bool:
+    normalized = normalize_language(value)
+    if normalized == AUTO_LANGUAGE:
+        return True
+    return normalized in PARAKEET_TDT_V3_SUPPORTED_LANGUAGES
+
+
+def list_parakeet_tdt_v3_supported_languages() -> list[str]:
+    return sorted(PARAKEET_TDT_V3_SUPPORTED_LANGUAGES)
 
 
 def language_label(language: str) -> str:

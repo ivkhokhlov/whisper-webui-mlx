@@ -61,6 +61,7 @@ python3 scripts/build_embedded_runtime.py --stage dist/stage/macos-arm64 --targe
 - `macos-arm64` embeds:
   - base app deps (`requirements.txt`)
   - Whisper MLX profile (`requirements-whisper-mlx.txt`)
+  - Parakeet MLX profile (`requirements-parakeet-mlx.txt`)
   - optional Cohere (`requirements-cohere.txt`) when `--with-cohere`
 - `macos-intel` embeds:
   - base app deps (`requirements.txt`)
@@ -75,7 +76,6 @@ dist/stage/<target>/
     runtime/
       python/                 # embedded sys.base_prefix
       venv/                   # embedded venv with installed deps
-      embedded_runtime.json   # target/profile metadata
+      embedded_runtime.json   # target/profile + included engines metadata
       requirements_frozen.txt # pip freeze for diagnostics
 ```
-

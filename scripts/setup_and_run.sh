@@ -9,6 +9,7 @@ VENV_PIP="$VENV_DIR/bin/pip"
 STEP_COUNT=0
 WITH_COHERE="${WHISPER_WEBUI_WITH_COHERE:-0}"
 WITH_WHISPER_CPU="${WHISPER_WEBUI_WITH_WHISPER_CPU:-0}"
+WITH_PARAKEET_MLX="${WHISPER_WEBUI_WITH_PARAKEET_MLX:-0}"
 MACOS_ARCH=""
 INSTALL_MLX_DEFAULT=0
 DATA_ROOT_DIR="$ROOT_DIR"
@@ -28,7 +29,7 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/setup_and_run.sh [--with-cohere] [--with-whisper-cpu]
+Usage: ./scripts/setup_and_run.sh [--with-cohere] [--with-whisper-cpu] [--with-parakeet-mlx]
 
 Release targets (packaging contract):
   macos-arm64  -> default local engine: Whisper MLX
@@ -36,20 +37,23 @@ Release targets (packaging contract):
   Source of truth: docs/release/macos_targets.toml
 
 Default engine bootstrap:
-  macOS arm64   -> Whisper MLX (best-supported local path)
+  macOS arm64   -> Whisper MLX (default) + optional local Parakeet MLX (--with-parakeet-mlx)
   macOS x86_64  -> Whisper CPU
 
 Optional profiles:
   --with-cohere       Install the Cohere SDK for the cloud backend
   --with-whisper-cpu  On Apple Silicon, also install the Whisper CPU fallback
+  --with-parakeet-mlx On Apple Silicon, install the optional Parakeet MLX dependency profile
 
 Environment variables:
   WHISPER_WEBUI_WITH_COHERE=1
   WHISPER_WEBUI_WITH_WHISPER_CPU=1
+  WHISPER_WEBUI_WITH_PARAKEET_MLX=1
 
 Notes:
   - This bootstrap script supports macOS only.
-  - Parakeet is not installed here; the local Parakeet backend currently requires Linux + CUDA.
+  - Parakeet MLX is a local Apple Silicon engine, but it is dependency-optional in the repo bootstrap flow.
+  - Legacy Parakeet NeMo/CUDA backends are experimental/internal only and not supported on macOS.
 EOF
 }
 
@@ -96,6 +100,10 @@ parse_args() {
         WITH_WHISPER_CPU=1
         shift
         ;;
+      --with-parakeet-mlx)
+        WITH_PARAKEET_MLX=1
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -131,14 +139,16 @@ print_engine_expectations() {
   if [[ "$arch" == "arm64" ]]; then
     log "Detected Apple Silicon macOS."
     log "Expected local engine after bootstrap: Whisper MLX."
-    log "Optional engines on this machine: Whisper CPU (--with-whisper-cpu), Cohere (--with-cohere)."
+    log "Optional local engines on this machine: Parakeet MLX (--with-parakeet-mlx), Whisper CPU (--with-whisper-cpu)."
+    log "Optional cloud engine on this machine: Cohere (--with-cohere)."
   else
     log "Detected Intel macOS."
     log "Expected local engine after bootstrap: Whisper CPU."
-    log "Optional engines on this machine: Cohere (--with-cohere)."
+    log "Optional cloud engine on this machine: Cohere (--with-cohere)."
     log "Whisper MLX is not installed on Intel."
+    log "Parakeet MLX is not supported on Intel macOS."
   fi
-  log "Parakeet local backend is not installed by the macOS bootstrap path; it currently requires Linux + CUDA."
+  log "Legacy Parakeet NeMo/CUDA backends are experimental/internal only and not part of the macOS bootstrap story."
 }
 
 ensure_xcode_cli_tools() {
@@ -324,6 +334,13 @@ install_engine_profiles() {
       install_requirements_profile "requirements-whisper-mlx.txt" "Whisper MLX"
     fi
     INSTALL_MLX_DEFAULT=1
+    if [[ "$WITH_PARAKEET_MLX" == "1" ]]; then
+      if python_modules_installed "parakeet_mlx"; then
+        log "Parakeet MLX dependencies already installed."
+      else
+        install_requirements_profile "requirements-parakeet-mlx.txt" "Parakeet MLX"
+      fi
+    fi
     if [[ "$WITH_WHISPER_CPU" == "1" ]]; then
       if python_modules_installed "whisper"; then
         log "Whisper CPU fallback dependencies already installed."
@@ -430,10 +447,14 @@ start_server() {
 parse_args "$@"
 WITH_COHERE="$(normalize_bool "$WITH_COHERE")"
 WITH_WHISPER_CPU="$(normalize_bool "$WITH_WHISPER_CPU")"
+WITH_PARAKEET_MLX="$(normalize_bool "$WITH_PARAKEET_MLX")"
 
 step "Checking platform compatibility"
 require_macos
 MACOS_ARCH="$(detect_macos_arch)"
+if [[ "$WITH_PARAKEET_MLX" == "1" && "$MACOS_ARCH" != "arm64" ]]; then
+  fail "Parakeet MLX dependencies are supported on macOS arm64 (Apple Silicon) only. Intel macOS cannot run local Parakeet MLX; use Whisper CPU or Cohere instead."
+fi
 print_engine_expectations "$MACOS_ARCH"
 ensure_xcode_cli_tools
 ensure_git

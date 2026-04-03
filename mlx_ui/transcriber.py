@@ -27,9 +27,12 @@ from mlx_ui.engines.common import (
     Transcriber,
 )
 from mlx_ui.engines.cohere import CohereTranscriber
-from mlx_ui.engines.parakeet_nemo import ParakeetTranscriber
+from mlx_ui.engines.parakeet_mlx import ParakeetMlxTranscriber
+from mlx_ui.engines.parakeet_nemo_cuda_experimental import ParakeetNemoCudaTranscriber
 from mlx_ui.engines.whisper_cpu import WhisperTranscriber
 from mlx_ui.engines.whisper_mlx import WtmTranscriber
+
+ParakeetTranscriber = ParakeetNemoCudaTranscriber
 
 _REEXPORTED = (
     BACKEND_ENV,
@@ -49,6 +52,8 @@ _REEXPORTED = (
     FakeTranscriber,
     Transcriber,
     CohereTranscriber,
+    ParakeetMlxTranscriber,
+    ParakeetNemoCudaTranscriber,
     ParakeetTranscriber,
     WhisperTranscriber,
     WtmTranscriber,
@@ -62,9 +67,15 @@ def _load_cohere_runtime():
 
 
 def _load_parakeet_runtime():
-    from mlx_ui.engines.parakeet_nemo import load_parakeet_runtime
+    from mlx_ui.engines.parakeet_nemo_cuda_experimental import load_parakeet_runtime
 
     return load_parakeet_runtime()
+
+
+def _load_parakeet_mlx_runtime():
+    from mlx_ui.engines.parakeet_mlx import load_parakeet_mlx_runtime
+
+    return load_parakeet_mlx_runtime()
 
 
 def resolve_transcriber() -> Transcriber:

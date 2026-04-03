@@ -1,12 +1,14 @@
 import json
 from pathlib import Path
 
+import pytest
+
 import mlx_ui.engine_registry as engine_registry
 from mlx_ui.settings import resolve_transcriber_with_settings
 from mlx_ui.transcriber import (
     CohereTranscriber,
     FakeTranscriber,
-    ParakeetTranscriber,
+    ParakeetMlxTranscriber,
     WhisperTranscriber,
     WtmTranscriber,
     resolve_transcriber,
@@ -43,7 +45,22 @@ def test_engine_env_override_takes_precedence(tmp_path: Path) -> None:
     assert isinstance(transcriber, WtmTranscriber)
 
 
+def test_parakeet_nemo_cuda_backend_requires_experimental_flag(monkeypatch) -> None:
+    monkeypatch.delenv(
+        engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, raising=False
+    )
+    with pytest.raises(
+        ValueError,
+        match=engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV,
+    ):
+        engine_registry.create_transcriber(
+            engine_registry.PARAKEET_TDT_V3_ENGINE,
+            implementation_id=engine_registry.PARAKEET_NEMO_CUDA_BACKEND,
+        )
+
+
 def test_engine_registry_exposes_visible_settings_engines(monkeypatch) -> None:
+    monkeypatch.delenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", raising=False)
     monkeypatch.setattr(engine_registry, "is_wtm_available", lambda: True)
     monkeypatch.setattr(engine_registry, "is_whisper_available", lambda: True)
     monkeypatch.setattr(
@@ -54,7 +71,12 @@ def test_engine_registry_exposes_visible_settings_engines(monkeypatch) -> None:
     monkeypatch.setattr(
         engine_registry,
         "parakeet_availability_reason",
-        lambda: "Parakeet currently requires Linux with an NVIDIA CUDA GPU.",
+        lambda: "Parakeet NeMo CUDA backend requires Linux with an NVIDIA CUDA GPU.",
+    )
+    monkeypatch.setattr(
+        engine_registry,
+        "parakeet_mlx_availability_reason",
+        lambda: "The optional 'parakeet-mlx' dependency is not installed.",
     )
 
     options = engine_registry.build_engine_options()
@@ -79,7 +101,7 @@ def test_engine_registry_exposes_visible_settings_engines(monkeypatch) -> None:
     assert options[2]["reason"] == "the optional 'cohere' Python SDK is not installed."
     assert (
         options[3]["reason"]
-        == "Parakeet currently requires Linux with an NVIDIA CUDA GPU."
+        == "The optional 'parakeet-mlx' dependency is not installed."
     )
 
 
@@ -88,11 +110,11 @@ def test_engine_setting_selects_parakeet_backend(tmp_path: Path, monkeypatch) ->
         tmp_path,
         {"engine": "parakeet_tdt_v3", "output_formats": ["txt", "json"]},
     )
-    monkeypatch.setattr(engine_registry, "parakeet_availability_reason", lambda: None)
+    monkeypatch.setattr(engine_registry, "is_parakeet_mlx_runtime_usable", lambda: True)
 
     transcriber = resolve_transcriber_with_settings(base_dir=tmp_path, env={})
 
-    assert isinstance(transcriber, ParakeetTranscriber)
+    assert isinstance(transcriber, ParakeetMlxTranscriber)
     assert transcriber.output_formats == ("txt", "json")
 
 

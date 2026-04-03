@@ -25,7 +25,10 @@ def test_setup_and_run_help_describes_engine_matrix() -> None:
     assert "macOS x86_64  -> Whisper CPU" in output
     assert "--with-cohere" in output
     assert "--with-whisper-cpu" in output
-    assert "Parakeet is not installed here" in output
+    assert "--with-parakeet-mlx" in output
+    assert "WHISPER_WEBUI_WITH_PARAKEET_MLX=1" in output
+    assert "Parakeet MLX is a local Apple Silicon engine" in output
+    assert "Legacy Parakeet NeMo/CUDA" in output
 
 
 def test_install_help_describes_architecture_aware_bootstrap() -> None:
@@ -34,7 +37,9 @@ def test_install_help_describes_architecture_aware_bootstrap() -> None:
     assert "macOS arm64: installs Whisper MLX" in output
     assert "macOS Intel: installs Whisper CPU" in output
     assert "--with-cohere" in output
-    assert "Parakeet is not installed by the macOS bootstrap path" in output
+    assert "--with-parakeet-mlx" in output
+    assert "Apple Silicon-only Parakeet MLX dependency profile" in output
+    assert "Legacy Parakeet NeMo/CUDA" in output
 
 
 def test_build_macos_app_help_mentions_apple_silicon_bundle() -> None:
@@ -153,16 +158,26 @@ def test_requirements_profiles_keep_optional_engines_explicit() -> None:
     whisper_cpu = (ROOT_DIR / "requirements-whisper-cpu.txt").read_text(
         encoding="utf-8"
     )
+    parakeet_mlx = (ROOT_DIR / "requirements-parakeet-mlx.txt").read_text(
+        encoding="utf-8"
+    )
     cohere = (ROOT_DIR / "requirements-cohere.txt").read_text(encoding="utf-8")
 
     assert "requirements-whisper-mlx.txt" in base
     assert "requirements-whisper-cpu.txt" in base
+    assert "requirements-parakeet-mlx.txt" in base
     assert "requirements-cohere.txt" in base
     assert "whisper-turbo-mlx" not in base
     assert "openai-whisper" not in base
+    assert "safetensors" not in base
+    assert "huggingface-hub" not in base
     assert "cohere>=" not in base
     assert "whisper-turbo-mlx" in whisper_mlx
     assert "openai-whisper" in whisper_cpu
+    assert "parakeet-mlx" in parakeet_mlx
+    assert "huggingface-hub" in parakeet_mlx
+    assert "mlx" in parakeet_mlx
+    assert "safetensors" in parakeet_mlx
     assert "cohere" in cohere
 
 
@@ -181,7 +196,7 @@ def test_macos_release_targets_contract_is_explicit() -> None:
     assert arm64["arch"] == "arm64"
     assert arm64["minimum_macos"] == "12.0"
     assert arm64["default_local_engine"] == "whisper_mlx"
-    assert arm64["optional_engines"] == ["whisper_cpu", "cohere"]
+    assert arm64["optional_engines"] == ["parakeet_tdt_v3", "cohere"]
     assert arm64["bundle_identifier_suffix"] == ""
     assert arm64["artifact_name"].endswith("-macos-arm64.zip")
     assert arm64["dmg_artifact_name"].endswith("-macos-arm64.dmg")
@@ -221,6 +236,7 @@ def test_stage_release_payload_creates_clean_allowlisted_tree(tmp_path: Path) ->
     assert (payload / "mlx_ui" / "templates" / "index.html").is_file()
     assert (payload / "mlx_ui" / "static").is_dir()
     assert (payload / "pyproject.toml").is_file()
+    assert (payload / "requirements-parakeet-mlx.txt").is_file()
     assert (payload / "docs" / "release" / "macos_targets.toml").is_file()
 
     assert not (payload / "tests").exists()
@@ -251,6 +267,7 @@ def test_build_embedded_runtime_dry_run_is_target_aware(tmp_path: Path) -> None:
     assert arm64["requirements"] == [
         "requirements.txt",
         "requirements-whisper-mlx.txt",
+        "requirements-parakeet-mlx.txt",
     ]
 
     arm64_with_cohere = _run_json(
@@ -267,6 +284,7 @@ def test_build_embedded_runtime_dry_run_is_target_aware(tmp_path: Path) -> None:
     assert arm64_with_cohere["requirements"] == [
         "requirements.txt",
         "requirements-whisper-mlx.txt",
+        "requirements-parakeet-mlx.txt",
         "requirements-cohere.txt",
     ]
 

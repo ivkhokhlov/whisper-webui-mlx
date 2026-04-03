@@ -20,6 +20,7 @@ https://github.com/JosefAlbers/whisper-turbo-mlx
 - Sequential worker with per-job `requested_engine` and `effective_engine`
 - Shared transcript writers for `.txt`, `.json`, `.srt`, and `.vtt` when the
   backend provides real timing data
+- `/live` route is a beta preview (may be unavailable depending on runtime)
 - Batch uploads with an explicit job language (`auto` or a concrete language)
 - SQLite job tracking in `data/jobs.db`
 - Local readiness metadata for Whisper and Parakeet model caches
@@ -34,23 +35,27 @@ https://github.com/JosefAlbers/whisper-turbo-mlx
 | --- | --- | --- | --- |
 | `whisper_mlx` | Local | macOS Apple Silicon | Best-supported local path via `whisper-turbo-mlx` / Metal |
 | `whisper_cpu` | Local | macOS Intel, Docker, fallback on Apple Silicon | CPU-only `openai-whisper` path |
-| `parakeet_tdt_v3` | Local | Linux + CUDA + PyTorch + NVIDIA NeMo | Real backend, not part of the macOS bootstrap path |
+| `parakeet_tdt_v3` | Local | macOS Apple Silicon (MLX) | Parakeet TDT v3 via the optional `parakeet-mlx` dependency (bundled in the `macos-arm64` packaged artifact; dev bootstrap: `--with-parakeet-mlx`) |
 | `cohere` | Cloud | Any machine with the optional SDK and API key | Sends audio to Cohere; not local/offline |
+
+Implementation notes:
+- Apple Silicon Parakeet uses the MLX implementation (`parakeet_mlx`).
+- A legacy NeMo/CUDA implementation (`parakeet_nemo_cuda`) is retained for internal/experimental Linux CUDA flows only; it is disabled by default and not part of macOS releases.
 
 ### macOS release targets
 
 The macOS packaging contract (release targets, artifact naming, bundle ids, and
 minimum OS versions) lives in `docs/release/macos_targets.toml`. It formalizes:
 
-- `macos-arm64` (Apple Silicon): default local engine `whisper_mlx`, optional `whisper_cpu` + `cohere`
+- `macos-arm64` (Apple Silicon): default local engine `whisper_mlx`, optional `parakeet_tdt_v3` + `cohere`
 - `macos-intel` (x86_64): default local engine `whisper_cpu`, optional `cohere`
 
 | Target | Arch | Min macOS | Default local | Optional | Bundle id | DMG artifact |
 | --- | --- | --- | --- | --- | --- | --- |
-| `macos-arm64` | arm64 | 12.0 | `whisper_mlx` | `whisper_cpu`, `cohere` | `com.whisperwebui.mlx` | `whisper-webui-mlx-v{version}-macos-arm64.dmg` |
+| `macos-arm64` | arm64 | 12.0 | `whisper_mlx` | `parakeet_tdt_v3`, `cohere` | `com.whisperwebui.mlx` | `whisper-webui-mlx-v{version}-macos-arm64.dmg` |
 | `macos-intel` | x86_64 | 12.0 | `whisper_cpu` | `cohere` | `com.whisperwebui.mlx.cpu` | `whisper-webui-mlx-v{version}-macos-intel.dmg` |
 
-Parakeet is intentionally excluded from macOS release targets.
+The standard `macos-arm64` packaged artifact includes Parakeet MLX dependencies; Intel artifacts do not.
 
 ## Local vs cloud engine truthfulness
 
@@ -65,9 +70,8 @@ an explicit supported language.
 - Python 3.12.3+
 - `ffmpeg`
 - Internet access on first run for dependencies and first-run model downloads
-- macOS Apple Silicon for the best-supported local MLX path
-- macOS Intel or Docker for the CPU Whisper path
-- Linux + CUDA if you want the local Parakeet backend
+- macOS Apple Silicon for local Whisper MLX and Parakeet MLX
+- macOS Intel or Docker for the local Whisper CPU path
 - Optional Cohere account + API key for the cloud engine
 
 ### Quick start
@@ -84,7 +88,12 @@ Optional profiles:
 ```bash
 ./run.sh --with-cohere
 ./run.sh --with-whisper-cpu
+./run.sh --with-parakeet-mlx
 ```
+
+Notes:
+- `--with-parakeet-mlx` is supported on macOS Apple Silicon only. On Intel macOS it fails with a clear message.
+- `--with-parakeet-mlx` installs the optional `requirements-parakeet-mlx.txt` profile (dependency-only; it does not change the default engine).
 
 You can also call the bootstrap script directly:
 ```bash
@@ -118,13 +127,15 @@ whisper-webui-mlx
 The launcher forwards bootstrap flags too:
 ```bash
 whisper-webui-mlx --with-cohere
+whisper-webui-mlx --with-whisper-cpu
+whisper-webui-mlx --with-parakeet-mlx
 ```
 
 ### Docker quick start (CPU backend)
 Docker runs the CPU Whisper backend (`whisper_cpu`) only. This is slower than
 MLX but works as an isolated local fallback. For best performance on Apple
-Silicon, use the native `./run.sh` flow. MLX is not available in Docker because
-it requires macOS + Metal, and Parakeet is not part of this Docker path.
+Silicon, use the native `./run.sh` flow. Whisper/Parakeet MLX require macOS +
+Metal and are not available in Docker.
 
 ```bash
 ./docker-run.sh
@@ -162,7 +173,7 @@ make fmt
 - `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
 - `WTM_QUICK` - set to `1`/`true` to enable quick mode (default: `false`)
 - `TRANSCRIBER_BACKEND` - backend/env override (`wtm`, `whisper`, `cohere`,
-  `parakeet_tdt_v3`, `fake`, plus legacy aliases)
+  `parakeet_tdt_v3`, `parakeet_mlx`, `fake`, plus legacy aliases; `parakeet_nemo_cuda` is experimental/internal and gated)
 - `WHISPER_MODEL` - Whisper model name (default: `large-v3-turbo`)
 - `WHISPER_DEVICE` - `cpu` (default) or `cuda` if you extend the image
 - `WHISPER_FP16` - set to `1`/`true` to enable fp16 (GPU-only)

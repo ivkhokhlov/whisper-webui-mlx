@@ -43,13 +43,17 @@ make test
 Apple Silicon (`macos-arm64`):
 
 ```bash
-make macos-app-arm64 MACOS_APP_ARGS="--python /path/to/arm64/python --with-cohere --force"
+make macos-app-arm64 MACOS_APP_ARGS="--python /path/to/arm64/python --force"
 ```
+
+Notes:
+- `macos-arm64` embeds both Whisper MLX and Parakeet MLX dependencies by default (see `docs/release/macos_targets.toml`).
+- Add `--with-cohere` only if you want the optional cloud engine SDK embedded in the packaged runtime.
 
 Intel (`macos-intel`):
 
 ```bash
-make macos-app-intel MACOS_APP_ARGS="--python /path/to/x86_64/python --with-cohere --force"
+make macos-app-intel MACOS_APP_ARGS="--python /path/to/x86_64/python --force"
 ```
 
 Outputs:
@@ -108,12 +112,14 @@ Outputs:
 3. Confirm the server stays local-only on `127.0.0.1`.
 4. Run a small transcription job and confirm results are written under the
    expected Application Support directory for the bundle id.
+   - `macos-arm64`: verify Whisper MLX; optionally verify Parakeet MLX (first run may download the model).
+   - `macos-intel`: verify Whisper CPU.
 
 ## Publishing
 
 - Upload the notarized + stapled DMG(s) as release artifacts.
 - Include the engine matrix and platform notes (Apple Silicon MLX vs Intel CPU;
-  Cohere cloud is optional; Parakeet local is not part of macOS targets yet).
+  Cohere cloud is optional; Parakeet MLX is included on Apple Silicon only).
 
 ## Convenience
 

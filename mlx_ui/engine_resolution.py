@@ -8,6 +8,8 @@ from typing import Mapping
 
 from mlx_ui.engine_registry import (
     EngineFactoryOptions,
+    PARAKEET_MLX_BACKEND,
+    PARAKEET_NEMO_CUDA_BACKEND,
     create_transcriber,
     get_engine_provider,
     resolve_backend_implementation,
@@ -30,6 +32,9 @@ from mlx_ui.transcriber import (
     WHISPER_DEVICE_ENV,
     WHISPER_FP16_ENV,
 )
+
+DEFAULT_PARAKEET_MLX_MODEL_ID = "mlx-community/parakeet-tdt-0.6b-v3"
+DEFAULT_PARAKEET_NEMO_MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,9 @@ def resolve_job_transcriber_spec_with_settings(
         )
     options = _build_engine_factory_options(
         provider.id,
+        implementation_id=implementation.id,
         effective=effective,
+        sources=sources,
         file_settings=file_settings,
         env=env,
         backend_from_env=backend_from_env,
@@ -198,7 +205,9 @@ def _resolve_current_job_provider(
 def _build_engine_factory_options(
     engine_id: str,
     *,
+    implementation_id: str,
     effective: Mapping[str, object],
+    sources: Mapping[str, str],
     file_settings: Mapping[str, object],
     env: Mapping[str, str],
     backend_from_env: str,
@@ -221,7 +230,17 @@ def _build_engine_factory_options(
         ),
         device=device,
         repo_id=(
-            str(effective["parakeet_model"]) if engine_id == ENGINE_PARAKEET else None
+            resolve_effective_parakeet_repo_id(
+                configured_model=str(
+                    effective.get("parakeet_model")
+                    or DEFAULT_SETTINGS["parakeet_model"]
+                ),
+                source=sources.get("parakeet_model", "default"),
+                implementation_id=implementation_id,
+                file_settings=file_settings,
+            )
+            if engine_id == ENGINE_PARAKEET
+            else None
         ),
         chunk_duration=(
             float(effective["parakeet_chunk_duration"])
@@ -245,6 +264,52 @@ def _build_engine_factory_options(
         ),
         output_formats=tuple(str(fmt) for fmt in effective["output_formats"]),
     )
+
+
+def resolve_effective_parakeet_repo_id(
+    *,
+    configured_model: str,
+    source: str,
+    implementation_id: str,
+    file_settings: Mapping[str, object] | None = None,
+) -> str:
+    cleaned = configured_model.strip()
+    if not cleaned:
+        cleaned = str(DEFAULT_SETTINGS["parakeet_model"])
+
+    if implementation_id == PARAKEET_NEMO_CUDA_BACKEND:
+        if source == "default":
+            return DEFAULT_PARAKEET_NEMO_MODEL_ID
+        return cleaned
+
+    if implementation_id == PARAKEET_MLX_BACKEND:
+        if source == "default":
+            return DEFAULT_PARAKEET_MLX_MODEL_ID
+        if (
+            source == "file"
+            and cleaned == DEFAULT_PARAKEET_NEMO_MODEL_ID
+            and file_settings is not None
+            and _parakeet_settings_look_like_legacy_nemo_defaults(file_settings)
+        ):
+            return DEFAULT_PARAKEET_MLX_MODEL_ID
+        return cleaned
+
+    return cleaned
+
+
+def _parakeet_settings_look_like_legacy_nemo_defaults(
+    file_settings: Mapping[str, object],
+) -> bool:
+    expected: dict[str, object] = {
+        "parakeet_model": DEFAULT_PARAKEET_NEMO_MODEL_ID,
+        "parakeet_chunk_duration": 30,
+        "parakeet_overlap_duration": 5,
+        "parakeet_decoding_mode": "greedy",
+        "parakeet_batch_size": 1,
+    }
+    if not all(key in file_settings for key in expected):
+        return False
+    return all(file_settings.get(key) == value for key, value in expected.items())
 
 
 def _build_transcriber_cache_key(
