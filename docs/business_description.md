@@ -78,6 +78,9 @@ template partials.
 - Queue-first onboarding that keeps one dominant “Select files…” action above
   the fold while preserving folder batch upload and drag-and-drop as secondary
   affordances.
+- Upload selection summary now keeps the file count primary, hides skipped
+  items when none were filtered out, and removes size/batch estimates from the
+  default surface.
 - Compact History view with status, filename, time, output labels, and one-click
   primary actions, plus overflow actions that stay inside the viewport near
   screen edges.

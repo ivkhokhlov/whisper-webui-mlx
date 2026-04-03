@@ -69,8 +69,6 @@
     dropzone: document.getElementById("dropzone"),
     fileList: document.getElementById("file-list"),
     selectionValid: document.getElementById("selection-valid"),
-    selectionSize: document.getElementById("selection-size"),
-    selectionBatch: document.getElementById("selection-batch"),
     selectionSkipped: document.getElementById("selection-skipped"),
     selectionState: document.getElementById("selection-state"),
     fileListToggle: document.getElementById("file-list-toggle"),

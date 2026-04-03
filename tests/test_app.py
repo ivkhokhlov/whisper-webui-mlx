@@ -114,7 +114,7 @@ def test_root_empty_states_visible_when_no_jobs(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
-    assert "Your queue is empty" in response.text
+    assert "Add files to start" in response.text
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text
@@ -122,7 +122,7 @@ def test_root_empty_states_visible_when_no_jobs(tmp_path: Path) -> None:
     assert history_placeholder is not None
     assert "display: none" not in history_placeholder.group(0)
 
-    assert "Your queue is empty" in response.text
+    assert "Add files to start" in response.text
     assert "No completed jobs yet" in response.text
 
 
@@ -132,13 +132,12 @@ def test_root_queue_empty_state_onboarding_copy(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert 'aria-label="How queue works"' in response.text
     assert "Select files" in response.text
     assert "Select folder" in response.text
-    assert "Download transcripts from History when done." in response.text
-    assert "1</strong> Select" in response.text
-    assert "2</strong> Queue" in response.text
-    assert "3</strong> Download" in response.text
+    assert "Select files first. Use a folder when you need a batch." in response.text
+    assert "Folder upload scans subfolders for batch work." in response.text
+    assert "Your queue is empty" not in response.text
+    assert 'aria-label="How queue works"' not in response.text
 
 
 def test_root_history_empty_state_has_queue_cta(tmp_path: Path) -> None:
@@ -175,10 +174,14 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
 
     assert 'id="dropzone"' in response.text
     assert 'role="button"' in response.text
-    assert "Prefer drag & drop?" in response.text
-    assert "Drop files from Finder here." in response.text
+    assert "Or drag files here" in response.text
+    assert "Audio and video files only." in response.text
 
     assert 'id="selection-summary"' in response.text
+    assert 'id="selection-valid"' in response.text
+    assert 'id="selection-skipped"' in response.text
+    assert 'id="selection-size"' not in response.text
+    assert 'id="selection-batch"' not in response.text
     assert 'id="upload-language"' in response.text
     assert 'name="language"' in response.text
     assert "Detect automatically" in response.text
@@ -310,7 +313,7 @@ def test_root_queue_hint_stays_local_by_default(tmp_path: Path) -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "Processed locally. Nothing is uploaded." in response.text
+    assert "Local by default. Cloud engines upload only when selected." in response.text
 
 
 def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> None:
@@ -323,10 +326,7 @@ def test_root_queue_hint_mentions_cloud_when_cohere_selected(tmp_path: Path) -> 
         response = client.get("/")
 
     assert response.status_code == 200
-    assert (
-        "Cloud engine selected. It requires network access and is not local/offline."
-        in response.text
-    )
+    assert "Cloud engine selected. Audio uploads to the provider." in response.text
 
 
 def test_root_uses_truthful_local_first_copy(tmp_path: Path) -> None:
@@ -405,7 +405,7 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
-    assert "Start a transcription" in response.text
+    assert "Add more files" in response.text
 
     history_placeholder = re.search(
         r'<div[^>]*id="history-placeholder"[^>]*>', response.text
