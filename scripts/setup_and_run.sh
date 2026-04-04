@@ -10,6 +10,15 @@ STEP_COUNT=0
 WITH_COHERE="${WHISPER_WEBUI_WITH_COHERE:-0}"
 WITH_WHISPER_CPU="${WHISPER_WEBUI_WITH_WHISPER_CPU:-0}"
 WITH_PARAKEET_MLX="${WHISPER_WEBUI_WITH_PARAKEET_MLX:-0}"
+ALLOW_SYSTEM_INSTALL="${MLX_UI_ALLOW_SYSTEM_INSTALL:-0}"
+PYTHON_BIN_OVERRIDE="${MLX_UI_PYTHON:-}"
+REINSTALL_PYTHON="${MLX_UI_REINSTALL_PYTHON:-0}"
+RUNTIME_DIR="${ROOT_DIR}/.runtime"
+EMBEDDED_PYTHON_DIR="${RUNTIME_DIR}/python"
+EMBEDDED_PYTHON_BIN="${EMBEDDED_PYTHON_DIR}/bin/python3.12"
+EMBEDDED_TMP_DIR="${RUNTIME_DIR}/.tmp"
+PYTHON_STANDALONE_RELEASE_TAG="20260325"
+PYTHON_STANDALONE_VERSION="3.12.13"
 MACOS_ARCH=""
 INSTALL_MLX_DEFAULT=0
 DATA_ROOT_DIR="$ROOT_DIR"
@@ -30,6 +39,7 @@ fi
 usage() {
   cat <<'EOF'
 Usage: ./scripts/setup_and_run.sh [--with-cohere] [--with-whisper-cpu] [--with-parakeet-mlx]
+                               [--python /path/to/python] [--bootstrap] [--reinstall-python]
 
 Release targets (packaging contract):
   macos-arm64  -> default local engine: Whisper MLX
@@ -45,10 +55,27 @@ Optional profiles:
   --with-whisper-cpu  On Apple Silicon, also install the Whisper CPU fallback
   --with-parakeet-mlx On Apple Silicon, install the optional Parakeet MLX dependency profile
 
+Embedded Python (default):
+  This script uses a portable CPython runtime (python-build-standalone) stored
+  under ./.runtime/python and creates/uses a local ./.venv. It does not require
+  or modify a system Python installation.
+
+System bootstrap (opt-in):
+  --bootstrap  Allow installing missing system prerequisites (Homebrew + ffmpeg, Xcode CLI tools prompt)
+
+Python selection:
+  --python PATH  Use a specific Python interpreter (must be 3.12.3+ and <3.13)
+
+Embedded Python controls:
+  --reinstall-python  Delete ./.runtime/python and re-download the portable Python runtime
+
 Environment variables:
   WHISPER_WEBUI_WITH_COHERE=1
   WHISPER_WEBUI_WITH_WHISPER_CPU=1
   WHISPER_WEBUI_WITH_PARAKEET_MLX=1
+  MLX_UI_ALLOW_SYSTEM_INSTALL=1
+  MLX_UI_PYTHON=/path/to/python
+  MLX_UI_REINSTALL_PYTHON=1
 
 Notes:
   - This bootstrap script supports macOS only.
@@ -104,6 +131,21 @@ parse_args() {
         WITH_PARAKEET_MLX=1
         shift
         ;;
+      --bootstrap)
+        ALLOW_SYSTEM_INSTALL=1
+        shift
+        ;;
+      --python)
+        PYTHON_BIN_OVERRIDE="${2:-}"
+        if [[ -z "$PYTHON_BIN_OVERRIDE" ]]; then
+          fail "--python requires a value."
+        fi
+        shift 2
+        ;;
+      --reinstall-python)
+        REINSTALL_PYTHON=1
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -153,9 +195,12 @@ print_engine_expectations() {
 
 ensure_xcode_cli_tools() {
   if ! xcode-select -p >/dev/null 2>&1; then
-    log "Xcode Command Line Tools not found. Launching installer..."
-    xcode-select --install >/dev/null 2>&1 || true
-    fail "Xcode Command Line Tools are required. Finish the installer, then re-run."
+    if [[ "$ALLOW_SYSTEM_INSTALL" == "1" ]]; then
+      log "Xcode Command Line Tools not found. Launching installer..."
+      xcode-select --install >/dev/null 2>&1 || true
+      fail "Xcode Command Line Tools are required. Finish the installer, then re-run."
+    fi
+    fail "Xcode Command Line Tools are required. Install them with: xcode-select --install"
   fi
 }
 
@@ -177,6 +222,10 @@ ensure_brew() {
   fi
   load_brew_shellenv && return 0
 
+  if [[ "$ALLOW_SYSTEM_INSTALL" != "1" ]]; then
+    fail "Homebrew not found. Install it from https://brew.sh or rerun with --bootstrap."
+  fi
+
   log "Homebrew not found. Installing..."
   if ! command -v curl >/dev/null 2>&1; then
     fail "curl is required to install Homebrew. Install curl and re-run."
@@ -192,76 +241,178 @@ ensure_brew() {
 python_is_compatible() {
   "$1" - <<'PY'
 import sys
-raise SystemExit(0 if sys.version_info >= (3, 12, 3) else 1)
+raise SystemExit(0 if (sys.version_info >= (3, 12, 3) and sys.version_info < (3, 13, 0)) else 1)
 PY
 }
 
-select_python() {
-  if command -v python3.12 >/dev/null 2>&1; then
-    if python_is_compatible python3.12; then
-      echo "python3.12"
-      return 0
-    fi
+resolve_python_override() {
+  local candidate="${1:-}"
+  if [[ -z "$candidate" ]]; then
+    return 1
   fi
-  if command -v python3 >/dev/null 2>&1; then
-    if python_is_compatible python3; then
-      echo "python3"
-      return 0
-    fi
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  if command -v "$candidate" >/dev/null 2>&1; then
+    printf '%s\n' "$candidate"
+    return 0
   fi
   return 1
+}
+
+sha256_file() {
+  local path="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+    return 0
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$path" | awk '{print $2}'
+    return 0
+  fi
+  return 1
+}
+
+embedded_python_asset_name() {
+  local arch="$1"
+  case "$arch" in
+    arm64)
+      printf '%s\n' "cpython-${PYTHON_STANDALONE_VERSION}+${PYTHON_STANDALONE_RELEASE_TAG}-aarch64-apple-darwin-install_only_stripped.tar.gz"
+      ;;
+    x86_64)
+      printf '%s\n' "cpython-${PYTHON_STANDALONE_VERSION}+${PYTHON_STANDALONE_RELEASE_TAG}-x86_64-apple-darwin-install_only_stripped.tar.gz"
+      ;;
+    *)
+      fail "Unsupported macOS architecture '$arch'."
+      ;;
+  esac
+}
+
+embedded_python_expected_sha256() {
+  local arch="$1"
+  case "$arch" in
+    arm64) printf '%s\n' "c33a34853ae48d54fbac15cbb84ad67ccd8a639ce2cef866ecf474ebd02f1286" ;;
+    x86_64) printf '%s\n' "2d0259f7939b6592a6d019e6b2fa1ac10765e215965cd96cf8cc995274df4257" ;;
+    *)
+      fail "Unsupported macOS architecture '$arch'."
+      ;;
+  esac
+}
+
+ensure_embedded_python() {
+  local arch="$1"
+  local python_bin="${EMBEDDED_PYTHON_BIN}"
+
+  if [[ "$REINSTALL_PYTHON" == "1" ]]; then
+    printf '%s\n' "==> Forcing embedded Python reinstall." >&2
+    rm -rf "$EMBEDDED_PYTHON_DIR"
+    rm -rf "$VENV_DIR"
+  fi
+
+  if [[ -x "$python_bin" ]]; then
+    if python_is_compatible "$python_bin"; then
+      printf '%s\n' "==> Using embedded Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
+      echo "$python_bin"
+      return 0
+    fi
+    warn "Embedded Python at $python_bin is incompatible; reinstalling..."
+    rm -rf "$EMBEDDED_PYTHON_DIR"
+    rm -rf "$VENV_DIR"
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    fail "curl is required to download the embedded Python runtime."
+  fi
+  if ! command -v tar >/dev/null 2>&1; then
+    fail "tar is required to extract the embedded Python runtime."
+  fi
+
+  mkdir -p "$RUNTIME_DIR" "$EMBEDDED_TMP_DIR"
+
+  local asset
+  asset="$(embedded_python_asset_name "$arch")"
+  local expected_sha
+  expected_sha="$(embedded_python_expected_sha256 "$arch")"
+
+  local encoded_asset
+  # GitHub release URLs use %2B for '+'.
+  encoded_asset="${asset//+/%2B}"
+  local url
+  url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_STANDALONE_RELEASE_TAG}/${encoded_asset}"
+
+  local archive_path
+  archive_path="${EMBEDDED_TMP_DIR}/${asset}"
+  local download_path
+  download_path="${archive_path}.download"
+
+  if [[ -f "$archive_path" ]]; then
+    printf '%s\n' "==> Found cached embedded Python archive: $archive_path" >&2
+  else
+    printf '%s\n' "==> Downloading embedded Python ${PYTHON_STANDALONE_VERSION} (${arch})..." >&2
+    curl -L --fail --silent --show-error -o "$download_path" "$url" || \
+      fail "Failed to download embedded Python archive from: $url"
+    mv -f "$download_path" "$archive_path"
+  fi
+
+  local actual_sha
+  actual_sha="$(sha256_file "$archive_path" || true)"
+  if [[ -z "$actual_sha" ]]; then
+    fail "Unable to compute SHA256 for $archive_path (need shasum or openssl)."
+  fi
+  if [[ "$actual_sha" != "$expected_sha" ]]; then
+    rm -f "$archive_path"
+    fail "SHA256 mismatch for embedded Python archive. Expected $expected_sha, got $actual_sha. Deleted $archive_path; re-run to retry."
+  fi
+
+  local extract_dir
+  extract_dir="$(mktemp -d "${EMBEDDED_TMP_DIR}/extract.XXXXXX")"
+  tar -xzf "$archive_path" -C "$extract_dir" || fail "Failed to extract embedded Python archive."
+  if [[ ! -x "$extract_dir/python/bin/python3.12" ]]; then
+    rm -rf "$extract_dir"
+    fail "Embedded Python archive did not contain python/bin/python3.12 as expected."
+  fi
+
+  rm -rf "$EMBEDDED_PYTHON_DIR"
+  mv "$extract_dir/python" "$EMBEDDED_PYTHON_DIR"
+  rm -rf "$extract_dir"
+
+  python_bin="${EMBEDDED_PYTHON_BIN}"
+  if [[ ! -x "$python_bin" ]]; then
+    fail "Embedded Python install failed: missing $python_bin"
+  fi
+  if ! python_is_compatible "$python_bin"; then
+    fail "Embedded Python at $python_bin is incompatible. Require Python 3.12.3+ and <3.13."
+  fi
+
+  printf '%s\n' "==> Using embedded Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
+  echo "$python_bin"
 }
 
 ensure_python() {
   local python_bin
 
-  python_bin="$(select_python || true)"
-  if [[ -n "$python_bin" ]]; then
+  if [[ -n "${PYTHON_BIN_OVERRIDE}" ]]; then
+    python_bin="$(resolve_python_override "$PYTHON_BIN_OVERRIDE" || true)"
+    if [[ -z "$python_bin" ]]; then
+      fail "Requested Python '${PYTHON_BIN_OVERRIDE}' not found. Provide an absolute path or a command on PATH."
+    fi
+    if ! python_is_compatible "$python_bin"; then
+      fail "Requested Python '${python_bin}' is not compatible. Require Python 3.12.3+ and <3.13."
+    fi
     printf '%s\n' "==> Using Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
     echo "$python_bin"
     return 0
   fi
-
-  # Prefer Homebrew's python@3.12 even if it isn't linked into PATH.
-  if command -v brew >/dev/null 2>&1; then
-    local brew_prefix
-    brew_prefix="$(brew --prefix python@3.12 2>/dev/null || true)"
-    if [[ -n "$brew_prefix" && -x "$brew_prefix/bin/python3.12" ]]; then
-      python_bin="$brew_prefix/bin/python3.12"
-      if python_is_compatible "$python_bin"; then
-        printf '%s\n' "==> Using Homebrew Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
-        echo "$python_bin"
-        return 0
-      fi
-    fi
-  fi
-
-  printf '%s\n' "==> Python 3.12.3+ not found. Installing python@3.12 via Homebrew..." >&2
-  brew install python@3.12
-  hash -r
-
-  if command -v brew >/dev/null 2>&1; then
-    local brew_prefix
-    brew_prefix="$(brew --prefix python@3.12 2>/dev/null || true)"
-    if [[ -n "$brew_prefix" && -x "$brew_prefix/bin/python3.12" ]]; then
-      python_bin="$brew_prefix/bin/python3.12"
-      printf '%s\n' "==> Using Homebrew Python: $python_bin ($("$python_bin" --version 2>&1))" >&2
-      echo "$python_bin"
-      return 0
-    fi
-  fi
-
-  if command -v python3.12 >/dev/null 2>&1; then
-    echo "python3.12"
-    return 0
-  fi
-
-  fail "python3.12 not found after install. Ensure Homebrew is on PATH."
+  ensure_embedded_python "$MACOS_ARCH"
 }
 
 ensure_ffmpeg() {
   if command -v ffmpeg >/dev/null 2>&1; then
     return 0
+  fi
+  if [[ "$ALLOW_SYSTEM_INSTALL" != "1" ]]; then
+    fail "ffmpeg is required but not found. Install it (e.g. 'brew install ffmpeg') or rerun with --bootstrap."
   fi
   log "ffmpeg not found. Installing via Homebrew..."
   brew install ffmpeg
@@ -271,7 +422,7 @@ ensure_git() {
   if command -v git >/dev/null 2>&1; then
     return 0
   fi
-  fail "git is required to install whisper-turbo-mlx. Install Xcode Command Line Tools."
+  fail "git is required for the --bootstrap flow. Install Xcode Command Line Tools."
 }
 
 ensure_base_python_deps() {
@@ -448,6 +599,8 @@ parse_args "$@"
 WITH_COHERE="$(normalize_bool "$WITH_COHERE")"
 WITH_WHISPER_CPU="$(normalize_bool "$WITH_WHISPER_CPU")"
 WITH_PARAKEET_MLX="$(normalize_bool "$WITH_PARAKEET_MLX")"
+ALLOW_SYSTEM_INSTALL="$(normalize_bool "$ALLOW_SYSTEM_INSTALL")"
+REINSTALL_PYTHON="$(normalize_bool "$REINSTALL_PYTHON")"
 
 step "Checking platform compatibility"
 require_macos
@@ -456,13 +609,27 @@ if [[ "$WITH_PARAKEET_MLX" == "1" && "$MACOS_ARCH" != "arm64" ]]; then
   fail "Parakeet MLX dependencies are supported on macOS arm64 (Apple Silicon) only. Intel macOS cannot run local Parakeet MLX; use Whisper CPU or Cohere instead."
 fi
 print_engine_expectations "$MACOS_ARCH"
-ensure_xcode_cli_tools
-ensure_git
+if [[ "$ALLOW_SYSTEM_INSTALL" == "1" ]]; then
+  ensure_xcode_cli_tools
+  ensure_git
+fi
 step "Checking Homebrew"
-ensure_brew
+if [[ "$ALLOW_SYSTEM_INSTALL" == "1" ]]; then
+  ensure_brew
+else
+  load_brew_shellenv || true
+  if command -v brew >/dev/null 2>&1; then
+    log "Homebrew found."
+  else
+    log "Homebrew not found (system bootstrap disabled)."
+  fi
+fi
 step "Selecting Python"
 PYTHON_BIN="$(ensure_python)"
 step "Installing dependencies"
+if [[ "$ALLOW_SYSTEM_INSTALL" == "1" ]]; then
+  ensure_brew
+fi
 ensure_ffmpeg
 ensure_base_python_deps "$PYTHON_BIN"
 step "Installing engine profiles"

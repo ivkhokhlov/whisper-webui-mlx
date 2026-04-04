@@ -2,15 +2,19 @@
 
 ## Requirements (target)
 - macOS Apple Silicon (M1+)
-- Internet access on first run (to install Homebrew/Python deps and download model)
+- `ffmpeg` on PATH (required for audio decode)
+- Internet access on first run (to download the embedded Python runtime, install deps, and download the model)
 
 ## Quick start (eventual)
 ```bash
 ./scripts/setup_and_run.sh
 ```
 Notes:
-- The script installs Xcode Command Line Tools, Homebrew, Python 3.12, and ffmpeg if missing.
-- The script manages a local `.venv` and installs deps with pip.
+- By default, the script downloads a portable Python runtime into `./.runtime/python` and uses it to create/manage `./.venv`.
+- The script manages a local `.venv` and installs deps with pip (no global site-packages).
+- Use `--reinstall-python` (or `MLX_UI_REINSTALL_PYTHON=1`) to re-download the embedded Python runtime.
+- Use `--bootstrap` (or `MLX_UI_ALLOW_SYSTEM_INSTALL=1`) to allow installing missing system prerequisites via Homebrew and prompt for Xcode Command Line Tools.
+- Use `--python /path/to/python3.12` if you want to force a specific Python interpreter (must be Python 3.12.3+ and <3.13).
 - First run needs network access to install `whisper-turbo-mlx` and download the default model.
 - Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
 - Set `WTM_QUICK=1` to enable `wtm --quick=True` (default: `false`).
@@ -39,7 +43,7 @@ of `whisper-turbo-mlx`.
 
 Fixes:
 - Install `whisper-turbo-mlx` into the local venv:
-  `./.venv/bin/pip install --upgrade "whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git"`
+  `./.venv/bin/pip install --upgrade "whisper-turbo-mlx @ https://github.com/JosefAlbers/whisper-turbo-mlx/archive/8a389f03ea786e8094a7d02e6dcc38f5178965dc.zip"`
 - Run the app via `make run` (or `./.venv/bin/python -m uvicorn ...`) so the venv `wtm` is used.
 - Or set `WTM_PATH` to the correct binary:
   `export WTM_PATH="$(pwd)/.venv/bin/wtm"`

@@ -20,6 +20,8 @@ After installation, ensure that your bin-dir (e.g. $HOME/.local/bin) is on your 
 then you can run:
 
   whisper-webui-mlx
+  whisper-webui-mlx --bootstrap
+  whisper-webui-mlx --reinstall-python
   whisper-webui-mlx --with-cohere
   whisper-webui-mlx --with-whisper-cpu
   whisper-webui-mlx --with-parakeet-mlx
@@ -27,6 +29,8 @@ then you can run:
 Bootstrap expectations:
   - macOS arm64: installs Whisper MLX as the default local backend (Parakeet MLX is an optional local engine via --with-parakeet-mlx)
   - macOS Intel: installs Whisper CPU as the default local backend (Parakeet MLX is not supported)
+  - --bootstrap: allow installing missing system prerequisites via Homebrew / Xcode prompts
+  - --reinstall-python: re-download the embedded portable Python runtime
   - --with-cohere: adds the optional Cohere SDK (cloud engine) on either architecture
   - --with-whisper-cpu: on Apple Silicon, also installs the Whisper CPU fallback
   - --with-parakeet-mlx: Apple Silicon-only Parakeet MLX dependency profile (optional; enables selecting Parakeet locally)
@@ -112,6 +116,8 @@ printf 'Launcher created at: %s\n' "$LAUNCHER"
 printf '\nMake sure %s is on your PATH.\n' "$BIN_DIR"
 printf 'Then run:\n\n  whisper-webui-mlx\n\n'
 printf 'Optional profiles:\n\n'
+printf '  whisper-webui-mlx --bootstrap\n'
+printf '  whisper-webui-mlx --reinstall-python\n'
 printf '  whisper-webui-mlx --with-cohere\n'
 printf '  whisper-webui-mlx --with-whisper-cpu\n'
 printf '  whisper-webui-mlx --with-parakeet-mlx  (Apple Silicon only)\n\n'

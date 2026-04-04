@@ -14,12 +14,13 @@ RUFF ?= $(VENV)/bin/ruff
 
 venv:
 	@if [ ! -d "$(VENV)" ]; then \
-		if command -v python3.12 >/dev/null 2>&1; then \
-			python3.12 -m venv "$(VENV)"; \
-		else \
-			python3 -m venv "$(VENV)"; \
-		fi; \
-	fi
+			if command -v python3.12 >/dev/null 2>&1; then \
+				python3.12 -m venv "$(VENV)"; \
+			else \
+				echo "python3.12 is required (or run ./run.sh to bootstrap embedded Python)."; \
+				exit 1; \
+			fi; \
+		fi
 
 deps: venv
 	$(PIP) install -r requirements.txt

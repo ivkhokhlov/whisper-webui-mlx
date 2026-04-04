@@ -1,4 +1,7 @@
 # Apple Silicon local backend profile.
-# Installs the MLX Whisper backend plus model download tooling.
-huggingface-hub>=0.30,<1.0
-whisper-turbo-mlx @ git+https://github.com/JosefAlbers/whisper-turbo-mlx.git
+# Installs the MLX Whisper backend (wtm).
+#
+# Note: whisper-turbo-mlx currently pins its own dependency versions, including
+# huggingface-hub. Keeping this file minimal avoids dependency conflicts in the
+# repo bootstrap flow.
+whisper-turbo-mlx @ https://github.com/JosefAlbers/whisper-turbo-mlx/archive/8a389f03ea786e8094a7d02e6dcc38f5178965dc.zip

@@ -64,8 +64,8 @@ an explicit supported language.
 ## Developer bootstrap (repo)
 
 ### Requirements
-- Python 3.12.3+
-- `ffmpeg`
+- No system Python required (the launcher downloads a portable Python 3.12 runtime into `./.runtime/python`)
+- `ffmpeg` on `PATH` (system dependency)
 - Internet access on first run for dependencies and first-run model downloads
 - macOS Apple Silicon for local Whisper MLX and Parakeet MLX
 - macOS Intel or Docker for the local Whisper CPU path
@@ -76,6 +76,24 @@ an explicit supported language.
 ./run.sh
 ```
 Then open http://127.0.0.1:8000.
+
+If you want the script to install missing prerequisites via Homebrew (and prompt
+for Xcode Command Line Tools), run:
+```bash
+./run.sh --bootstrap
+```
+
+If you want to re-download the embedded Python runtime (or recover from a
+corrupted download), run:
+```bash
+./run.sh --reinstall-python
+```
+
+If you want to use a specific local Python interpreter instead of the embedded
+runtime (must be Python 3.12.3+ and <3.13), run:
+```bash
+./run.sh --python python3.12
+```
 
 Bootstrap defaults on macOS:
 - Apple Silicon: installs Whisper MLX
@@ -97,10 +115,11 @@ You can also call the bootstrap script directly:
 ./scripts/setup_and_run.sh --with-cohere
 ```
 
-The launcher installs missing prerequisites, creates/updates `.venv`, installs
-the appropriate dependency profile for the current machine, and starts the app
-on `127.0.0.1:8000`. First-run model downloads can still take a while for local
-engines that are not already cached.
+The launcher downloads a portable Python runtime into `./.runtime/python`,
+creates/updates `.venv`, installs the appropriate dependency profile for the
+current machine, and starts the app on `127.0.0.1:8000`. System-wide installs
+are opt-in via `--bootstrap`. First-run model downloads can still take a while
+for local engines that are not already cached.
 
 ### Install via curl
 
@@ -123,6 +142,8 @@ whisper-webui-mlx
 
 The launcher forwards bootstrap flags too:
 ```bash
+whisper-webui-mlx --bootstrap
+whisper-webui-mlx --reinstall-python
 whisper-webui-mlx --with-cohere
 whisper-webui-mlx --with-whisper-cpu
 whisper-webui-mlx --with-parakeet-mlx

@@ -27,6 +27,10 @@ app-factory bootstrap path, focused routers, provider modules per engine, and
 template partials. Repo/dev mode also treats transient workspace automation
 artifacts as untracked local state, keeping operational traces out of the
 shared project history while preserving the same user-facing data flow.
+Repo bootstrap is also designed to avoid accidental "Python drift" between
+machines: `./run.sh` downloads a portable CPython 3.12 runtime into
+`./.runtime/python` (gitignored) and uses it to create/manage `./.venv`, so the
+default developer setup does not depend on a system/Homebrew Python install.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
