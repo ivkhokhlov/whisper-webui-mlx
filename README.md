@@ -174,6 +174,35 @@ WHISPER_MODEL=base PORT=9000 ./docker-run.sh
 Note: `TRANSCRIBER_BACKEND=wtm` is not supported in Docker; use `whisper` or
 run natively with `./run.sh` for MLX.
 
+### DGX Spark Parakeet CUDA profile
+
+`docker-run-spark.sh` builds a Linux/CUDA image from NVIDIA's NeMo NGC
+container and runs the experimental local Parakeet NeMo/CUDA backend. It is
+intended for `home-spark`-style NVIDIA CUDA hosts, not macOS.
+
+```bash
+./docker-run-spark.sh
+```
+
+Defaults:
+- binds the UI to `127.0.0.1:32000`
+- uses `nvidia/parakeet-tdt-0.6b-v3`
+- persists app state under `./data-spark`
+- reuses the host Hugging Face cache from `~/.cache/huggingface`
+- enables `.txt`, `.srt`, `.vtt`, and `.json` outputs on first run
+- runs the container as root by default because the NGC NeMo image keeps some
+  Megatron/NeMo files unreadable to arbitrary host UIDs
+
+Useful overrides:
+```bash
+PARAKEET_MODEL=nvidia/parakeet-unified-en-0.6b ./docker-run-spark.sh
+PORT=32100 DATA_DIR=/srv/mlx-ui-parakeet ./docker-run-spark.sh
+RUN_AS_ROOT=0 ./docker-run-spark.sh  # only if your base image permissions allow it
+```
+
+The Parakeet CUDA path normalizes non-ready media with `ffmpeg` into 16 kHz
+mono WAV before inference, so video uploads can be queued through the same UI.
+
 ### Manual dev loop
 ```bash
 make dev-deps

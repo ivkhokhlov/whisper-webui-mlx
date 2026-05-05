@@ -5,6 +5,7 @@
 .venv
 __pycache__
 data
+data-spark
 *.db
 *.log
 *.zip

@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import wave
 
@@ -27,6 +29,9 @@ from mlx_ui.transcript_result import (
 logger = logging.getLogger(__name__)
 
 _PARAKEET_FRAME_STRIDE_MULTIPLIER = 8.0
+PARAKEET_FFMPEG_PATH_ENV = "PARAKEET_FFMPEG_PATH"
+_PARAKEET_SAMPLE_RATE = 16_000
+_PARAKEET_SAMPLE_WIDTH_BYTES = 2
 
 
 def load_parakeet_runtime():
@@ -102,19 +107,20 @@ class ParakeetNemoCudaTranscriber:
             self.decoding_mode,
             self.batch_size,
         )
-        with _prepare_parakeet_audio_chunks(
-            source_path,
-            chunk_duration=self.chunk_duration,
-            overlap_duration=self.overlap_duration,
-        ) as chunks:
-            try:
-                hypotheses = _transcribe_with_parakeet_model(
-                    model,
-                    [str(chunk.path) for chunk in chunks],
-                    batch_size=min(self.batch_size, len(chunks)),
-                )
-            except Exception as exc:  # pragma: no cover - backend passthrough
-                raise RuntimeError(f"Parakeet transcription failed: {exc}") from exc
+        with _prepare_parakeet_audio_source(source_path) as audio_source:
+            with _prepare_parakeet_audio_chunks(
+                audio_source,
+                chunk_duration=self.chunk_duration,
+                overlap_duration=self.overlap_duration,
+            ) as chunks:
+                try:
+                    hypotheses = _transcribe_with_parakeet_model(
+                        model,
+                        [str(chunk.path) for chunk in chunks],
+                        batch_size=min(self.batch_size, len(chunks)),
+                    )
+                except Exception as exc:  # pragma: no cover - backend passthrough
+                    raise RuntimeError(f"Parakeet transcription failed: {exc}") from exc
         transcript = _normalize_parakeet_transcript(
             model,
             hypotheses,
@@ -186,7 +192,6 @@ def _transcribe_with_parakeet_model(model, audio_paths: list[str], *, batch_size
         "audio": audio_paths,
         "batch_size": batch_size,
         "return_hypotheses": True,
-        "channel_selector": "average",
         "verbose": False,
     }
     try:
@@ -445,6 +450,106 @@ def _offset_timestamp(
     if value is None:
         return None
     return chunk.offset_seconds + value
+
+
+@contextmanager
+def _prepare_parakeet_audio_source(source_path: Path):
+    source_path = Path(source_path)
+    if _is_parakeet_ready_wav(source_path):
+        yield source_path
+        return
+
+    ffmpeg_path = _resolve_ffmpeg_path()
+    if ffmpeg_path is None:
+        raise RuntimeError(
+            "ffmpeg is required to convert this audio/video file for Parakeet. "
+            "Install ffmpeg, set PARAKEET_FFMPEG_PATH, or upload a 16 kHz mono WAV."
+        )
+
+    with tempfile.TemporaryDirectory(prefix="mlx-ui-parakeet-source-") as tmp_dir:
+        converted_path = Path(tmp_dir) / "parakeet-input.wav"
+        _convert_media_to_parakeet_wav(
+            source_path,
+            output_path=converted_path,
+            ffmpeg_path=ffmpeg_path,
+        )
+        yield converted_path
+
+
+def _resolve_ffmpeg_path() -> str | None:
+    import os
+
+    configured = os.getenv(PARAKEET_FFMPEG_PATH_ENV, "").strip()
+    if configured:
+        candidate = Path(configured)
+        if candidate.is_file():
+            return str(candidate)
+        found = shutil.which(configured)
+        if found:
+            return found
+        return None
+    return shutil.which("ffmpeg")
+
+
+def _is_parakeet_ready_wav(source_path: Path) -> bool:
+    try:
+        with wave.open(str(source_path), "rb") as reader:
+            return (
+                reader.getnchannels() == 1
+                and reader.getframerate() == _PARAKEET_SAMPLE_RATE
+                and reader.getsampwidth() == _PARAKEET_SAMPLE_WIDTH_BYTES
+                and reader.getcomptype() == "NONE"
+            )
+    except (FileNotFoundError, OSError, wave.Error):
+        return False
+
+
+def _convert_media_to_parakeet_wav(
+    source_path: Path,
+    *,
+    output_path: Path,
+    ffmpeg_path: str,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source_path),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(_PARAKEET_SAMPLE_RATE),
+        "-sample_fmt",
+        "s16",
+        str(output_path),
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "ffmpeg was not found while converting media for Parakeet."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        if len(detail) > 500:
+            detail = detail[:500] + "..."
+        raise RuntimeError(
+            "Failed to convert media to 16 kHz mono WAV for Parakeet"
+            + (f": {detail}" if detail else ".")
+        ) from exc
 
 
 @contextmanager

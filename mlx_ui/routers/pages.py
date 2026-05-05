@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -37,6 +38,7 @@ router = APIRouter()
 _PACKAGE_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = _PACKAGE_DIR / "static"
 templates = Jinja2Templates(directory=str(_PACKAGE_DIR / "templates"))
+templates.env.filters["url_path_segment"] = lambda value: quote(str(value), safe="")
 
 
 @router.get("/favicon.ico", include_in_schema=False)

@@ -1369,21 +1369,28 @@ def test_history_lists_results_and_download_endpoint(tmp_path: Path) -> None:
 
     results_dir = Path(app.state.results_dir) / job_id
     results_dir.mkdir(parents=True, exist_ok=True)
-    txt_path = results_dir / "alpha.txt"
+    txt_path = results_dir / "alpha beta.txt"
     txt_path.write_text("transcript", encoding="utf-8")
-    srt_path = results_dir / "alpha.srt"
+    srt_path = results_dir / "alpha beta.srt"
     srt_path.write_text("subtitles", encoding="utf-8")
 
     with TestClient(app) as client:
         response = client.get("/")
 
         assert response.status_code == 200
-        assert f"/results/{job_id}/alpha.txt" in response.text
-        assert f"/results/{job_id}/alpha.srt" in response.text
+        assert f"/results/{job_id}/alpha%20beta.txt" in response.text
+        assert f"/results/{job_id}/alpha%20beta.srt" in response.text
 
-        download = client.get(f"/results/{job_id}/alpha.txt")
+        download = client.get(f"/results/{job_id}/alpha%20beta.txt")
         assert download.status_code == 200
         assert download.text == "transcript"
+
+        legacy_download = client.get(f"/results/{job_id}/alpha%00beta.txt")
+        assert legacy_download.status_code == 200
+        assert legacy_download.text == "transcript"
+
+        invalid_download = client.get(f"/results/{job_id}/missing%00name.txt")
+        assert invalid_download.status_code == 404
 
 
 def test_preview_endpoint_returns_snippet(tmp_path: Path) -> None:

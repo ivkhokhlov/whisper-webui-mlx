@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Prefer Dockerfile.spark with an NVIDIA NeMo NGC base image on DGX Spark.
+# For a custom Linux CUDA environment, install the matching NeMo/CUDA stack first:
+#   pip install 'nemo-toolkit[asr,cu13]>=2.7.3,<2.8'

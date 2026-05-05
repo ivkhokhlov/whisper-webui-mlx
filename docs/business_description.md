@@ -13,6 +13,7 @@ engine. On macOS, the engine story is explicit:
 - Intel (x86_64): local Whisper CPU
 - Cohere: optional cloud transcription (uploads audio)
 - Legacy Parakeet NeMo/CUDA: experimental/internal only (Linux + CUDA), disabled by default
+- DGX Spark Parakeet CUDA profile: repo-only Docker path for Linux/NVIDIA hosts
 
 In developer/repo mode, mutable runtime state lives under `data/` inside
 the repo. In packaged macOS app mode, the same mutable state lives under
@@ -61,6 +62,9 @@ default developer setup does not depend on a system/Homebrew Python install.
   without cloning the repo or installing Python.
 - Shared output writers so engines can produce `.txt` by default and `.json`,
   `.srt`, or `.vtt` when real metadata exists.
+- A DGX Spark-oriented Docker profile for experimental Parakeet NeMo/CUDA
+  deployments on Linux/NVIDIA hosts, with separate `data-spark` state, seeded
+  Parakeet settings, Hugging Face cache reuse, and localhost-only binding.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -133,6 +137,9 @@ default developer setup does not depend on a system/Homebrew Python install.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.
+- History result links now URL-encode job IDs and filenames, so result files
+  with spaces or other path-sensitive characters download through the same
+  queue/history UI instead of requiring manual filesystem access.
 - Details-on-demand panel is the canonical home for secondary history context:
   preview snippets, full timestamps, engine/language/backend metadata, output
   lists, and failure logs.
@@ -208,6 +215,8 @@ default developer setup does not depend on a system/Homebrew Python install.
 - Local-first product that still handles cloud transcription honestly when the
   user explicitly selects it.
 - Optional CPU Docker backend and Intel macOS path for broader compatibility.
+- Experimental DGX Spark Parakeet CUDA deployment profile for users with local
+  NVIDIA infrastructure who want a browser queue around NeMo Parakeet.
 
 ## Constraints and scope
 - Native MLX backends require macOS Apple Silicon.
@@ -216,7 +225,9 @@ default developer setup does not depend on a system/Homebrew Python install.
   opt-in via `--with-parakeet-mlx`).
 - Legacy Parakeet NeMo/CUDA is retained for internal/experimental Linux CUDA
   flows only; it is disabled by default and not part of the macOS bootstrap or
-  packaged release targets.
+  packaged release targets. The Spark Docker profile keeps this path separate
+  from the supported macOS release flow and normalizes non-ready media through
+  `ffmpeg` into 16 kHz mono WAV before Parakeet inference.
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.

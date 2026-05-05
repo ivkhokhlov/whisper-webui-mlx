@@ -1,0 +1,30 @@
+ARG NEMO_BASE_IMAGE=nvcr.io/nvidia/nemo:26.02.01
+FROM ${NEMO_BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/app/data \
+    XDG_CACHE_HOME=/app/data/.cache \
+    HF_HOME=/app/hf-cache \
+    TRANSCRIBER_BACKEND=parakeet_nemo_cuda \
+    PARAKEET_NEMO_CUDA_EXPERIMENTAL=1 \
+    DISABLE_UPDATE_CHECK=1 \
+    LOG_DIR=/app/data/logs
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
+
+COPY mlx_ui ./mlx_ui
+
+RUN mkdir -p /app/data /app/data/.cache /app/hf-cache
+
+EXPOSE 8000
+CMD ["python3", "-m", "uvicorn", "mlx_ui.app:app", "--host", "0.0.0.0", "--port", "8000"]

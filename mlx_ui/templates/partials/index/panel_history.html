@@ -96,7 +96,7 @@
                       {% if job.status == "done" and result_ns.default %}
                         <a
                           class="job-primary"
-                          href="/results/{{ job.id }}/{{ result_ns.default }}"
+                          href="/results/{{ job.id | url_path_segment }}/{{ result_ns.default | url_path_segment }}"
                           download="{{ result_ns.default }}"
                         >
                           Download
@@ -117,7 +117,7 @@
                             data-action="preview"
                             data-job-id="{{ job.id }}"
                             data-preview-url="/api/jobs/{{ job.id }}/preview?chars=1200"
-                            data-default-url="/results/{{ job.id }}/{{ result_ns.default }}"
+                            data-default-url="/results/{{ job.id | url_path_segment }}/{{ result_ns.default | url_path_segment }}"
                             data-default-filename="{{ result_ns.default }}"
                             data-preview-meta="{{ job_view.preview_meta if job_view else '' }}"
                             aria-haspopup="dialog"
@@ -126,7 +126,7 @@
                           </button>
                           <a
                             class="job-menu-item"
-                            href="/results/{{ job.id }}/{{ result_ns.default }}"
+                            href="/results/{{ job.id | url_path_segment }}/{{ result_ns.default | url_path_segment }}"
                             target="_blank"
                             rel="noopener"
                           >
@@ -137,7 +137,7 @@
                           {% for result in results %}
                             <a
                               class="job-menu-item"
-                              href="/results/{{ job.id }}/{{ result }}"
+                              href="/results/{{ job.id | url_path_segment }}/{{ result | url_path_segment }}"
                               download="{{ result }}"
                             >
                               Download {{ result.rsplit('.', 1)[-1] | upper }}
@@ -200,7 +200,7 @@
                             </button>
                             <a
                               class="preview-action"
-                              href="/results/{{ job.id }}/{{ result_ns.default }}"
+                              href="/results/{{ job.id | url_path_segment }}/{{ result_ns.default | url_path_segment }}"
                               target="_blank"
                               rel="noopener"
                             >
@@ -223,7 +223,7 @@
                               <li class="detail-result-item">
                                 <a
                                   class="detail-result-link"
-                                  href="/results/{{ job.id }}/{{ result }}"
+                                  href="/results/{{ job.id | url_path_segment }}/{{ result | url_path_segment }}"
                                   target="_blank"
                                   rel="noopener"
                                 >

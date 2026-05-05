@@ -9,6 +9,7 @@ import wave
 import pytest
 
 from mlx_ui.db import JobRecord
+import mlx_ui.engines.parakeet_nemo_cuda_experimental as parakeet_nemo_cuda
 import mlx_ui.transcriber as transcriber_module
 from mlx_ui.transcriber import (
     CohereTranscriber,
@@ -44,6 +45,23 @@ def _make_job_with_id(tmp_path: Path, job_id: str) -> JobRecord:
     return JobRecord(
         id=job_id,
         filename="sample.wav",
+        status="queued",
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat(
+            timespec="seconds"
+        ),
+        upload_path=str(upload_path),
+        language="en",
+    )
+
+
+def _make_job_for_upload(tmp_path: Path, filename: str, content: bytes) -> JobRecord:
+    uploads_dir = tmp_path / "uploads" / "job1"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = uploads_dir / filename
+    upload_path.write_bytes(content)
+    return JobRecord(
+        id="job1",
+        filename=filename,
         status="queued",
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat(
             timespec="seconds"
@@ -393,9 +411,66 @@ def test_parakeet_nemo_cuda_transcriber_uses_python_api_and_writes_outputs(
     assert model.calls[0]["audio"] == [str(Path(job.upload_path))]
     assert model.calls[0]["batch_size"] == 1
     assert model.calls[0]["return_hypotheses"] is True
+    assert "channel_selector" not in model.calls[0]
     assert model.calls[0]["timestamps"] is True
     assert model.decoding_strategy is not None
     assert model.decoding_strategy.strategy == "greedy_batch"
+
+
+def test_parakeet_nemo_cuda_transcriber_converts_video_to_wav(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job_for_upload(tmp_path, "clip.mp4", b"fake video bytes")
+    results_dir = tmp_path / "results"
+    model = FakeParakeetModel(outputs=[{"text": "converted video"}])
+    factory = FakeParakeetFactory(model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    ffmpeg_calls: list[list[str]] = []
+
+    def fake_run(command, **kwargs):  # type: ignore[no-untyped-def]
+        ffmpeg_calls.append(list(command))
+        output_path = Path(command[-1])
+        _write_silent_wav(output_path)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+    monkeypatch.setattr(
+        parakeet_nemo_cuda.shutil, "which", lambda name: "/usr/bin/ffmpeg"
+    )
+    monkeypatch.setattr(parakeet_nemo_cuda.subprocess, "run", fake_run)
+
+    transcriber = ParakeetNemoCudaTranscriber()
+    result_path = transcriber.transcribe(job, results_dir)
+
+    assert result_path.read_text(encoding="utf-8") == "converted video\n"
+    assert ffmpeg_calls
+    assert ffmpeg_calls[0][-1].endswith("parakeet-input.wav")
+    assert model.calls[0]["audio"] != [str(Path(job.upload_path))]
+    assert str(model.calls[0]["audio"][0]).endswith("parakeet-input.wav")
+
+
+def test_parakeet_nemo_cuda_transcriber_requires_ffmpeg_for_video(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job_for_upload(tmp_path, "clip.mp4", b"fake video bytes")
+    model = FakeParakeetModel(outputs=[{"text": "unreachable"}])
+    factory = FakeParakeetFactory(model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+    monkeypatch.setattr(parakeet_nemo_cuda.shutil, "which", lambda name: None)
+
+    transcriber = ParakeetNemoCudaTranscriber()
+
+    with pytest.raises(RuntimeError, match="ffmpeg is required"):
+        transcriber.transcribe(job, tmp_path / "results")
 
 
 def test_parakeet_nemo_cuda_transcriber_lazy_loads_and_reuses_model(
