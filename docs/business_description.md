@@ -53,6 +53,9 @@ default developer setup does not depend on a system/Homebrew Python install.
 - Sequential job queue with per-job `requested_engine`, `effective_engine`, and
   explicit language values so queued work remains truthful even when settings
   change later.
+- Machine-created jobs can enter the same queue through a local multipart API
+  while preserving caller-owned `client` and `client_job_id` metadata for
+  reconciliation.
 - Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
@@ -78,6 +81,9 @@ default developer setup does not depend on a system/Homebrew Python install.
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
+- Local automation job intake via `POST /api/jobs`, with required ownership
+  metadata, the same language/engine defaults as UI uploads, and the same queue
+  visibility through `/api/state`.
 - Optional “hot folder” ingestion: watch an input folder, move detected
   audio/video files into the queue for processing, and export `.txt`
   transcripts into a configured output folder (mirrors subfolders; restores the

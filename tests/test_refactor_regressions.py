@@ -176,6 +176,7 @@ def test_app_includes_expected_routes_and_modules() -> None:
     assert ("POST", "/api/settings") in paths
     assert ("GET", "/api/state") in paths
     assert ("POST", "/upload") in paths
+    assert ("POST", "/api/jobs") in paths
     assert ("POST", "/api/live/session") in paths
 
     assert paths[("GET", "/")].__module__ == "mlx_ui.routers.pages"

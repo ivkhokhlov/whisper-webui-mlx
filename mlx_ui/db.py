@@ -23,6 +23,8 @@ class JobRecord:
     effective_implementation_id: str | None = None
     source_path: str | None = None
     source_relpath: str | None = None
+    client: str | None = None
+    client_job_id: str | None = None
 
 
 SCHEMA = """
@@ -41,7 +43,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     effective_engine TEXT,
     effective_implementation_id TEXT,
     source_path TEXT,
-    source_relpath TEXT
+    source_relpath TEXT,
+    client TEXT,
+    client_job_id TEXT
 );
 """
 
@@ -96,6 +100,10 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE jobs ADD COLUMN source_path TEXT")
     if not _table_has_column(connection, "jobs", "source_relpath"):
         connection.execute("ALTER TABLE jobs ADD COLUMN source_relpath TEXT")
+    if not _table_has_column(connection, "jobs", "client"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN client TEXT")
+    if not _table_has_column(connection, "jobs", "client_job_id"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN client_job_id TEXT")
     connection.execute(
         """
         UPDATE jobs
@@ -229,9 +237,11 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -249,6 +259,8 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 job.effective_implementation_id,
                 job.source_path,
                 job.source_relpath,
+                job.client,
+                job.client_job_id,
             ),
         )
         connection.commit()
@@ -273,7 +285,9 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             FROM jobs
             ORDER BY
                 CASE
@@ -315,7 +329,9 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             FROM jobs
             WHERE id = ?
             """,
@@ -371,7 +387,9 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             FROM jobs
             WHERE status IN ('done', 'failed', 'cancelled')
             """
@@ -620,7 +638,9 @@ def claim_next_job(
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             FROM jobs
             WHERE status = 'queued'
             ORDER BY

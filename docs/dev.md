@@ -26,6 +26,21 @@ make test
 make run
 ```
 
+## Automation job intake
+Use `POST /api/jobs` for machine-created queue items. The endpoint accepts one
+multipart `file`, optional `language`, and required `client` plus
+`client_job_id` form fields. The ownership fields are stored with the job and
+returned by `/api/state`, so callers can reconcile local source jobs with the
+generated mlx-ui job ids.
+
+```bash
+curl -F "file=@sample.wav" \
+  -F "language=auto" \
+  -F "client=local-agent" \
+  -F "client_job_id=batch-001" \
+  http://127.0.0.1:8000/api/jobs
+```
+
 ## Docker (CPU backend)
 Docker uses the `openai-whisper` CPU backend (not MLX). Run:
 ```bash
