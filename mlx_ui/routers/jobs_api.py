@@ -66,6 +66,8 @@ def _new_job_record(
     upload_path: Path,
     requested_engine: str | None = None,
     language: str = DEFAULT_LANGUAGE,
+    client: str | None = None,
+    client_job_id: str | None = None,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -75,12 +77,50 @@ def _new_job_record(
         upload_path=str(upload_path),
         language=language,
         requested_engine=requested_engine,
+        client=client,
+        client_job_id=client_job_id,
     )
 
 
 def _build_results_index(jobs: list[JobRecord]) -> dict[str, list[str]]:
     results_dir = get_results_dir()
     return {job.id: list_result_files(results_dir, job.id) for job in jobs}
+
+
+def _resolve_job_defaults(language: str | None) -> tuple[str | None, str]:
+    requested_engine = resolve_requested_engine_with_settings(base_dir=get_base_dir())
+    default_language = resolve_default_language_with_settings(base_dir=get_base_dir())
+    if requested_engine == PARAKEET_TDT_V3_ENGINE:
+        default_language = AUTO_LANGUAGE
+    batch_language = normalize_language(language, default=default_language)
+    return requested_engine, batch_language
+
+
+def _validate_parakeet_language(
+    requested_engine: str | None,
+    language: str,
+) -> bool:
+    return not (
+        requested_engine == PARAKEET_TDT_V3_ENGINE
+        and not is_parakeet_tdt_v3_language_supported(language)
+    )
+
+
+def _normalize_machine_metadata(value: str | None, *, field_name: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name} is required.",
+        )
+    if len(normalized) > 128 or not all(
+        char.isalnum() or char in {"_", "-", ".", ":"} for char in normalized
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field_name} contains unsupported characters.",
+        )
+    return normalized
 
 
 @router.post("/upload", response_class=HTMLResponse)
@@ -90,16 +130,9 @@ async def upload_files(
 ):
     uploads_dir = ensure_directory(get_uploads_dir())
     db_path = get_db_path()
-    requested_engine = resolve_requested_engine_with_settings(base_dir=get_base_dir())
-    default_language = resolve_default_language_with_settings(base_dir=get_base_dir())
-    if requested_engine == PARAKEET_TDT_V3_ENGINE:
-        default_language = AUTO_LANGUAGE
-    batch_language = normalize_language(language, default=default_language)
+    requested_engine, batch_language = _resolve_job_defaults(language)
 
-    if (
-        requested_engine == PARAKEET_TDT_V3_ENGINE
-        and not is_parakeet_tdt_v3_language_supported(batch_language)
-    ):
+    if not _validate_parakeet_language(requested_engine, batch_language):
         return RedirectResponse(
             url=f"/?tab=queue&queue_error=parakeet_language&queue_error_language={batch_language}",
             status_code=303,
@@ -131,6 +164,65 @@ async def upload_files(
         )
 
     return RedirectResponse(url="/?tab=queue", status_code=303)
+
+
+@router.post("/api/jobs")
+async def create_machine_job(
+    file: UploadFile = File(...),
+    language: str | None = Form(None),
+    client: str = Form(...),
+    client_job_id: str = Form(...),
+) -> dict[str, object]:
+    machine_client = _normalize_machine_metadata(client, field_name="client")
+    machine_client_job_id = _normalize_machine_metadata(
+        client_job_id,
+        field_name="client_job_id",
+    )
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="file filename is required.")
+
+    uploads_dir = ensure_directory(get_uploads_dir())
+    requested_engine, batch_language = _resolve_job_defaults(language)
+    if not _validate_parakeet_language(requested_engine, batch_language):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Parakeet TDT v3 supports automatic language detection only; "
+                f"got '{batch_language}'."
+            ),
+        )
+
+    safe_name = sanitize_filename(file.filename)
+    display_name = sanitize_display_path(file.filename, safe_name)
+    job_id = uuid4().hex
+    job_dir = uploads_dir / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    destination = job_dir / safe_name
+    try:
+        with destination.open("wb") as outfile:
+            shutil.copyfileobj(file.file, outfile)
+    finally:
+        await file.close()
+
+    insert_job(
+        get_db_path(),
+        _new_job_record(
+            job_id,
+            display_name,
+            destination,
+            requested_engine=requested_engine,
+            language=batch_language,
+            client=machine_client,
+            client_job_id=machine_client_job_id,
+        ),
+    )
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "filename": display_name,
+        "client": machine_client,
+        "client_job_id": machine_client_job_id,
+    }
 
 
 @router.get("/api/state")

@@ -42,6 +42,8 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "effective_implementation_id" in columns
         assert "source_path" in columns
         assert "source_relpath" in columns
+        assert "client" in columns
+        assert "client_job_id" in columns
         row = connection.execute(
             """
             SELECT
@@ -50,7 +52,9 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
                 effective_engine,
                 effective_implementation_id,
                 source_path,
-                source_relpath
+                source_relpath,
+                client,
+                client_job_id
             FROM jobs
             WHERE id = 'job-1'
             """
@@ -62,6 +66,8 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert row[3] is None
         assert row[4] is None
         assert row[5] is None
+        assert row[6] is None
+        assert row[7] is None
 
     jobs = list_jobs(db_path)
     assert len(jobs) == 1
@@ -69,6 +75,8 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
     assert jobs[0].requested_engine is None
     assert jobs[0].effective_engine is None
     assert jobs[0].effective_implementation_id is None
+    assert jobs[0].client is None
+    assert jobs[0].client_job_id is None
 
 
 def test_init_db_backfills_effective_implementation_id_from_legacy_backend(
@@ -184,6 +192,8 @@ def test_init_db_is_idempotent_on_current_schema(tmp_path: Path) -> None:
     assert "effective_implementation_id" in columns
     assert "source_path" in columns
     assert "source_relpath" in columns
+    assert "client" in columns
+    assert "client_job_id" in columns
 
 
 def test_recover_running_jobs_marks_failed(tmp_path: Path) -> None:

@@ -975,6 +975,63 @@ def test_upload_multiple_files_creates_jobs_and_files(tmp_path: Path) -> None:
         assert job_path.is_relative_to(uploads_dir)
         assert job.status == "queued"
         assert job.language == "auto"
+        assert job.client is None
+        assert job.client_job_id is None
+
+
+def test_machine_job_endpoint_creates_owned_job(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/jobs",
+            data={
+                "language": "auto",
+                "client": "moshonniki",
+                "client_job_id": "local-job-123",
+            },
+            files={"file": ("mosh-call.wav", b"one", "audio/wav")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_id"]
+    assert payload["status"] == "queued"
+    assert payload["filename"] == "mosh-call.wav"
+    assert payload["client"] == "moshonniki"
+    assert payload["client_job_id"] == "local-job-123"
+
+    jobs = list_jobs(Path(app.state.db_path))
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.id == payload["job_id"]
+    assert job.status == "queued"
+    assert job.client == "moshonniki"
+    assert job.client_job_id == "local-job-123"
+    assert Path(job.upload_path).is_file()
+
+    with TestClient(app) as client:
+        state_response = client.get("/api/state")
+
+    assert state_response.status_code == 200
+    queued = state_response.json()["queue"][0]
+    assert queued["id"] == payload["job_id"]
+    assert queued["client"] == "moshonniki"
+    assert queued["client_job_id"] == "local-job-123"
+
+
+def test_machine_job_endpoint_requires_ownership_metadata(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/jobs",
+            data={"client": "moshonniki"},
+            files={"file": ("mosh-call.wav", b"one", "audio/wav")},
+        )
+
+    assert response.status_code == 422
+    assert list_jobs(Path(app.state.db_path)) == []
 
 
 def test_upload_persists_requested_engine_from_settings(tmp_path: Path) -> None:
@@ -1246,6 +1303,49 @@ def test_delete_history_job_removes_results(tmp_path: Path) -> None:
     assert not results_dir.exists()
     assert not upload_path.exists()
     assert not uploads_dir.exists()
+
+
+def test_delete_history_job_only_removes_target_job(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+
+    for job_id, filename in (
+        ("machine-job", "machine.txt"),
+        ("personal-job", "personal.txt"),
+    ):
+        uploads_dir = Path(app.state.uploads_dir) / job_id
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        upload_path = uploads_dir / filename
+        upload_path.write_text("data", encoding="utf-8")
+
+        insert_job(
+            db_path,
+            JobRecord(
+                id=job_id,
+                filename=filename,
+                status="done",
+                created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                upload_path=str(upload_path),
+                language="auto",
+                completed_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                client="moshonniki" if job_id == "machine-job" else None,
+                client_job_id="local-job-123" if job_id == "machine-job" else None,
+            ),
+        )
+
+        results_dir = Path(app.state.results_dir) / job_id
+        results_dir.mkdir(parents=True, exist_ok=True)
+        (results_dir / filename).write_text("transcript", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.delete("/api/history/machine-job")
+
+    assert response.status_code == 200
+    remaining = list_jobs(db_path)
+    assert [job.id for job in remaining] == ["personal-job"]
+    assert (Path(app.state.results_dir) / "personal-job" / "personal.txt").is_file()
+    assert not (Path(app.state.results_dir) / "machine-job").exists()
 
 
 def test_delete_history_job_rejects_queue(tmp_path: Path) -> None:

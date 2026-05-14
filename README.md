@@ -19,6 +19,8 @@ https://github.com/JosefAlbers/whisper-turbo-mlx
   backend provides real timing data
 - `/live` route is a beta preview (may be unavailable depending on runtime)
 - Batch uploads with an explicit job language (`auto` or a concrete language)
+- Multipart `/api/jobs` intake for local automation clients that need to attach
+  stable `client` and `client_job_id` ownership metadata to queued jobs
 - SQLite job tracking in `data/jobs.db`
 - Local readiness metadata for Whisper and Parakeet model caches
 - Optional Telegram delivery of `.txt` results (best-effort)
@@ -120,6 +122,24 @@ creates/updates `.venv`, installs the appropriate dependency profile for the
 current machine, and starts the app on `127.0.0.1:8000`. System-wide installs
 are opt-in via `--bootstrap`. First-run model downloads can still take a while
 for local engines that are not already cached.
+
+### Automation job intake
+
+Local automation can enqueue one file at a time through the same sequential
+worker without using the browser form:
+
+```bash
+curl -F "file=@/path/to/audio.wav" \
+  -F "language=auto" \
+  -F "client=local-agent" \
+  -F "client_job_id=source-job-123" \
+  http://127.0.0.1:8000/api/jobs
+```
+
+The endpoint stores the upload locally, creates a queued job, and returns the
+generated `job_id` plus the submitted ownership fields. `client` and
+`client_job_id` are required, trimmed, limited to 128 characters, and accept
+letters, numbers, `_`, `-`, `.`, and `:`.
 
 ### Install via curl
 
