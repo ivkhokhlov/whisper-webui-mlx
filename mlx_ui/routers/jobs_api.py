@@ -155,6 +155,10 @@ def api_state() -> dict[str, object]:
 @router.get("/results/{job_id}/{filename}")
 def download_result(job_id: str, filename: str):
     file_path = safe_result_file_path(get_results_dir(), job_id, filename)
+    if file_path is None and "\x00" in filename:
+        file_path = safe_result_file_path(
+            get_results_dir(), job_id, filename.replace("\x00", " ")
+        )
     if file_path is None:
         raise HTTPException(status_code=404)
 

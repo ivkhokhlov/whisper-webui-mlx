@@ -8,7 +8,12 @@ logger = logging.getLogger(__name__)
 
 
 def is_safe_path_component(value: str) -> bool:
-    return value not in {"", ".", ".."} and Path(value).name == value
+    if value in {"", ".", ".."} or "\x00" in value:
+        return False
+    try:
+        return Path(value).name == value
+    except (OSError, ValueError):
+        return False
 
 
 def sanitize_filename(filename: str) -> str:
@@ -59,9 +64,12 @@ def safe_result_file_path(
         return None
 
     job_dir = results_dir / job_id
-    results_dir_resolved = results_dir.resolve()
-    job_dir_resolved = job_dir.resolve()
-    file_path = (job_dir / filename).resolve()
+    try:
+        results_dir_resolved = results_dir.resolve()
+        job_dir_resolved = job_dir.resolve()
+        file_path = (job_dir / filename).resolve()
+    except (OSError, ValueError):
+        return None
 
     if not job_dir_resolved.is_relative_to(results_dir_resolved):
         return None
