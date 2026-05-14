@@ -143,9 +143,9 @@ default developer setup does not depend on a system/Homebrew Python install.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.
-- History result links now URL-encode job IDs and filenames, so result files
-  with spaces or other path-sensitive characters download through the same
-  queue/history UI instead of requiring manual filesystem access.
+- History result links are encoded as safe URL path segments, so files with
+  spaces or other path-sensitive characters can still be opened and downloaded
+  reliably from server-rendered History pages and stale browser tabs.
 - Details-on-demand panel is the canonical home for secondary history context:
   preview snippets, full timestamps, engine/language/backend metadata, output
   lists, and failure logs.
