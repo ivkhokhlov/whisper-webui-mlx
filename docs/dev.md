@@ -16,6 +16,7 @@ Notes:
 - Use `--bootstrap` (or `MLX_UI_ALLOW_SYSTEM_INSTALL=1`) to allow installing missing system prerequisites via Homebrew and prompt for Xcode Command Line Tools.
 - Use `--python /path/to/python3.12` if you want to force a specific Python interpreter (must be Python 3.12.3+ and <3.13).
 - First run needs network access to install `whisper-turbo-mlx` and download the default model.
+- The app starts on `127.0.0.1:32123` by default; set `PORT=45678` to override.
 - Set `SKIP_MODEL_DOWNLOAD=1` to skip prefetching weights (not recommended).
 - Set `WTM_QUICK=1` to enable `wtm --quick=True` (default: `false`).
 
@@ -25,6 +26,7 @@ make dev-deps
 make test
 make run
 ```
+Use `PORT=45678 make run` if you need a different local port.
 
 ## Automation job intake
 Use `POST /api/jobs` for machine-created queue items. The endpoint accepts one
@@ -38,7 +40,7 @@ curl -F "file=@sample.wav" \
   -F "language=auto" \
   -F "client=local-agent" \
   -F "client_job_id=batch-001" \
-  http://127.0.0.1:8000/api/jobs
+  http://127.0.0.1:32123/api/jobs
 ```
 
 ## Docker (CPU backend)
@@ -59,7 +61,7 @@ of `whisper-turbo-mlx`.
 Fixes:
 - Install `whisper-turbo-mlx` into the local venv:
   `./.venv/bin/pip install --upgrade "whisper-turbo-mlx @ https://github.com/JosefAlbers/whisper-turbo-mlx/archive/8a389f03ea786e8094a7d02e6dcc38f5178965dc.zip"`
-- Run the app via `make run` (or `./.venv/bin/python -m uvicorn ...`) so the venv `wtm` is used.
+- Run the app via `make run` (or `./.venv/bin/python -m uvicorn ... --port 32123`) so the venv `wtm` is used.
 - Or set `WTM_PATH` to the correct binary:
   `export WTM_PATH="$(pwd)/.venv/bin/wtm"`
 

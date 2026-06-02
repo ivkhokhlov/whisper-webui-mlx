@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -57,6 +59,32 @@ def test_parakeet_nemo_cuda_backend_requires_experimental_flag(monkeypatch) -> N
             engine_registry.PARAKEET_TDT_V3_ENGINE,
             implementation_id=engine_registry.PARAKEET_NEMO_CUDA_BACKEND,
         )
+
+
+def test_parakeet_nemo_cuda_availability_handles_nemo_probe_errors(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(engine_registry.PARAKEET_NEMO_CUDA_EXPERIMENTAL_ENV, "1")
+    monkeypatch.setattr(engine_registry.sys, "platform", "linux")
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: True)),
+    )
+
+    def fake_find_spec(name):  # type: ignore[no-untyped-def]
+        if name == "nemo.collections.asr":
+            raise ValueError("duplicate registration")
+        return object()
+
+    monkeypatch.setattr(engine_registry.importlib.util, "find_spec", fake_find_spec)
+
+    reason = engine_registry.parakeet_nemo_cuda_availability_reason()
+
+    assert reason == (
+        "NVIDIA NeMo ASR could not be inspected: "
+        "ValueError: duplicate registration"
+    )
 
 
 def test_engine_registry_exposes_visible_settings_engines(monkeypatch) -> None:

@@ -21,8 +21,13 @@ def parakeet_nemo_cuda_live_runtime_unavailability_reason(
     if not sys.platform.startswith("linux"):
         return "Parakeet NeMo/CUDA live backend requires Linux with an NVIDIA CUDA GPU."
 
-    if importlib.util.find_spec("torch") is None:
-        return "PyTorch is not installed."
+    reason = _find_spec_unavailability_reason(
+        "torch",
+        missing_reason="PyTorch is not installed.",
+        inspect_reason="PyTorch could not be inspected.",
+    )
+    if reason is not None:
+        return reason
     try:
         import torch  # type: ignore[import-not-found]
     except Exception:
@@ -30,18 +35,51 @@ def parakeet_nemo_cuda_live_runtime_unavailability_reason(
     if not torch.cuda.is_available():
         return "CUDA is not available in the current PyTorch environment."
 
-    if importlib.util.find_spec("nemo.collections.asr") is None:
-        return "NVIDIA NeMo ASR is not installed."
-    if importlib.util.find_spec("omegaconf") is None:
-        return "OmegaConf is not installed."
-    if importlib.util.find_spec("nemo.collections.asr.parts.utils.rnnt_utils") is None:
-        return "NVIDIA NeMo streaming utilities are not installed."
-    if (
-        importlib.util.find_spec("nemo.collections.asr.parts.utils.streaming_utils")
-        is None
+    for module_name, missing_reason, inspect_reason in (
+        (
+            "nemo.collections.asr",
+            "NVIDIA NeMo ASR is not installed.",
+            "NVIDIA NeMo ASR could not be inspected.",
+        ),
+        (
+            "omegaconf",
+            "OmegaConf is not installed.",
+            "OmegaConf could not be inspected.",
+        ),
+        (
+            "nemo.collections.asr.parts.utils.rnnt_utils",
+            "NVIDIA NeMo streaming utilities are not installed.",
+            "NVIDIA NeMo streaming utilities could not be inspected.",
+        ),
+        (
+            "nemo.collections.asr.parts.utils.streaming_utils",
+            "NVIDIA NeMo streaming utilities are not installed.",
+            "NVIDIA NeMo streaming utilities could not be inspected.",
+        ),
     ):
-        return "NVIDIA NeMo streaming utilities are not installed."
+        reason = _find_spec_unavailability_reason(
+            module_name,
+            missing_reason=missing_reason,
+            inspect_reason=inspect_reason,
+        )
+        if reason is not None:
+            return reason
 
+    return None
+
+
+def _find_spec_unavailability_reason(
+    module_name: str,
+    *,
+    missing_reason: str,
+    inspect_reason: str,
+) -> str | None:
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except Exception as exc:
+        return f"{inspect_reason.rstrip('.')}: {type(exc).__name__}: {exc}"
+    if spec is None:
+        return missing_reason
     return None
 
 

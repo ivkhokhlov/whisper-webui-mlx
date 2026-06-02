@@ -27,6 +27,7 @@ def test_setup_and_run_help_describes_engine_matrix() -> None:
     assert "--with-whisper-cpu" in output
     assert "--with-parakeet-mlx" in output
     assert "WHISPER_WEBUI_WITH_PARAKEET_MLX=1" in output
+    assert "PORT=32123" in output
     assert "Parakeet MLX is a local Apple Silicon engine" in output
     assert "Legacy Parakeet NeMo/CUDA" in output
 

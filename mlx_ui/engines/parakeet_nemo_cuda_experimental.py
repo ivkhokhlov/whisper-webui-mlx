@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import importlib
 import logging
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
+from typing import Any
 import wave
 
 from mlx_ui.db import JobRecord
@@ -32,25 +35,71 @@ _PARAKEET_FRAME_STRIDE_MULTIPLIER = 8.0
 PARAKEET_FFMPEG_PATH_ENV = "PARAKEET_FFMPEG_PATH"
 _PARAKEET_SAMPLE_RATE = 16_000
 _PARAKEET_SAMPLE_WIDTH_BYTES = 2
+_NEMO_RUNTIME_LOCK = threading.RLock()
+_NEMO_RUNTIME: tuple[Any, Any] | None = None
 
 
 def load_parakeet_runtime():
-    reason = parakeet_availability_reason()
-    if reason:
-        raise RuntimeError(f"Parakeet backend cannot run: {reason}")
-    try:
-        import nemo.collections.asr as nemo_asr  # type: ignore[import-not-found]
-    except Exception as exc:
-        raise RuntimeError(
-            "Parakeet backend selected but NVIDIA NeMo ASR is not installed."
-        ) from exc
-    try:
-        from omegaconf import open_dict  # type: ignore[import-not-found]
-    except Exception as exc:
-        raise RuntimeError(
-            "Parakeet backend selected but OmegaConf is not installed."
-        ) from exc
-    return nemo_asr, open_dict
+    global _NEMO_RUNTIME
+
+    with _NEMO_RUNTIME_LOCK:
+        if _NEMO_RUNTIME is not None:
+            return _NEMO_RUNTIME
+
+        _install_fiddle_duplicate_registration_guard()
+        reason = parakeet_availability_reason()
+        if reason:
+            raise RuntimeError(f"Parakeet backend cannot run: {reason}")
+        try:
+            import nemo.collections.asr as nemo_asr  # type: ignore[import-not-found]
+        except Exception as exc:
+            raise RuntimeError(
+                "Parakeet backend selected but NVIDIA NeMo ASR could not be imported: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        try:
+            from omegaconf import open_dict  # type: ignore[import-not-found]
+        except Exception as exc:
+            raise RuntimeError(
+                "Parakeet backend selected but OmegaConf is not installed."
+            ) from exc
+        _NEMO_RUNTIME = (nemo_asr, open_dict)
+        return _NEMO_RUNTIME
+
+
+def _install_fiddle_duplicate_registration_guard() -> None:
+    """Allow NeMo's repeated Fiddle registrations inside a long-lived UI process."""
+    for module_name in (
+        "fiddle._src.daglish",
+        "fiddle._src.experimental.serialization",
+    ):
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            continue
+        register = getattr(module, "register_node_traverser", None)
+        if register is None or getattr(register, "_mlx_ui_duplicate_guard", False):
+            continue
+
+        def guarded_register_node_traverser(
+            *args: Any,
+            __register=register,
+            **kwargs: Any,
+        ):
+            try:
+                return __register(*args, **kwargs)
+            except ValueError as exc:
+                if "already been registered" in str(exc):
+                    node_type = args[0] if args else kwargs.get("node_type")
+                    logger.warning(
+                        "Ignoring duplicate Fiddle node traverser registration for %s",
+                        node_type,
+                    )
+                    return None
+                raise
+
+        setattr(guarded_register_node_traverser, "_mlx_ui_duplicate_guard", True)
+        setattr(module, "register_node_traverser", guarded_register_node_traverser)
 
 
 @dataclass(frozen=True)

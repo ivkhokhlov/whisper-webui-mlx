@@ -276,7 +276,14 @@ def parakeet_nemo_cuda_availability_reason() -> str | None:
         return "PyTorch could not be imported."
     if not torch.cuda.is_available():
         return "CUDA is not available in the current PyTorch environment."
-    if importlib.util.find_spec("nemo.collections.asr") is None:
+    try:
+        nemo_asr_spec = importlib.util.find_spec("nemo.collections.asr")
+    except Exception as exc:
+        return (
+            "NVIDIA NeMo ASR could not be inspected: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    if nemo_asr_spec is None:
         return "NVIDIA NeMo ASR is not installed."
     return None
 

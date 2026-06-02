@@ -12,7 +12,7 @@
 - `./run.sh` — bootstrap and run the app (installs deps, downloads model if needed).
 - `./scripts/setup_and_run.sh` — same bootstrap flow, useful for direct invocation.
 - `make dev-deps` — create `.venv` and install runtime + dev dependencies.
-- `make run` — start Uvicorn at `127.0.0.1:8000` using the local venv.
+- `make run` — start Uvicorn at `127.0.0.1:32123` using the local venv; override with `PORT=45678 make run`.
 - `make test` — run the pytest suite.
 - `make lint` — Ruff lint checks.
 - `make fmt` — Ruff auto-formatting.
@@ -33,6 +33,6 @@
 - PRs should include a brief summary, testing notes, and screenshots for UI changes. Link related issues and call out any data or config changes.
 
 ## Configuration & Runtime Data
-- Environment variables: `WTM_PATH`, `WTM_QUICK`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `LOG_LEVEL`, `LOG_DIR`, `DISABLE_UPDATE_CHECK`, `UPDATE_CHECK_URL`, `SKIP_MODEL_DOWNLOAD`.
+- Environment variables: `PORT`, `WTM_PATH`, `WTM_QUICK`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `LOG_LEVEL`, `LOG_DIR`, `DISABLE_UPDATE_CHECK`, `UPDATE_CHECK_URL`, `SKIP_MODEL_DOWNLOAD`.
 - Runtime paths: `data/uploads/`, `data/results/`, `data/jobs.db`, `data/logs/`.
 - The app is local-only and should bind to `127.0.0.1`.

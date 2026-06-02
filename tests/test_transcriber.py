@@ -517,6 +517,32 @@ def test_parakeet_nemo_cuda_transcriber_raises_clear_error_when_runtime_missing(
         transcriber.transcribe(job, tmp_path / "results")
 
 
+def test_fiddle_duplicate_registration_guard_ignores_duplicate(monkeypatch) -> None:
+    calls = []
+
+    def register_node_traverser(*args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((args, kwargs))
+        if len(calls) > 1:
+            raise ValueError(
+                "A node traverser for <class 'Example'> has already been registered."
+            )
+
+    fake_module = SimpleNamespace(register_node_traverser=register_node_traverser)
+
+    monkeypatch.setattr(
+        parakeet_nemo_cuda.importlib,
+        "import_module",
+        lambda _name: fake_module,
+    )
+
+    parakeet_nemo_cuda._install_fiddle_duplicate_registration_guard()
+
+    fake_module.register_node_traverser(object, None, None, None)
+    fake_module.register_node_traverser(object, None, None, None)
+
+    assert len(calls) == 2
+
+
 def test_parakeet_mlx_transcriber_uses_python_api_and_writes_outputs(
     tmp_path: Path, monkeypatch
 ) -> None:

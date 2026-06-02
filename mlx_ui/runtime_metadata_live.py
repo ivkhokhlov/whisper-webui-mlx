@@ -53,9 +53,13 @@ def build_live_transcription_snapshot(
         effective.get("parakeet_decoding_mode")
         or DEFAULT_SETTINGS["parakeet_decoding_mode"]
     )
-    backend = resolve_parakeet_live_backend(env=env)
+    backend = None
+    if flag_enabled:
+        backend = resolve_parakeet_live_backend(env=env)
     supports_live = (
-        backend.state in {"supported", "experimental"} and backend.reason is None
+        backend is not None
+        and backend.state in {"supported", "experimental"}
+        and backend.reason is None
     )
 
     supported = supports_live and ffmpeg_available and decoding_mode == "greedy"
@@ -73,7 +77,11 @@ def build_live_transcription_snapshot(
             "Switch Parakeet decoding mode back to greedy in Settings."
         )
     elif not supports_live:
-        reason = backend.reason or provider_unavailable_detail(provider)
+        reason = (
+            backend.reason
+            if backend is not None and backend.reason
+            else provider_unavailable_detail(provider)
+        )
     return {
         "enabled": flag_enabled,
         "supported": supported,

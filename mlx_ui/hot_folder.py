@@ -52,6 +52,7 @@ _SKIP_EXTENSIONS = {
     ".download",
     ".part",
     ".partial",
+    ".temp",
     ".tmp",
 }
 
@@ -195,9 +196,9 @@ class HotFolderWatcher:
             return False
         if name.startswith("."):
             return False
-        suffix = path.suffix.lower()
-        if suffix in _SKIP_EXTENSIONS:
+        if any(suffix.lower() in _SKIP_EXTENSIONS for suffix in path.suffixes):
             return False
+        suffix = path.suffix.lower()
         if suffix in _ALLOWED_EXTENSIONS:
             return True
         mime, _ = mimetypes.guess_type(name)
@@ -414,6 +415,44 @@ def restore_failed_hot_folder_upload(job: JobRecord) -> Path | None:
     return resolved_target
 
 
+def quarantine_failed_hot_folder_upload(
+    job: JobRecord,
+    *,
+    output_dir: Path | None,
+) -> Path | None:
+    if not job.source_path:
+        return None
+    upload_path = Path(job.upload_path)
+    if not upload_path.is_file():
+        return None
+    if output_dir is None:
+        return None
+
+    relpath = _safe_hot_folder_relpath(job)
+    target = output_dir / ".failed" / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    resolved_target = _pick_unique_path(target, job.id)
+    try:
+        _move_file(upload_path, resolved_target)
+    except Exception:
+        logger.exception("Failed to quarantine hot-folder input for job %s", job.id)
+        return None
+    try:
+        upload_path.parent.rmdir()
+    except OSError:
+        pass
+    except Exception:
+        logger.exception(
+            "Failed to remove hot-folder upload directory for job %s", job.id
+        )
+    logger.info(
+        "Hot-folder input for failed job %s moved to %s",
+        job.id,
+        resolved_target,
+    )
+    return resolved_target
+
+
 def export_hot_folder_transcript(
     *,
     job: JobRecord,
@@ -444,6 +483,14 @@ def export_hot_folder_transcript(
         logger.exception("Failed to export hot-folder transcript for job %s", job.id)
         return None
     return resolved_target
+
+
+def _safe_hot_folder_relpath(job: JobRecord) -> Path:
+    relpath = (job.source_relpath or "").strip().replace("\\", "/")
+    parts = [part for part in relpath.split("/") if part not in {"", ".", ".."}]
+    if not parts:
+        parts = [Path(job.filename).name or f"{job.id}.media"]
+    return Path(*parts)
 
 
 def _pick_unique_path(path: Path, job_id: str) -> Path:

@@ -5,6 +5,10 @@ selection, and a truthful multi-engine runtime model. The app runs on
 `127.0.0.1`, stores its queue/history locally, and can process jobs with local
 or cloud engines depending on what you install and select.
 
+## Demo
+
+![Short mlx-ui demo](docs/demo.gif)
+
 ## Origin / inspiration
 This repo’s core idea and MLX backend flow are based on JosefAlbers’s
 `whisper-turbo-mlx` project:
@@ -13,16 +17,22 @@ https://github.com/JosefAlbers/whisper-turbo-mlx
 ```
 
 ## Features
-- Localhost-only FastAPI + Jinja2 UI for queue, history, settings, and preview
-- Sequential worker with per-job `requested_engine` and `effective_engine`
+- Localhost-only FastAPI + Jinja2 UI for queue, history, settings, and beta
+  live preview
+- Sequential worker with per-job `requested_engine`, `effective_engine`,
+  language, source metadata, and clear lifecycle timestamps
+- Browser batch uploads plus icon controls for stopping active jobs, removing
+  queued jobs, deleting history items, and clearing stored results
+- Optional hot-folder workflow that watches an input folder, queues new media,
+  writes transcripts to an output folder, and quarantines failed inputs
 - Shared transcript writers for `.txt`, `.json`, `.srt`, and `.vtt` when the
   backend provides real timing data
-- `/live` route is a beta preview (may be unavailable depending on runtime)
 - Batch uploads with an explicit job language (`auto` or a concrete language)
 - Multipart `/api/jobs` intake for local automation clients that need to attach
   stable `client` and `client_job_id` ownership metadata to queued jobs
 - SQLite job tracking in `data/jobs.db`
-- Local readiness metadata for Whisper and Parakeet model caches
+- Local readiness metadata for Whisper and Parakeet model caches plus runtime
+  diagnostics in Settings -> About / Advanced
 - Optional Telegram delivery of `.txt` results (best-effort)
 - Startup update check (best-effort, can be disabled)
 
@@ -34,12 +44,16 @@ https://github.com/JosefAlbers/whisper-turbo-mlx
 | --- | --- | --- | --- |
 | `whisper_mlx` | Local | macOS Apple Silicon | Best-supported local path via `whisper-turbo-mlx` / Metal |
 | `whisper_cpu` | Local | macOS Intel, Docker, fallback on Apple Silicon | CPU-only `openai-whisper` path |
-| `parakeet_tdt_v3` | Local | macOS Apple Silicon (MLX) | Parakeet TDT v3 via the optional `parakeet-mlx` dependency (bundled in the `macos-arm64` packaged artifact; dev bootstrap: `--with-parakeet-mlx`) |
+| `parakeet_tdt_v3` | Local | macOS Apple Silicon (MLX); experimental Linux CUDA via Spark profile | Parakeet TDT v3 via optional `parakeet-mlx` on Apple Silicon or gated NeMo/CUDA in the Spark container |
 | `cohere` | Cloud | Any machine with the optional SDK and API key | Sends audio to Cohere; not local/offline |
 
 Implementation notes:
-- Apple Silicon Parakeet uses the MLX implementation (`parakeet_mlx`).
-- A legacy NeMo/CUDA implementation (`parakeet_nemo_cuda`) is retained for internal/experimental Linux CUDA flows only; it is disabled by default and not part of macOS releases.
+- Apple Silicon Parakeet uses the MLX implementation (`parakeet_mlx`). The
+  `macos-arm64` packaged artifact bundles this dependency; repo bootstrap can
+  install it with `--with-parakeet-mlx`.
+- The NeMo/CUDA implementation (`parakeet_nemo_cuda`) is retained for
+  internal/experimental Linux CUDA flows only. It is disabled by default, gated
+  by `PARAKEET_NEMO_CUDA_EXPERIMENTAL=1`, and not part of macOS releases.
 
 ### macOS release targets
 
@@ -77,7 +91,12 @@ an explicit supported language.
 ```bash
 ./run.sh
 ```
-Then open http://127.0.0.1:8000.
+Then open http://127.0.0.1:32123.
+
+To use another local port:
+```bash
+PORT=45678 ./run.sh
+```
 
 If you want the script to install missing prerequisites via Homebrew (and prompt
 for Xcode Command Line Tools), run:
@@ -119,7 +138,7 @@ You can also call the bootstrap script directly:
 
 The launcher downloads a portable Python runtime into `./.runtime/python`,
 creates/updates `.venv`, installs the appropriate dependency profile for the
-current machine, and starts the app on `127.0.0.1:8000`. System-wide installs
+current machine, and starts the app on `127.0.0.1:32123` by default. System-wide installs
 are opt-in via `--bootstrap`. First-run model downloads can still take a while
 for local engines that are not already cached.
 
@@ -133,13 +152,30 @@ curl -F "file=@/path/to/audio.wav" \
   -F "language=auto" \
   -F "client=local-agent" \
   -F "client_job_id=source-job-123" \
-  http://127.0.0.1:8000/api/jobs
+  http://127.0.0.1:32123/api/jobs
 ```
 
 The endpoint stores the upload locally, creates a queued job, and returns the
 generated `job_id` plus the submitted ownership fields. `client` and
 `client_job_id` are required, trimmed, limited to 128 characters, and accept
 letters, numbers, `_`, `-`, `.`, and `:`.
+
+### Hot folder intake
+
+Repo/dev mode can watch a local input folder and enqueue new audio/video files
+without using the browser. When the repo contains `input/` and `output/`, the
+effective defaults are enabled automatically:
+
+```text
+input/  -> queued media
+output/ -> exported transcripts
+```
+
+The watcher mirrors nested input paths into `output/`, skips temporary download
+suffixes such as `.tmp`, `.part`, and `.temp`, and moves failed inputs into
+`output/.failed/` so bad files do not loop forever. Configure it in Settings or
+override with `HOT_FOLDER_ENABLED`, `HOT_FOLDER_INPUT_DIR`, and
+`HOT_FOLDER_OUTPUT_DIR`.
 
 ### Install via curl
 
@@ -229,6 +265,11 @@ make dev-deps
 make run
 ```
 
+To use a different local port in the dev loop:
+```bash
+PORT=45678 make run
+```
+
 Other useful commands:
 ```bash
 make test
@@ -237,6 +278,7 @@ make fmt
 ```
 
 ### Configuration
+- `PORT` - local dev server port for `./run.sh` and `make run` (default: `32123`)
 - `WTM_PATH` - path to the `wtm` binary if a different one is on PATH
 - `WTM_QUICK` - set to `1`/`true` to enable quick mode (default: `false`)
 - `TRANSCRIBER_BACKEND` - backend/env override (`wtm`, `whisper`, `cohere`,
@@ -247,6 +289,9 @@ make fmt
 - `WHISPER_CACHE_DIR` - override Whisper model cache directory
 - `COHERE_API_KEY` - optional Cohere API key
 - `COHERE_MODEL` - Cohere transcription model id
+- `HOT_FOLDER_ENABLED` - override the saved hot-folder enabled state
+- `HOT_FOLDER_INPUT_DIR` - override the watched input directory
+- `HOT_FOLDER_OUTPUT_DIR` - override the transcript output directory
 - `TELEGRAM_BOT_TOKEN` - optional, for Telegram delivery
 - `TELEGRAM_CHAT_ID` - optional, for Telegram delivery
 - `LOG_LEVEL` - logging verbosity (default: `INFO`)

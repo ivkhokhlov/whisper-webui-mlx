@@ -17,8 +17,8 @@ from mlx_ui.db import (
 from mlx_ui.engine_registry import create_transcriber
 from mlx_ui.hot_folder import (
     export_hot_folder_transcript,
+    quarantine_failed_hot_folder_upload,
     resolve_hot_folder_output_dir,
-    restore_failed_hot_folder_upload,
 )
 from mlx_ui.settings import (
     ResolvedTranscriberSettings,
@@ -175,7 +175,7 @@ class Worker:
                 completed_at=_now_utc(),
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
-            restore_failed_hot_folder_upload(job)
+            self._quarantine_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         started_at = _now_utc()
@@ -195,7 +195,7 @@ class Worker:
                 job.id,
             )
             self._clear_current_job(job.id)
-            restore_failed_hot_folder_upload(job)
+            self._quarantine_failed_hot_folder_upload(job)
             cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
         try:
@@ -209,6 +209,7 @@ class Worker:
                         job,
                         uploads_dir=self.uploads_dir,
                         results_dir=self.results_dir,
+                        hot_folder_output_dir=self._hot_folder_output_dir(),
                     )
                     return True
                 logger.exception("Worker failed to transcribe job %s", job.id)
@@ -218,7 +219,7 @@ class Worker:
                     completed_at=_now_utc(),
                     error_message=_truncate_error(str(exc) or exc.__class__.__name__),
                 )
-                restore_failed_hot_folder_upload(job)
+                self._quarantine_failed_hot_folder_upload(job)
                 cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
                 return True
             if self._is_cancel_requested(job.id):
@@ -228,6 +229,7 @@ class Worker:
                     job,
                     uploads_dir=self.uploads_dir,
                     results_dir=self.results_dir,
+                    hot_folder_output_dir=self._hot_folder_output_dir(),
                 )
                 return True
             try:
@@ -243,6 +245,7 @@ class Worker:
                     job,
                     uploads_dir=self.uploads_dir,
                     results_dir=self.results_dir,
+                    hot_folder_output_dir=self._hot_folder_output_dir(),
                 )
                 return True
             if job.source_path:
@@ -263,6 +266,7 @@ class Worker:
                     job,
                     uploads_dir=self.uploads_dir,
                     results_dir=self.results_dir,
+                    hot_folder_output_dir=self._hot_folder_output_dir(),
                 )
                 return True
             mark_job_done(
@@ -292,6 +296,18 @@ class Worker:
             self._current_job_started_at = None
             self._current_transcriber = None
             self._cancel_requested = False
+
+    def _hot_folder_output_dir(self) -> Path | None:
+        return resolve_hot_folder_output_dir(
+            base_dir=self.base_dir,
+            env=self.env,
+        )
+
+    def _quarantine_failed_hot_folder_upload(self, job) -> Path | None:
+        return quarantine_failed_hot_folder_upload(
+            job,
+            output_dir=self._hot_folder_output_dir(),
+        )
 
     def _is_cancel_requested(self, job_id: str) -> bool:
         with self._state_lock:
@@ -367,11 +383,12 @@ def cleanup_cancelled_job_artifacts(
     *,
     uploads_dir: Path,
     results_dir: Path,
+    hot_folder_output_dir: Path | None = None,
 ) -> None:
     result_state = remove_results_dir(results_dir, job.id)
     if result_state == "failed":
         logger.warning("Failed to remove results for cancelled job %s", job.id)
-    restore_failed_hot_folder_upload(job)
+    quarantine_failed_hot_folder_upload(job, output_dir=hot_folder_output_dir)
     cleanup_upload_path(job.upload_path, uploads_dir, job.id)
 
 

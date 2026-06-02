@@ -13,6 +13,7 @@ WITH_PARAKEET_MLX="${WHISPER_WEBUI_WITH_PARAKEET_MLX:-0}"
 ALLOW_SYSTEM_INSTALL="${MLX_UI_ALLOW_SYSTEM_INSTALL:-0}"
 PYTHON_BIN_OVERRIDE="${MLX_UI_PYTHON:-}"
 REINSTALL_PYTHON="${MLX_UI_REINSTALL_PYTHON:-0}"
+APP_PORT="${PORT:-32123}"
 RUNTIME_DIR="${ROOT_DIR}/.runtime"
 EMBEDDED_PYTHON_DIR="${RUNTIME_DIR}/python"
 EMBEDDED_PYTHON_BIN="${EMBEDDED_PYTHON_DIR}/bin/python3.12"
@@ -76,6 +77,7 @@ Environment variables:
   MLX_UI_ALLOW_SYSTEM_INSTALL=1
   MLX_UI_PYTHON=/path/to/python
   MLX_UI_REINSTALL_PYTHON=1
+  PORT=32123
 
 Notes:
   - This bootstrap script supports macOS only.
@@ -114,6 +116,19 @@ normalize_bool() {
       fail "Expected a boolean value, got '$value'."
       ;;
   esac
+}
+
+validate_port() {
+  local value="$1"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    fail "PORT must be a number between 1 and 65535, got '$value'."
+  fi
+
+  local value_num
+  value_num=$((10#$value))
+  if [[ "$value_num" -lt 1 || "$value_num" -gt 65535 ]]; then
+    fail "PORT must be between 1 and 65535, got '$value'."
+  fi
 }
 
 parse_args() {
@@ -554,7 +569,7 @@ prepare_data_dirs() {
 }
 
 wait_for_server() {
-  local url="http://127.0.0.1:8000"
+  local url="http://127.0.0.1:${APP_PORT}"
   local attempts=40
   local delay=0.5
 
@@ -568,7 +583,7 @@ wait_for_server() {
 }
 
 open_browser() {
-  local url="http://127.0.0.1:8000"
+  local url="http://127.0.0.1:${APP_PORT}"
   if command -v open >/dev/null 2>&1; then
     open "$url" >/dev/null 2>&1 || warn "Failed to open browser."
   else
@@ -577,17 +592,18 @@ open_browser() {
 }
 
 start_server() {
-  log "Starting server (http://127.0.0.1:8000)..."
-  make run &
+  local url="http://127.0.0.1:${APP_PORT}"
+  log "Starting server (${url})..."
+  make run PORT="$APP_PORT" &
   server_pid=$!
 
   if wait_for_server; then
     open_browser
   else
-    warn "Server did not respond yet; open http://127.0.0.1:8000 manually."
+    warn "Server did not respond yet; open ${url} manually."
   fi
 
-  log "Ready! URL: http://127.0.0.1:8000"
+  log "Ready! URL: ${url}"
   log "Results: ${DATA_ROOT_DIR}/data/results"
   log "Logs: ${LOG_DIR:-${DATA_ROOT_DIR}/data/logs}"
   log "Stop the server with Ctrl+C."
@@ -601,6 +617,7 @@ WITH_WHISPER_CPU="$(normalize_bool "$WITH_WHISPER_CPU")"
 WITH_PARAKEET_MLX="$(normalize_bool "$WITH_PARAKEET_MLX")"
 ALLOW_SYSTEM_INSTALL="$(normalize_bool "$ALLOW_SYSTEM_INSTALL")"
 REINSTALL_PYTHON="$(normalize_bool "$REINSTALL_PYTHON")"
+validate_port "$APP_PORT"
 
 step "Checking platform compatibility"
 require_macos

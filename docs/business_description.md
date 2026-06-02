@@ -30,8 +30,9 @@ artifacts as untracked local state, keeping operational traces out of the
 shared project history while preserving the same user-facing data flow.
 Repo bootstrap is also designed to avoid accidental "Python drift" between
 machines: `./run.sh` downloads a portable CPython 3.12 runtime into
-`./.runtime/python` (gitignored) and uses it to create/manage `./.venv`, so the
-default developer setup does not depend on a system/Homebrew Python install.
+`./.runtime/python` (gitignored), uses it to create/manage `./.venv`, and starts
+the developer server on `127.0.0.1:32123` by default, so the default setup does
+not depend on a system/Homebrew Python install or the old port-8000 convention.
 
 ## Problem it solves
 - Cloud transcription is slow to upload, expensive at scale, and risky for
@@ -86,9 +87,11 @@ default developer setup does not depend on a system/Homebrew Python install.
   visibility through `/api/state`.
 - Optional “hot folder” ingestion: watch an input folder, move detected
   audio/video files into the queue for processing, and export `.txt`
-  transcripts into a configured output folder (mirrors subfolders; restores the
-  input file on failed jobs). In repo/dev mode, hot folder defaults to
-  `./input` → `./output` and is enabled automatically.
+  transcripts into a configured output folder. The workflow mirrors subfolders,
+  skips temporary multi-suffix downloads, and quarantines failed inputs under
+  the output folder's `.failed/` directory so bad files do not loop forever. In
+  repo/dev mode, hot folder defaults to `./input` → `./output` and is enabled
+  automatically when both folders exist.
 - Batch-level language selector plus a persisted default language setting.
 - Requested/effective engine tracking per job, exposed in the queue/history
   lists and preview metadata.

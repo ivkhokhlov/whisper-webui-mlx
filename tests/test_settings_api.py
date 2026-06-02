@@ -502,6 +502,32 @@ def test_live_snapshot_reports_flag_and_environment_requirements(
     )
 
 
+def test_live_snapshot_does_not_probe_backend_when_flag_is_off(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _configure_app(tmp_path)
+    monkeypatch.delenv(PARAKEET_LIVE_BETA_ENV, raising=False)
+    monkeypatch.setenv("PARAKEET_NEMO_CUDA_EXPERIMENTAL", "1")
+    monkeypatch.setattr(
+        "mlx_ui.runtime_metadata.shutil.which",
+        lambda name: "/usr/bin/ffmpeg" if name == "ffmpeg" else None,
+    )
+
+    def unexpected_probe(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("live backend probe should not run when flag is off")
+
+    monkeypatch.setattr(
+        "mlx_ui.runtime_metadata_live.resolve_parakeet_live_backend",
+        unexpected_probe,
+    )
+
+    disabled = build_live_transcription_snapshot(base_dir=tmp_path)
+
+    assert disabled["enabled"] is False
+    assert disabled["supported"] is False
+    assert PARAKEET_LIVE_BETA_ENV in str(disabled["reason"])
+
+
 def test_downloaded_models_only_lists_whisper_models(
     tmp_path: Path, monkeypatch
 ) -> None:

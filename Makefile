@@ -3,6 +3,7 @@ PYTHON ?= $(VENV)/bin/python
 PIP ?= $(VENV)/bin/pip
 PYTEST ?= $(VENV)/bin/pytest
 RUFF ?= $(VENV)/bin/ruff
+PORT ?= 32123
 
 .PHONY: venv deps dev-deps check-venv test lint fmt run \
 	macos-app macos-app-arm64 macos-app-intel \
@@ -44,7 +45,7 @@ fmt: dev-deps
 	$(RUFF) format .
 
 run: check-venv
-	$(PYTHON) -m uvicorn mlx_ui.app:app --host 127.0.0.1 --port 8000
+	$(PYTHON) -m uvicorn mlx_ui.app:app --host 127.0.0.1 --port $(PORT)
 
 # ---------------------------------------------------------------------------
 # macOS packaged release entry points (maintainers)

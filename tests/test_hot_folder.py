@@ -60,6 +60,32 @@ def test_hot_folder_moves_file_and_creates_job(tmp_path: Path) -> None:
     assert not (input_dir / "hello.wav").exists()
 
 
+def test_hot_folder_ignores_multi_suffix_temp_files(tmp_path: Path) -> None:
+    db_path = tmp_path / "data" / "jobs.db"
+    uploads_dir = tmp_path / "data" / "uploads"
+    init_db(db_path)
+
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    input_file = input_dir / "hello.temp.mp4"
+    input_file.write_text("partial", encoding="utf-8")
+
+    watcher = HotFolderWatcher(
+        db_path=db_path,
+        uploads_dir=uploads_dir,
+        paths=HotFolderPaths(input_dir=input_dir, output_dir=output_dir),
+        base_dir=tmp_path,
+        settle_seconds=0.0,
+        recursive=True,
+    )
+
+    assert watcher.scan_once() == 0
+    assert watcher.scan_once() == 0
+    assert list_jobs(db_path) == []
+    assert input_file.is_file()
+
+
 def test_hot_folder_exports_transcript_on_success(tmp_path: Path) -> None:
     db_path = tmp_path / "data" / "jobs.db"
     uploads_dir = tmp_path / "data" / "uploads"
@@ -101,7 +127,7 @@ def test_hot_folder_exports_transcript_on_success(tmp_path: Path) -> None:
     assert exported.read_text(encoding="utf-8") == "hello"
 
 
-def test_hot_folder_restores_file_on_failure(tmp_path: Path) -> None:
+def test_hot_folder_quarantines_file_on_failure(tmp_path: Path) -> None:
     class FailingTranscriber:
         engine_id = FAKE_ENGINE
 
@@ -118,6 +144,7 @@ def test_hot_folder_restores_file_on_failure(tmp_path: Path) -> None:
     input_dir.mkdir(parents=True, exist_ok=True)
     input_file = input_dir / "hello.wav"
     input_file.write_text("data", encoding="utf-8")
+    _write_settings(tmp_path, {"hot_folder_output_dir": str(output_dir)})
 
     watcher = HotFolderWatcher(
         db_path=db_path,
@@ -143,4 +170,7 @@ def test_hot_folder_restores_file_on_failure(tmp_path: Path) -> None:
 
     jobs = list_jobs(db_path)
     assert jobs[0].status == "failed"
-    assert input_file.is_file()
+    assert not input_file.exists()
+    quarantined = output_dir / ".failed" / "hello.wav"
+    assert quarantined.is_file()
+    assert quarantined.read_text(encoding="utf-8") == "data"
