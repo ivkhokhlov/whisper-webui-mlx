@@ -64,6 +64,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - A packaged macOS distribution path (self-contained `.app` + DMG) so a
   non-technical user can install, double-click, and use the same localhost UX
   without cloning the repo or installing Python.
+- The macOS release workflow is maintained as a local/manual Makefile and
+  playbook flow; stale GitHub Actions release automation has been removed so
+  maintainers do not confuse it with the supported release path.
 - Shared output writers so engines can produce `.txt` by default and `.json`,
   `.srt`, or `.vtt` when real metadata exists.
 - A DGX Spark-oriented Docker profile for experimental Parakeet NeMo/CUDA
