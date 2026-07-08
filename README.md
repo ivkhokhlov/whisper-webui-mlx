@@ -97,6 +97,7 @@ To use another local port:
 ```bash
 PORT=45678 ./run.sh
 ```
+The launcher uses the selected port for startup checks and the browser URL.
 
 If you want the script to install missing prerequisites via Homebrew (and prompt
 for Xcode Command Line Tools), run:
