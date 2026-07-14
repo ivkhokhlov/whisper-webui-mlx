@@ -103,11 +103,25 @@ if [[ "$RUN_AS_ROOT" != "1" ]] && command -v id >/dev/null 2>&1; then
   user_args+=(--user "$(id -u):$(id -g)")
 fi
 
+gpu_device_args=()
+if [[ "${SPARK_EXPLICIT_GPU_DEVICES:-1}" == "1" ]]; then
+  for gpu_device in \
+    /dev/nvidia[0-9]* \
+    /dev/nvidiactl \
+    /dev/nvidia-uvm \
+    /dev/nvidia-uvm-tools; do
+    if [[ -c "$gpu_device" ]]; then
+      gpu_device_args+=(--device "$gpu_device")
+    fi
+  done
+fi
+
 log "Starting $CONTAINER_NAME on ${BIND_ADDRESS}:${PORT}"
 docker run -d --init \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --gpus all \
+  "${gpu_device_args[@]}" \
   --ipc=host \
   --shm-size="${SHM_SIZE:-16g}" \
   --ulimit memlock=-1 \
@@ -125,7 +139,7 @@ docker run -d --init \
   -e "PARAKEET_NEMO_CUDA_EXPERIMENTAL=1" \
   -e "DISABLE_UPDATE_CHECK=1" \
   -e "LOG_DIR=/app/data/logs" \
-  --health-cmd "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=5).read()\" || exit 1" \
+  --health-cmd "nvidia-smi -L >/dev/null 2>&1 && python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=5).read()\" || exit 1" \
   --health-interval 30s \
   --health-timeout 8s \
   --health-retries 5 \

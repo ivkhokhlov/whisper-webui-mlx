@@ -14,6 +14,7 @@ the macOS MLX release path.
 - Default bind: `127.0.0.1:32000`
 - App data: `./data-spark`
 - Hugging Face cache: `~/.cache/huggingface`
+- CUDA watchdog: enabled, probes GPU access every 15 seconds
 - Container user: root by default, because the NGC NeMo image ships some
   Megatron/NeMo files without world-readable permissions
 
@@ -52,6 +53,54 @@ The NeMo/CUDA Parakeet backend now checks whether the upload is already a
 also normalizes stereo or non-16 kHz audio before inference.
 
 Set `PARAKEET_FFMPEG_PATH` inside the container if `ffmpeg` is not on `PATH`.
+
+## CUDA access recovery
+
+The Spark image starts the app through a small CUDA supervisor. It checks
+`nvidia-smi -L` before Uvicorn starts and then every 15 seconds. Two consecutive
+probe failures stop the app and exit the container so an `unless-stopped` (or
+equivalent) restart policy can restore the NVIDIA device bindings. The image
+healthcheck verifies both GPU access and `/api/state`.
+
+The defaults can be adjusted when diagnosing a host:
+
+```bash
+PARAKEET_CUDA_PROBE_INTERVAL=30
+PARAKEET_CUDA_PROBE_TIMEOUT=10
+PARAKEET_CUDA_PROBE_FAILURES=3
+```
+
+Set `PARAKEET_CUDA_WATCHDOG=0` only for debugging. A job that was active at the
+instant GPU access disappeared can still be marked failed; retry it after the
+container becomes healthy again.
+
+### `NVML: Unknown Error` or `CUFFT_INTERNAL_ERROR`
+
+NVIDIA documents a container-toolkit failure mode where a container launched
+through the legacy `--gpus` hook loses its GPU cgroup access after a container
+update or `systemctl daemon-reload`. Typical evidence is:
+
+```text
+Failed to initialize NVML: Unknown Error
+CUDA_ERROR_NO_DEVICE
+cuFFT error: CUFFT_INTERNAL_ERROR
+```
+
+The immediate recovery is to recreate the affected container. The repository
+launcher also maps the available `/dev/nvidia*` compute devices explicitly by
+default, so `runc` knows about them when cgroups are updated. Disable that only
+when isolating a launch problem:
+
+```bash
+SPARK_EXPLICIT_GPU_DEVICES=0 ./docker-run-spark.sh
+```
+
+For orchestrators that do not use `docker-run-spark.sh`, fix the host as well:
+prefer NVIDIA CDI device injection, or configure Docker's `cgroupfs` cgroup
+driver as described in the official
+[NVIDIA Container Toolkit troubleshooting guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/troubleshooting.html#containers-losing-access-to-gpus-with-error-failed-to-initialize-nvml-unknown-error).
+The watchdog is a recovery guard, not a substitute for that host-level
+prevention.
 
 ## home-spark notes
 

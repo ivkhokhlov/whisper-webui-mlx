@@ -71,7 +71,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   `.srt`, or `.vtt` when real metadata exists.
 - A DGX Spark-oriented Docker profile for experimental Parakeet NeMo/CUDA
   deployments on Linux/NVIDIA hosts, with separate `data-spark` state, seeded
-  Parakeet settings, Hugging Face cache reuse, and localhost-only binding.
+  Parakeet settings, Hugging Face cache reuse, localhost-only binding, and a
+  CUDA-access watchdog that restarts the container process when NVIDIA device
+  bindings disappear from a long-lived deployment.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -218,7 +220,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   engine tradeoffs, and release paths are readable without relying on embedded
   demo media.
 - Reliability: sequential processing avoids model re-init churn and resource
-  spikes, while compact history keeps large job lists responsive.
+  spikes, compact history keeps large job lists responsive, and the Spark
+  container detects lost NVML/CUDA access before it can keep accepting jobs in
+  a permanently broken GPU context.
 
 ## Differentiators
 - Apple Silicon MLX acceleration (faster than CPU-only alternatives).
@@ -239,7 +243,10 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   flows only; it is disabled by default and not part of the macOS bootstrap or
   packaged release targets. The Spark Docker profile keeps this path separate
   from the supported macOS release flow and normalizes non-ready media through
-  `ffmpeg` into 16 kHz mono WAV before Parakeet inference.
+  `ffmpeg` into 16 kHz mono WAV before Parakeet inference. Its watchdog can
+  recover the container process after GPU bindings disappear, while permanent
+  prevention of the NVIDIA systemd-cgroup failure mode still belongs in host
+  container-runtime configuration (CDI or the documented cgroup workaround).
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.

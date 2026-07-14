@@ -259,6 +259,11 @@ RUN_AS_ROOT=0 ./docker-run-spark.sh  # only if your base image permissions allow
 
 The Parakeet CUDA path normalizes non-ready media with `ffmpeg` into 16 kHz
 mono WAV before inference, so video uploads can be queued through the same UI.
+The Spark image also monitors `nvidia-smi` and restarts through the container
+policy if a long-lived container loses its NVIDIA device bindings. The launcher
+explicitly maps available compute device nodes to reduce the known systemd
+cgroup reload failure mode; see `docs/spark_parakeet_cuda.md` for diagnostics
+and CDI/cgroup host guidance.
 
 ### Manual dev loop
 ```bash

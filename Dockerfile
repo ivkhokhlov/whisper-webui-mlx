@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir \
     torch \
     && pip install --no-cache-dir -r requirements-docker.txt
 
+COPY pyproject.toml ./
 COPY mlx_ui ./mlx_ui
 
 RUN mkdir -p /app/data /app/data/.cache

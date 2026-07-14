@@ -10,6 +10,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/app/hf-cache \
     TRANSCRIBER_BACKEND=parakeet_nemo_cuda \
     PARAKEET_NEMO_CUDA_EXPERIMENTAL=1 \
+    PARAKEET_CUDA_WATCHDOG=1 \
+    PARAKEET_CUDA_PROBE_INTERVAL=15 \
+    PARAKEET_CUDA_PROBE_TIMEOUT=5 \
+    PARAKEET_CUDA_PROBE_FAILURES=2 \
     DISABLE_UPDATE_CHECK=1 \
     LOG_DIR=/app/data/logs
 
@@ -22,9 +26,15 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
+COPY pyproject.toml ./
 COPY mlx_ui ./mlx_ui
 
 RUN mkdir -p /app/data /app/data/.cache /app/hf-cache
 
 EXPOSE 8000
-CMD ["python3", "-m", "uvicorn", "mlx_ui.app:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=8s --start-period=5m --retries=2 \
+    CMD nvidia-smi -L >/dev/null 2>&1 \
+    && python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=5).read()" \
+    || exit 1
+
+CMD ["python3", "-m", "mlx_ui.spark_container"]
