@@ -119,5 +119,6 @@ def test_spark_image_uses_cuda_supervisor_and_gpu_healthcheck() -> None:
     assert 'CMD ["python3", "-m", "mlx_ui.spark_container"]' in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "nvidia-smi -L" in dockerfile
+    assert "PARAKEET_CUDA_OOM_CPU_FALLBACK=1" in dockerfile
     assert "gpu_device_args" in launcher
     assert "nvidia-smi -L" in launcher

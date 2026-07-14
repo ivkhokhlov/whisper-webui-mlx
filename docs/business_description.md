@@ -73,7 +73,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   deployments on Linux/NVIDIA hosts, with separate `data-spark` state, seeded
   Parakeet settings, Hugging Face cache reuse, localhost-only binding, and a
   CUDA-access watchdog that restarts the container process when NVIDIA device
-  bindings disappear from a long-lived deployment.
+  bindings disappear from a long-lived deployment. If CUDA is healthy but
+  shared memory is exhausted by another GPU workload, Parakeet retries model
+  loading on CPU and keeps the queue available at reduced speed.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -222,7 +224,8 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Reliability: sequential processing avoids model re-init churn and resource
   spikes, compact history keeps large job lists responsive, and the Spark
   container detects lost NVML/CUDA access before it can keep accepting jobs in
-  a permanently broken GPU context.
+  a permanently broken GPU context. CUDA model-load OOM has an explicit CPU
+  fallback so resource contention degrades throughput rather than availability.
 
 ## Differentiators
 - Apple Silicon MLX acceleration (faster than CPU-only alternatives).
@@ -247,6 +250,8 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   recover the container process after GPU bindings disappear, while permanent
   prevention of the NVIDIA systemd-cgroup failure mode still belongs in host
   container-runtime configuration (CDI or the documented cgroup workaround).
+  CPU fallback covers CUDA model-load OOM but does not replace reserving enough
+  shared memory for GPU-speed transcription.
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.

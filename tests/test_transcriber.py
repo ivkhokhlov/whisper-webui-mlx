@@ -118,6 +118,23 @@ class FakeParakeetFactory:
         return self.model
 
 
+class CudaOomParakeetFactory:
+    def __init__(self, model: FakeParakeetModel) -> None:
+        self.model = model
+        self.calls: list[tuple[str, str | None]] = []
+
+    def from_pretrained(
+        self,
+        repo_id: str,
+        *,
+        map_location: str | None = None,
+    ) -> FakeParakeetModel:
+        self.calls.append((repo_id, map_location))
+        if map_location is None:
+            raise RuntimeError("CUDA error: out of memory")
+        return self.model
+
+
 class FakeParakeetMlxModel:
     def __init__(self, output: object) -> None:
         self.output = output
@@ -494,6 +511,52 @@ def test_parakeet_nemo_cuda_transcriber_lazy_loads_and_reuses_model(
 
     assert factory.calls == ["nvidia/parakeet-tdt-0.6b-v3"]
     assert len(model.calls) == 2
+
+
+def test_parakeet_nemo_cuda_falls_back_to_cpu_after_cuda_oom(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    model = FakeParakeetModel(outputs=[{"text": "cpu fallback"}])
+    factory = CudaOomParakeetFactory(model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+    monkeypatch.setenv("PARAKEET_CUDA_OOM_CPU_FALLBACK", "1")
+
+    transcriber = ParakeetNemoCudaTranscriber()
+    result_path = transcriber.transcribe(job, tmp_path / "results")
+
+    assert result_path.read_text(encoding="utf-8") == "cpu fallback\n"
+    assert factory.calls == [
+        ("nvidia/parakeet-tdt-0.6b-v3", None),
+        ("nvidia/parakeet-tdt-0.6b-v3", "cpu"),
+    ]
+    assert transcriber._model_device == "cpu"
+
+
+def test_parakeet_nemo_cuda_does_not_hide_non_oom_model_errors(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class BrokenFactory:
+        def from_pretrained(self, _repo_id):  # type: ignore[no-untyped-def]
+            raise RuntimeError("checkpoint is corrupt")
+
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=BrokenFactory()))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+    monkeypatch.setenv("PARAKEET_CUDA_OOM_CPU_FALLBACK", "1")
+
+    transcriber = ParakeetNemoCudaTranscriber()
+
+    with pytest.raises(RuntimeError, match="checkpoint is corrupt"):
+        transcriber.transcribe(_make_job(tmp_path), tmp_path / "results")
 
 
 def test_parakeet_nemo_cuda_transcriber_raises_clear_error_when_runtime_missing(
