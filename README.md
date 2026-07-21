@@ -161,6 +161,12 @@ generated `job_id` plus the submitted ownership fields. `client` and
 `client_job_id` are required, trimmed, limited to 128 characters, and accept
 letters, numbers, `_`, `-`, `.`, and `:`.
 
+Automation clients should poll `GET /api/machine/state` for the active queue
+and use `GET /api/machine/jobs/{client}/{client_job_id}` for one owned job's
+terminal status and result filenames. The browser-facing `/api/state` remains
+available but includes the complete retained history and is intentionally not
+the machine polling contract.
+
 ### Hot folder intake
 
 Repo/dev mode can watch a local input folder and enqueue new audio/video files

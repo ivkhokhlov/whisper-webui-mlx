@@ -1034,6 +1034,87 @@ def test_machine_job_endpoint_requires_ownership_metadata(tmp_path: Path) -> Non
     assert list_jobs(Path(app.state.db_path)) == []
 
 
+def test_machine_state_omits_history_and_result_index(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for job_id, status in (("queued-job", "queued"), ("done-job", "done")):
+        upload_path = tmp_path / "uploads" / job_id / "audio.wav"
+        upload_path.parent.mkdir(parents=True, exist_ok=True)
+        upload_path.write_bytes(b"audio")
+        insert_job(
+            db_path,
+            JobRecord(
+                id=job_id,
+                filename="audio.wav",
+                status=status,
+                created_at=now,
+                completed_at=now if status == "done" else None,
+                upload_path=str(upload_path),
+                language="auto",
+                client="callhub-transcription",
+                client_job_id=f"source-{job_id}",
+            ),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/api/machine/state")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {
+        "queue",
+        "queue_running",
+        "queue_pending",
+        "queue_counts",
+        "worker",
+    }
+    assert [job["id"] for job in payload["queue"]] == ["queued-job"]
+    assert payload["queue_counts"] == {"running": 0, "queued": 1}
+
+
+def test_machine_job_lookup_returns_owned_terminal_result(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    upload_path = tmp_path / "uploads" / "machine-job" / "audio.wav"
+    upload_path.parent.mkdir(parents=True, exist_ok=True)
+    upload_path.write_bytes(b"audio")
+    insert_job(
+        db_path,
+        JobRecord(
+            id="machine-job",
+            filename="audio.wav",
+            status="done",
+            created_at=now,
+            completed_at=now,
+            upload_path=str(upload_path),
+            language="auto",
+            client="callhub-transcription",
+            client_job_id="command-123",
+        ),
+    )
+    result_dir = Path(app.state.results_dir) / "machine-job"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "audio.json").write_text("{}", encoding="utf-8")
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/machine/jobs/callhub-transcription/command-123"
+        )
+        missing = client.get(
+            "/api/machine/jobs/callhub-transcription/missing-command"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "machine-job"
+    assert response.json()["status"] == "done"
+    assert response.json()["results"] == ["audio.json"]
+    assert missing.status_code == 404
+
+
 def test_upload_persists_requested_engine_from_settings(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     settings_path = tmp_path / "data" / "settings.json"

@@ -57,6 +57,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Machine-created jobs can enter the same queue through a local multipart API
   while preserving caller-owned `client` and `client_job_id` metadata for
   reconciliation.
+- Machine callers can poll a compact active-queue endpoint and look up their
+  own job by `client` plus `client_job_id`, avoiding repeated transfer of the
+  full browser history and result index as retained history grows.
 - Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with

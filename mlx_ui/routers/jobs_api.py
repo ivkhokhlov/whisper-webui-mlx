@@ -27,8 +27,10 @@ from mlx_ui.db import (
     delete_history_job,
     delete_history_jobs,
     delete_queued_job,
+    find_job_by_client_job_id,
     get_job,
     insert_job,
+    list_active_jobs,
     list_history_jobs,
     list_jobs,
 )
@@ -242,6 +244,42 @@ def api_state() -> dict[str, object]:
         "results_by_job": _build_results_index(history_jobs),
         "worker": worker_state(jobs),
     }
+
+
+@router.get("/api/machine/state")
+def api_machine_state() -> dict[str, object]:
+    jobs = list_active_jobs(get_db_path())
+    queue_jobs, _ = split_jobs(jobs)
+    running_job, queued_jobs = queue_groups(queue_jobs)
+    return {
+        "queue": [serialize_job(job) for job in queue_jobs],
+        "queue_running": serialize_job(running_job) if running_job else None,
+        "queue_pending": [serialize_job(job) for job in queued_jobs],
+        "queue_counts": {
+            "running": 1 if running_job else 0,
+            "queued": len(queued_jobs),
+        },
+        "worker": worker_state(jobs),
+    }
+
+
+@router.get("/api/machine/jobs/{client}/{client_job_id}")
+def api_machine_job(client: str, client_job_id: str) -> dict[str, object]:
+    machine_client = _normalize_machine_metadata(client, field_name="client")
+    machine_client_job_id = _normalize_machine_metadata(
+        client_job_id,
+        field_name="client_job_id",
+    )
+    job = find_job_by_client_job_id(
+        get_db_path(),
+        client=machine_client,
+        client_job_id=machine_client_job_id,
+    )
+    if job is None:
+        raise HTTPException(status_code=404)
+    payload = serialize_job(job)
+    payload["results"] = list_result_files(get_results_dir(), job.id)
+    return payload
 
 
 @router.get("/results/{job_id}/{filename}")
