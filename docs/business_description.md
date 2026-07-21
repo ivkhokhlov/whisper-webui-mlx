@@ -77,8 +77,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   Parakeet settings, Hugging Face cache reuse, localhost-only binding, and a
   CUDA-access watchdog that restarts the container process when NVIDIA device
   bindings disappear from a long-lived deployment. If CUDA is healthy but
-  shared memory is exhausted by another GPU workload, Parakeet retries model
-  loading on CPU and keeps the queue available at reduced speed.
+  shared memory is exhausted by another GPU workload, Parakeet retries both
+  model loading and an inference-time CUDA OOM on CPU, keeping the queue
+  available at reduced speed.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,

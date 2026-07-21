@@ -175,7 +175,10 @@ class ParakeetNemoCudaTranscriber:
                         batch_size=min(self.batch_size, len(chunks)),
                     )
                 except Exception as exc:  # pragma: no cover - backend passthrough
-                    raise RuntimeError(f"Parakeet transcription failed: {exc}") from exc
+                    hypotheses = self._retry_transcription_on_cpu_after_cuda_oom(
+                        exc,
+                        chunks,
+                    )
         transcript = _normalize_parakeet_transcript(
             model,
             hypotheses,
@@ -190,6 +193,71 @@ class ParakeetNemoCudaTranscriber:
             source_name=job.filename,
             output_formats=self.output_formats,
         )
+
+    def _retry_transcription_on_cpu_after_cuda_oom(
+        self,
+        cuda_exc: Exception,
+        chunks: tuple[_ParakeetAudioChunk, ...],
+    ):
+        if not (
+            self._model_device == "cuda"
+            and _cuda_oom_cpu_fallback_enabled()
+            and _is_cuda_out_of_memory(cuda_exc)
+        ):
+            raise RuntimeError(f"Parakeet transcription failed: {cuda_exc}") from cuda_exc
+        logger.warning(
+            "CUDA memory became unavailable while transcribing; "
+            "reloading Parakeet on CPU because %s=1",
+            PARAKEET_CUDA_OOM_CPU_FALLBACK_ENV,
+        )
+        self._release_model()
+        model = self._load_cpu_model()
+        try:
+            return _transcribe_with_parakeet_model(
+                model,
+                [str(chunk.path) for chunk in chunks],
+                batch_size=min(self.batch_size, len(chunks)),
+            )
+        except Exception as cpu_exc:  # pragma: no cover - backend passthrough
+            raise RuntimeError(
+                "Parakeet transcription failed after CUDA OOM CPU fallback: "
+                f"{cpu_exc}"
+            ) from cpu_exc
+
+    def _release_model(self) -> None:
+        model = self._model
+        self._model = None
+        self._model_device = None
+        if model is not None:
+            try:
+                model.to("cpu")
+            except Exception:
+                pass
+        del model
+        gc.collect()
+        try:
+            import torch  # type: ignore[import-not-found]
+
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    def _load_cpu_model(self):
+        from mlx_ui import transcriber as transcriber_module
+
+        nemo_asr, open_dict = transcriber_module._load_parakeet_runtime()
+        model = nemo_asr.models.ASRModel.from_pretrained(
+            self.repo_id,
+            map_location="cpu",
+        )
+        _configure_parakeet_decoding(
+            model,
+            open_dict=open_dict,
+            decoding_mode=self.decoding_mode,
+        )
+        self._model = model
+        self._model_device = "cpu"
+        return model
 
     def _ensure_model(self):
         if self._model is not None:

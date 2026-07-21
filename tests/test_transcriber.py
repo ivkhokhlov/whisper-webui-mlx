@@ -108,6 +108,12 @@ class FakeParakeetModel:
         return list(self.outputs)
 
 
+class RuntimeCudaOomParakeetModel(FakeParakeetModel):
+    def transcribe(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.calls.append(dict(kwargs))
+        raise RuntimeError("CUDA error: out of memory")
+
+
 class FakeParakeetFactory:
     def __init__(self, model: FakeParakeetModel) -> None:
         self.model = model
@@ -133,6 +139,28 @@ class CudaOomParakeetFactory:
         if map_location is None:
             raise RuntimeError("CUDA error: out of memory")
         return self.model
+
+
+class RuntimeCudaOomParakeetFactory:
+    def __init__(
+        self,
+        cuda_model: RuntimeCudaOomParakeetModel,
+        cpu_model: FakeParakeetModel,
+    ) -> None:
+        self.cuda_model = cuda_model
+        self.cpu_model = cpu_model
+        self.calls: list[tuple[str, str | None]] = []
+
+    def from_pretrained(
+        self,
+        repo_id: str,
+        *,
+        map_location: str | None = None,
+    ) -> FakeParakeetModel:
+        self.calls.append((repo_id, map_location))
+        if map_location == "cpu":
+            return self.cpu_model
+        return self.cuda_model
 
 
 class FakeParakeetMlxModel:
@@ -535,6 +563,35 @@ def test_parakeet_nemo_cuda_falls_back_to_cpu_after_cuda_oom(
         ("nvidia/parakeet-tdt-0.6b-v3", None),
         ("nvidia/parakeet-tdt-0.6b-v3", "cpu"),
     ]
+    assert transcriber._model_device == "cpu"
+
+
+def test_parakeet_nemo_cuda_falls_back_after_runtime_cuda_oom(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    cuda_model = RuntimeCudaOomParakeetModel(outputs=[])
+    cpu_model = FakeParakeetModel(outputs=[{"text": "runtime cpu fallback"}])
+    factory = RuntimeCudaOomParakeetFactory(cuda_model, cpu_model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+    monkeypatch.setenv("PARAKEET_CUDA_OOM_CPU_FALLBACK", "1")
+
+    transcriber = ParakeetNemoCudaTranscriber()
+    result_path = transcriber.transcribe(job, tmp_path / "results")
+
+    assert result_path.read_text(encoding="utf-8") == "runtime cpu fallback\n"
+    assert factory.calls == [
+        ("nvidia/parakeet-tdt-0.6b-v3", None),
+        ("nvidia/parakeet-tdt-0.6b-v3", "cpu"),
+    ]
+    assert len(cuda_model.calls) == 1
+    assert len(cpu_model.calls) == 1
+    assert transcriber._model is cpu_model
     assert transcriber._model_device == "cpu"
 
 
