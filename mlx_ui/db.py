@@ -602,6 +602,29 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
     return [_job_record_from_row(row) for row in rows]
 
 
+def list_expired_terminal_job_ids(
+    db_path: Path,
+    job_ids: list[str],
+    *,
+    cutoff: str,
+) -> set[str]:
+    if not job_ids:
+        return set()
+    placeholders = ", ".join("?" for _ in job_ids)
+    with _connect(db_path) as connection:
+        rows = connection.execute(
+            f"""
+            SELECT id
+            FROM jobs
+            WHERE status IN ('done', 'failed', 'cancelled')
+              AND julianday(COALESCE(completed_at, created_at)) < julianday(?)
+              AND id IN ({placeholders})
+            """,
+            (cutoff, *job_ids),
+        ).fetchall()
+    return {str(row["id"]) for row in rows}
+
+
 def delete_history_jobs(db_path: Path, job_ids: list[str]) -> int:
     if not job_ids:
         return 0

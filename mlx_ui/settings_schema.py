@@ -29,6 +29,9 @@ DEFAULT_PARAKEET_CHUNK_DURATION = 30
 DEFAULT_PARAKEET_OVERLAP_DURATION = 5
 DEFAULT_PARAKEET_DECODING_MODE = "greedy"
 DEFAULT_PARAKEET_BATCH_SIZE = 1
+DEFAULT_RESULTS_RETENTION_DAYS = 3
+MIN_RESULTS_RETENTION_DAYS = 1
+MAX_RESULTS_RETENTION_DAYS = 365
 
 
 def supported_parakeet_decoding_modes() -> tuple[str, ...]:
@@ -47,6 +50,7 @@ DEFAULT_SETTINGS: dict[str, object] = {
     "hot_folder_enabled": False,
     "hot_folder_input_dir": "",
     "hot_folder_output_dir": "",
+    "results_retention_days": DEFAULT_RESULTS_RETENTION_DAYS,
     "cohere_model": DEFAULT_COHERE_MODEL,
     "whisper_model": DEFAULT_WHISPER_MODEL,
     "parakeet_model": DEFAULT_PARAKEET_MODEL,
@@ -119,6 +123,15 @@ def normalize_positive_int(value: object) -> int | None:
     if value < 1:
         return None
     return value
+
+
+def normalize_results_retention_days(value: object) -> int | None:
+    normalized = normalize_positive_int(value)
+    if normalized is None:
+        return None
+    if normalized > MAX_RESULTS_RETENTION_DAYS:
+        return None
+    return normalized
 
 
 def parse_bool(value: str | None) -> bool | None:
@@ -208,6 +221,16 @@ def validate_settings_payload(payload: object) -> tuple[dict[str, object], list[
             updates["hot_folder_output_dir"] = value.strip()
         else:
             errors.append("hot_folder_output_dir must be a string")
+
+    if "results_retention_days" in payload:
+        value = normalize_results_retention_days(payload["results_retention_days"])
+        if value is None:
+            errors.append(
+                "results_retention_days must be an integer between "
+                f"{MIN_RESULTS_RETENTION_DAYS} and {MAX_RESULTS_RETENTION_DAYS}"
+            )
+        else:
+            updates["results_retention_days"] = value
 
     if "cohere_model" in payload:
         value = payload["cohere_model"]

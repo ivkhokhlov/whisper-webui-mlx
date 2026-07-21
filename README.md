@@ -270,8 +270,13 @@ policy if a long-lived container loses its NVIDIA device bindings. The launcher
 explicitly maps available compute device nodes to reduce the known systemd
 cgroup reload failure mode; see `docs/spark_parakeet_cuda.md` for diagnostics
 and CDI/cgroup host guidance. When another GPU service has reserved too much
-unified memory, the Spark profile can also fall back to slower CPU inference
-instead of leaving the queue permanently failed.
+unified memory, model loading or inference fails explicitly with CUDA OOM. The
+Spark profile never silently changes a CUDA-selected job to CPU.
+
+Generated result files are retained for 3 days by default. Change
+`results_retention_days` in Settings -> Storage (1–365 days). Cleanup preserves
+job history and machine-job lookup metadata, so an expired terminal job remains
+queryable but has no downloadable result files.
 
 ### Manual dev loop
 ```bash

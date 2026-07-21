@@ -18,6 +18,7 @@ from mlx_ui.settings_schema import (
     normalize_output_formats,
     normalize_parakeet_decoding_mode,
     normalize_positive_int,
+    normalize_results_retention_days,
 )
 from mlx_ui.transcriber import (
     BACKEND_ENV,
@@ -90,6 +91,11 @@ def read_settings_file(path: Path) -> dict[str, object]:
     hot_folder_output_dir = payload.get("hot_folder_output_dir")
     if isinstance(hot_folder_output_dir, str):
         parsed["hot_folder_output_dir"] = hot_folder_output_dir.strip()
+    results_retention_days = normalize_results_retention_days(
+        payload.get("results_retention_days")
+    )
+    if results_retention_days is not None:
+        parsed["results_retention_days"] = results_retention_days
     cohere_model = payload.get("cohere_model")
     if isinstance(cohere_model, str):
         parsed["cohere_model"] = cohere_model.strip()
@@ -283,6 +289,13 @@ def compute_effective_settings(
         )
         effective["hot_folder_output_dir"] = default_output
         sources["hot_folder_output_dir"] = "default"
+
+    if "results_retention_days" in file_settings:
+        effective["results_retention_days"] = file_settings["results_retention_days"]
+        sources["results_retention_days"] = "file"
+    else:
+        effective["results_retention_days"] = DEFAULT_SETTINGS["results_retention_days"]
+        sources["results_retention_days"] = "default"
 
     cohere_model_env = env.get(COHERE_MODEL_ENV)
     if cohere_model_env is not None and cohere_model_env.strip() != "":

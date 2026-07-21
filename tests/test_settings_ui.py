@@ -126,6 +126,19 @@ def test_settings_storage_prioritizes_actions_over_raw_paths(
     assert text.index("Delete local data") < text.index("View local paths")
 
 
+def test_settings_storage_exposes_result_retention(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=settings")
+
+    assert response.status_code == 200
+    assert 'id="results-retention-days"' in response.text
+    assert 'name="results_retention_days"' in response.text
+    assert 'value="3"' in response.text
+    assert "Job history and statuses stay" in response.text
+
+
 def test_settings_demotes_source_metadata_in_default_view(tmp_path: Path) -> None:
     _configure_app(tmp_path)
 

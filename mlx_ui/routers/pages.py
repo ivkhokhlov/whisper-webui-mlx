@@ -151,6 +151,12 @@ async def update_settings(request: Request) -> RedirectResponse:
             form.get("hot_folder_output_dir", "")
         ).strip()
 
+    results_retention_days = str(form.get("results_retention_days", "")).strip()
+    if results_retention_days.isdigit():
+        retention_value = int(results_retention_days)
+        if 1 <= retention_value <= 365:
+            updates["results_retention_days"] = retention_value
+
     if "cohere_model" in form:
         updates["cohere_model"] = str(form.get("cohere_model", "")).strip()
 

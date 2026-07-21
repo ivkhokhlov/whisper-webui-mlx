@@ -102,6 +102,27 @@ def test_create_app_lifespan_runs_startup_tasks(tmp_path: Path, monkeypatch) -> 
             Path(base_dir) if base_dir is not None else None,
         ),
     )
+
+    class _DummyResultRetentionService:
+        def __init__(self, db_path, results_dir, base_dir):  # type: ignore[no-untyped-def]
+            _record(
+                "result_retention_init",
+                Path(db_path),
+                Path(results_dir),
+                Path(base_dir),
+            )
+
+        def start(self) -> None:
+            _record("result_retention_start")
+
+        def stop(self) -> None:
+            _record("result_retention_stop")
+
+    monkeypatch.setattr(
+        app_module,
+        "ResultRetentionService",
+        _DummyResultRetentionService,
+    )
     monkeypatch.setattr(
         app_module,
         "build_settings_snapshot",
@@ -149,6 +170,8 @@ def test_create_app_lifespan_runs_startup_tasks(tmp_path: Path, monkeypatch) -> 
         "recover_running_jobs",
     ]
     assert "start_worker" in call_names
+    assert "result_retention_start" in call_names
+    assert "result_retention_stop" in call_names
     assert "build_settings_snapshot" in call_names
     assert thread_started["started"] is True
     assert thread_created.get("name") == "mlx-ui-update-check"

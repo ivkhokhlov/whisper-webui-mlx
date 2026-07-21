@@ -28,6 +28,7 @@ from mlx_ui.routers.jobs_api import router as jobs_router
 from mlx_ui.routers.live_api import router as live_router
 from mlx_ui.routers.pages import router as pages_router
 from mlx_ui.routers.settings_api import router as settings_router
+from mlx_ui.result_retention import ResultRetentionService
 from mlx_ui.settings import build_settings_snapshot
 from mlx_ui.update_check import (
     DEFAULT_TIMEOUT,
@@ -50,6 +51,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     results_dir = get_results_dir(app)
 
     worker_enabled = is_worker_enabled(app)
+    result_retention_service: ResultRetentionService | None = None
     try:
         init_db(db_path)
         recovered = recover_running_jobs(db_path)
@@ -58,6 +60,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "Recovered %s running job(s) after unclean shutdown.", recovered
             )
 
+        result_retention_service = ResultRetentionService(
+            db_path,
+            results_dir,
+            base_dir,
+        )
+
         if worker_enabled:
             start_worker(
                 db_path,
@@ -65,6 +73,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 results_dir,
                 base_dir=base_dir,
             )
+        result_retention_service.start()
 
         settings_snapshot = build_settings_snapshot(base_dir=base_dir)
         hot_folder_settings = (
@@ -117,6 +126,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         stop_hot_folder()
+        if result_retention_service is not None:
+            result_retention_service.stop()
         if worker_enabled:
             stop_worker()
         reset_live_service(app)

@@ -437,6 +437,30 @@
                     <p class="settings-section-note">
                       Cloud engines upload audio. Other files stay here.
                     </p>
+                    <section class="settings-subsection" aria-labelledby="settings-results-retention-title">
+                      <header class="settings-subsection-header">
+                        <h4 id="settings-results-retention-title">Result files</h4>
+                        <p class="settings-subsection-desc">Automatically remove old downloads and previews.</p>
+                      </header>
+                      <div class="settings-field">
+                        <div class="settings-label-row is-single">
+                          <label class="settings-label" for="results-retention-days">Keep result files for</label>
+                        </div>
+                        <input
+                          class="settings-input"
+                          id="results-retention-days"
+                          name="results_retention_days"
+                          type="number"
+                          min="1"
+                          max="365"
+                          step="1"
+                          value="{{ settings_snapshot.settings.results_retention_days }}"
+                        >
+                        <p class="settings-hint">
+                          Default: 3 days. Job history and statuses stay; expired jobs simply have no result files to download.
+                        </p>
+                      </div>
+                    </section>
                     <section class="settings-subsection" aria-labelledby="settings-hot-folder-title">
                       <header class="settings-subsection-header">
                         <h4 id="settings-hot-folder-title">Hot folder</h4>

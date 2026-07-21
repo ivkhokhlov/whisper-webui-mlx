@@ -75,6 +75,7 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     assert settings["parakeet_overlap_duration"] == 5
     assert settings["parakeet_decoding_mode"] == "greedy"
     assert settings["parakeet_batch_size"] == 1
+    assert settings["results_retention_days"] == 3
 
     assert sources["engine"] == "default"
     assert sources["update_check_enabled"] == "default"
@@ -88,6 +89,7 @@ def test_settings_defaults(tmp_path: Path, monkeypatch) -> None:
     assert sources["parakeet_overlap_duration"] == "default"
     assert sources["parakeet_decoding_mode"] == "default"
     assert sources["parakeet_batch_size"] == "default"
+    assert sources["results_retention_days"] == "default"
 
     assert payload["file"]["path"].endswith("data/settings.json")
     assert payload["options"]["languages"][0] == {
@@ -156,6 +158,7 @@ def test_settings_update_persists(tmp_path: Path, monkeypatch) -> None:
                 "output_formats": ["txt", "srt"],
                 "default_language": "ru",
                 "cohere_model": "command-r",
+                "results_retention_days": 7,
             },
         )
 
@@ -169,6 +172,7 @@ def test_settings_update_persists(tmp_path: Path, monkeypatch) -> None:
     assert "srt" in settings["output_formats"]
     assert settings["default_language"] == "ru"
     assert settings["cohere_model"] == "command-r"
+    assert settings["results_retention_days"] == 7
     assert payload["sources"]["engine"] == "file"
     assert payload["sources"]["wtm_quick"] == "file"
     assert payload["sources"]["default_language"] == "file"
@@ -181,6 +185,7 @@ def test_settings_update_persists(tmp_path: Path, monkeypatch) -> None:
     assert persisted["log_level"] == "DEBUG"
     assert persisted["default_language"] == "ru"
     assert persisted["cohere_model"] == "command-r"
+    assert persisted["results_retention_days"] == 7
 
 
 def test_settings_update_persists_parakeet_config(tmp_path: Path) -> None:
@@ -313,6 +318,19 @@ def test_settings_rejects_invalid_values(tmp_path: Path) -> None:
         response = client.post("/api/settings", json={"log_level": "LOUD"})
 
     assert response.status_code == 422
+
+
+def test_settings_rejects_invalid_result_retention(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+
+    with TestClient(app) as client:
+        zero = client.post("/api/settings", json={"results_retention_days": 0})
+        too_large = client.post("/api/settings", json={"results_retention_days": 366})
+        non_integer = client.post("/api/settings", json={"results_retention_days": 3.5})
+
+    assert zero.status_code == 422
+    assert too_large.status_code == 422
+    assert non_integer.status_code == 422
 
 
 def test_settings_rejects_invalid_default_language(tmp_path: Path) -> None:

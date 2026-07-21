@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 import mlx_ui.app as app_module
 import mlx_ui.worker as worker_module
+import mlx_ui.result_retention as retention_module
 
 
 def _configure_app(app, tmp_path: Path, *, worker_enabled: bool) -> None:  # type: ignore[no-untyped-def]
@@ -40,6 +41,73 @@ def test_testclient_exit_stops_worker_cleanly(tmp_path: Path) -> None:
         assert worker_module._worker_instance is None
     finally:
         worker_module.stop_worker(timeout=1)
+
+
+def test_testclient_exit_stops_result_retention_service_cleanly(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    app = app_module.create_app()
+    _configure_app(app, tmp_path, worker_enabled=True)
+    services: list[retention_module.ResultRetentionService] = []
+
+    class _TrackingRetentionService(retention_module.ResultRetentionService):
+        def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            super().__init__(*args, interval_seconds=0.02, **kwargs)
+            services.append(self)
+
+    monkeypatch.setattr(app_module, "ResultRetentionService", _TrackingRetentionService)
+    monkeypatch.setattr(
+        retention_module,
+        "purge_expired_results_from_settings",
+        lambda *_args, **_kwargs: retention_module.ResultRetentionSummary(
+            retention_days=3,
+            scanned=0,
+            expired=0,
+            deleted=0,
+            missing=0,
+            failed=0,
+            batches=0,
+        ),
+    )
+
+    try:
+        with TestClient(app):
+            deadline = time.monotonic() + 1
+            while not services and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert services and services[0].is_running()
+
+        assert services[0].is_running() is False
+    finally:
+        worker_module.stop_worker(timeout=1)
+
+
+def test_result_retention_runs_when_queue_worker_is_disabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    app = app_module.create_app()
+    _configure_app(app, tmp_path, worker_enabled=False)
+    starts: list[bool] = []
+    stops: list[bool] = []
+
+    class _TrackingRetentionService:
+        def __init__(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+            pass
+
+        def start(self) -> None:
+            starts.append(True)
+
+        def stop(self) -> None:
+            stops.append(True)
+
+    monkeypatch.setattr(app_module, "ResultRetentionService", _TrackingRetentionService)
+
+    with TestClient(app):
+        assert starts == [True]
+
+    assert stops == [True]
 
 
 def test_repeated_startup_shutdown_does_not_reuse_stale_worker(tmp_path: Path) -> None:

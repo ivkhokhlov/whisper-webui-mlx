@@ -68,7 +68,10 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
-  SQLite, plus best-effort Telegram delivery and update checks.
+  SQLite, plus best-effort Telegram delivery and update checks. Generated
+  result files have a configurable retention period (3 days by default);
+  cleanup removes only downloads/previews while preserving SQLite job history,
+  statuses, and machine-job lookup compatibility.
 - Queue state commits tolerate transient SQLite writer contention, and an
   unexpected iteration failure is logged without terminating the background
   worker, so queued machine jobs continue after a concurrent intake burst.
@@ -178,12 +181,16 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - History action menus (⋯) dismiss on outside click for faster triage.
 - Per-item history deletion and bulk “delete all results” controls with
   confirmations, removing stored outputs from disk.
+- Automatic result-file cleanup runs at startup and then hourly. The persisted
+  `results_retention_days` setting accepts 1–365 days and defaults to 3; jobs
+  older than the cutoff keep their history metadata but expose an empty result
+  list after their on-disk artifacts expire.
 - Local data storage:
   - developer/repo mode: `data/` in the repo
   - packaged macOS app mode: `~/Library/Application Support/<bundle_id>/data/`
 - Settings panel for engine selection, Whisper/Parakeet/Cohere configuration,
-  default language, output formats, WTM quick mode, Telegram delivery, and local
-  diagnostics, persisted in `data/settings.json` (dev) or
+  default language, output formats, WTM quick mode, result-file retention,
+  Telegram delivery, and local diagnostics, persisted in `data/settings.json` (dev) or
   `~/Library/Application Support/<bundle_id>/data/settings.json` (packaged).
 - Settings now follow a clearer priority order: transcription defaults first,
   optional integrations second, local storage third, and diagnostics/update

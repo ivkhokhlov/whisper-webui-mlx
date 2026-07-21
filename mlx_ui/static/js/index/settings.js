@@ -424,6 +424,12 @@
         ) {
           updates.hot_folder_output_dir = current.hot_folder_output_dir;
         }
+        if (
+          "results_retention_days" in current &&
+          current.results_retention_days !== baselineState.results_retention_days
+        ) {
+          updates.results_retention_days = Number.parseInt(current.results_retention_days, 10);
+        }
         if ("cohere_model" in current && current.cohere_model !== baselineState.cohere_model) {
           updates.cohere_model = current.cohere_model;
         }
