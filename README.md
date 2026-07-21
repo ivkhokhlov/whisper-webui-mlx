@@ -163,9 +163,9 @@ letters, numbers, `_`, `-`, `.`, and `:`.
 
 Automation clients should poll `GET /api/machine/state` for the active queue
 and use `GET /api/machine/jobs/{client}/{client_job_id}` for one owned job's
-terminal status and result filenames. The browser-facing `/api/state` remains
-available but includes the complete retained history and is intentionally not
-the machine polling contract.
+terminal status and result filenames. The legacy `GET /api/state` contract is
+also machine-safe and retains only the newest 100 terminal jobs; the browser
+uses `GET /api/browser/state` when it needs complete retained history.
 
 ### Hot folder intake
 

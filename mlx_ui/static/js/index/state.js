@@ -157,7 +157,7 @@
 
   async function refreshState() {
     try {
-      const response = await fetch("/api/state", { cache: "no-store" });
+      const response = await fetch("/api/browser/state", { cache: "no-store" });
       if (!response.ok) {
         return;
       }

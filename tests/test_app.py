@@ -723,6 +723,43 @@ def test_api_state_includes_effective_implementation_metadata(tmp_path: Path) ->
     assert job_payload["ui"]["effective_implementation"]["id"] == "parakeet_mlx"
 
 
+def test_api_state_bounds_history_while_browser_state_remains_complete(
+    tmp_path: Path,
+) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+    for index in range(105):
+        timestamp = f"2026-07-21T14:{index // 60:02d}:{index % 60:02d}+00:00"
+        insert_job(
+            db_path,
+            JobRecord(
+                id=f"history-{index:03d}",
+                filename=f"audio-{index:03d}.wav",
+                status="done",
+                created_at=timestamp,
+                completed_at=timestamp,
+                upload_path=str(tmp_path / f"audio-{index:03d}.wav"),
+                language="auto",
+                client="callhub-transcription",
+                client_job_id=f"command-{index:03d}",
+            ),
+        )
+
+    with TestClient(app) as client:
+        machine_response = client.get("/api/state")
+        browser_response = client.get("/api/browser/state")
+
+    assert machine_response.status_code == 200
+    assert browser_response.status_code == 200
+    machine_history = machine_response.json()["history"]
+    browser_history = browser_response.json()["history"]
+    assert len(machine_history) == 100
+    assert machine_history[0]["id"] == "history-104"
+    assert machine_history[-1]["id"] == "history-005"
+    assert len(browser_history) == 105
+
+
 def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
     _configure_app(tmp_path)
     monkeypatch.setattr(

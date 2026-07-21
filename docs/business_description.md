@@ -60,6 +60,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Machine callers can poll a compact active-queue endpoint and look up their
   own job by `client` plus `client_job_id`, avoiding repeated transfer of the
   full browser history and result index as retained history grows.
+- The legacy machine state route keeps only the newest 100 terminal jobs while
+  the browser uses a separate complete-history route, keeping existing callers
+  below bounded JSON response limits without truncating the interactive view.
 - Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with

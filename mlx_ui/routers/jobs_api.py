@@ -33,6 +33,7 @@ from mlx_ui.db import (
     list_active_jobs,
     list_history_jobs,
     list_jobs,
+    list_recent_history_jobs,
 )
 from mlx_ui.job_ui import queue_groups, serialize_job, split_jobs, worker_state
 from mlx_ui.engine_registry import PARAKEET_TDT_V3_ENGINE
@@ -61,6 +62,8 @@ from mlx_ui.worker import cleanup_cancelled_job_artifacts, request_worker_cancel
 
 router = APIRouter()
 
+MACHINE_STATE_HISTORY_LIMIT = 100
+
 
 def _new_job_record(
     job_id: str,
@@ -87,6 +90,19 @@ def _new_job_record(
 def _build_results_index(jobs: list[JobRecord]) -> dict[str, list[str]]:
     results_dir = get_results_dir()
     return {job.id: list_result_files(results_dir, job.id) for job in jobs}
+
+
+def _serialize_active_job(job: JobRecord) -> dict[str, object]:
+    return {
+        "id": job.id,
+        "filename": job.filename,
+        "status": job.status,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "queue_position": job.queue_position,
+        "client": job.client,
+        "client_job_id": job.client_job_id,
+    }
 
 
 def _resolve_job_defaults(language: str | None) -> tuple[str | None, str]:
@@ -229,6 +245,28 @@ async def create_machine_job(
 
 @router.get("/api/state")
 def api_state() -> dict[str, object]:
+    queue_jobs = list_active_jobs(get_db_path())
+    history_jobs = list_recent_history_jobs(
+        get_db_path(),
+        limit=MACHINE_STATE_HISTORY_LIMIT,
+    )
+    running_job, queued_jobs = queue_groups(queue_jobs)
+    return {
+        "queue": [_serialize_active_job(job) for job in queue_jobs],
+        "queue_running": _serialize_active_job(running_job) if running_job else None,
+        "queue_pending": [_serialize_active_job(job) for job in queued_jobs],
+        "queue_counts": {
+            "running": 1 if running_job else 0,
+            "queued": len(queued_jobs),
+        },
+        "history": [serialize_job(job) for job in history_jobs],
+        "results_by_job": _build_results_index(history_jobs),
+        "worker": worker_state(queue_jobs),
+    }
+
+
+@router.get("/api/browser/state")
+def api_browser_state() -> dict[str, object]:
     jobs = list_jobs(get_db_path())
     queue_jobs, history_jobs = split_jobs(jobs)
     running_job, queued_jobs = queue_groups(queue_jobs)

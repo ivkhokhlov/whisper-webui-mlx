@@ -349,6 +349,40 @@ def list_active_jobs(db_path: Path) -> list[JobRecord]:
     return [_job_record_from_row(row) for row in rows]
 
 
+def list_recent_history_jobs(db_path: Path, *, limit: int) -> list[JobRecord]:
+    if limit <= 0:
+        return []
+    with _connect(db_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                filename,
+                status,
+                created_at,
+                upload_path,
+                language,
+                started_at,
+                completed_at,
+                error_message,
+                queue_position,
+                requested_engine,
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath,
+                client,
+                client_job_id
+            FROM jobs
+            WHERE status IN ('done', 'failed', 'cancelled')
+            ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [_job_record_from_row(row) for row in rows]
+
+
 def find_job_by_client_job_id(
     db_path: Path,
     *,
