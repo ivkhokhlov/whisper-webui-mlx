@@ -5,6 +5,8 @@ import sqlite3
 
 from mlx_ui.languages import AUTO_LANGUAGE, LEGACY_AUTO_LANGUAGE, normalize_language
 
+SQLITE_BUSY_TIMEOUT_SECONDS = 30.0
+
 
 @dataclass
 class JobRecord:
@@ -51,8 +53,11 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+    connection = sqlite3.connect(db_path, timeout=SQLITE_BUSY_TIMEOUT_SECONDS)
     connection.row_factory = sqlite3.Row
+    connection.execute(
+        f"PRAGMA busy_timeout = {int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}"
+    )
     return connection
 
 
@@ -606,8 +611,15 @@ def claim_next_job(
     effective_engine: str | None = None,
 ) -> JobRecord | None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db_path, isolation_level=None)
+    connection = sqlite3.connect(
+        db_path,
+        isolation_level=None,
+        timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
+    )
     connection.row_factory = sqlite3.Row
+    connection.execute(
+        f"PRAGMA busy_timeout = {int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}"
+    )
     try:
         connection.execute("BEGIN IMMEDIATE")
         running = connection.execute(

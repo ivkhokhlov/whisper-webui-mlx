@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import sqlite3
 import threading
 import time
 
@@ -127,6 +128,93 @@ def test_worker_processes_jobs_sequentially(tmp_path: Path) -> None:
         assert job.filename in result_path.read_text(encoding="utf-8")
     assert not Path(job1.upload_path).exists()
     assert not Path(job2.upload_path).exists()
+
+
+def test_worker_retries_locked_completion_without_stalling_queue(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "jobs.db"
+    uploads_dir = tmp_path / "uploads"
+    results_dir = tmp_path / "results"
+    init_db(db_path)
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    base_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    jobs = [
+        _make_job(
+            "job1",
+            "alpha.txt",
+            base_time.isoformat(timespec="seconds"),
+            uploads_dir,
+        ),
+        _make_job(
+            "job2",
+            "beta.txt",
+            (base_time + timedelta(seconds=1)).isoformat(timespec="seconds"),
+            uploads_dir,
+        ),
+    ]
+    for job in jobs:
+        insert_job(db_path, job)
+
+    real_mark_job_done = worker_module.mark_job_done
+    attempts = 0
+
+    def flaky_mark_job_done(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real_mark_job_done(*args, **kwargs)
+
+    monkeypatch.setattr(worker_module, "mark_job_done", flaky_mark_job_done)
+    monkeypatch.setattr(worker_module, "_SQLITE_BUSY_RETRY_BASE_SECONDS", 0.001)
+
+    start_worker(
+        db_path,
+        uploads_dir,
+        results_dir,
+        poll_interval=0.01,
+        transcriber=RecordingTranscriber(),
+    )
+    try:
+        completed = _wait_for_jobs(db_path, expected_count=2)
+    finally:
+        stop_worker(timeout=1)
+
+    assert attempts == 3
+    assert [job.status for job in completed] == ["done", "done"]
+
+
+def test_worker_loop_survives_unexpected_iteration_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    worker = Worker(
+        db_path=tmp_path / "jobs.db",
+        uploads_dir=tmp_path / "uploads",
+        results_dir=tmp_path / "results",
+        poll_interval=0.001,
+        transcriber=RecordingTranscriber(),
+    )
+    calls = 0
+
+    def flaky_run_once() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient worker iteration failure")
+        worker._stop_event.set()
+        return False
+
+    monkeypatch.setattr(worker, "run_once", flaky_run_once)
+
+    worker.start()
+    deadline = time.monotonic() + 1
+    while calls < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    worker.stop(timeout=1)
+
+    assert calls >= 2
 
 
 def test_worker_records_failure_metadata(tmp_path: Path) -> None:

@@ -61,6 +61,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
   SQLite, plus best-effort Telegram delivery and update checks.
+- Queue state commits tolerate transient SQLite writer contention, and an
+  unexpected iteration failure is logged without terminating the background
+  worker, so queued machine jobs continue after a concurrent intake burst.
 - A packaged macOS distribution path (self-contained `.app` + DMG) so a
   non-technical user can install, double-click, and use the same localhost UX
   without cloning the repo or installing Python.

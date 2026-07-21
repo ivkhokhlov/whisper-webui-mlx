@@ -5,7 +5,9 @@ import os
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 import threading
+import time
 
 from mlx_ui.db import (
     claim_next_job,
@@ -33,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 _worker_lock = threading.Lock()
 _worker_instance: Worker | None = None
+_SQLITE_BUSY_RETRY_LIMIT = 5
+_SQLITE_BUSY_RETRY_BASE_SECONDS = 0.1
 
 
 class Worker:
@@ -151,7 +155,13 @@ class Worker:
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
-            processed = self.run_once()
+            try:
+                processed = self.run_once()
+            except Exception:
+                logger.exception(
+                    "Worker iteration failed; keeping the queue worker alive"
+                )
+                processed = False
             if not processed:
                 self._stop_event.wait(self.poll_interval)
 
@@ -269,7 +279,8 @@ class Worker:
                     hot_folder_output_dir=self._hot_folder_output_dir(),
                 )
                 return True
-            mark_job_done(
+            _retry_sqlite_busy(
+                mark_job_done,
                 self.db_path,
                 job.id,
                 completed_at=_now_utc(),
@@ -394,6 +405,23 @@ def cleanup_cancelled_job_artifacts(
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _retry_sqlite_busy(operation, *args, **kwargs):
+    for attempt in range(_SQLITE_BUSY_RETRY_LIMIT):
+        try:
+            return operation(*args, **kwargs)
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            if attempt + 1 >= _SQLITE_BUSY_RETRY_LIMIT:
+                raise
+            delay = _SQLITE_BUSY_RETRY_BASE_SECONDS * (2**attempt)
+            logger.warning(
+                "SQLite busy while committing worker state; retrying in %.1fs",
+                delay,
+            )
+            time.sleep(delay)
 
 
 def _truncate_error(message: str, limit: int = 4000) -> str:
