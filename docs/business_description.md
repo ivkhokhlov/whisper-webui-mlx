@@ -60,9 +60,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Machine callers can poll a compact active-queue endpoint and look up their
   own job by `client` plus `client_job_id`, avoiding repeated transfer of the
   full browser history and result index as retained history grows.
-- The legacy machine state route keeps only the newest 100 terminal jobs while
-  the browser uses a separate complete-history route, keeping existing callers
-  below bounded JSON response limits without truncating the interactive view.
+- The legacy machine state route keeps only the newest 100 terminal jobs, while
+  the browser polls a lightweight active-state snapshot and fetches History in
+  server-filtered, server-sorted pages of at most 100 rows. This preserves the
+  CallHub contract, avoids embedding retained history in the root HTML, and
+  prevents multi-megabyte result indexes from being transferred every 2.5 seconds.
 - Explicit job lifecycle transitions (reserve -> resolve -> running -> done/failed)
   so `started_at` and `effective_engine` are written intentionally once per job.
 - Local storage of uploads, results, logs, settings, and job metadata with
@@ -82,10 +84,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   deployments on Linux/NVIDIA hosts, with separate `data-spark` state, seeded
   Parakeet settings, Hugging Face cache reuse, localhost-only binding, and a
   CUDA-access watchdog that restarts the container process when NVIDIA device
-  bindings disappear from a long-lived deployment. If CUDA is healthy but
-  shared memory is exhausted by another GPU workload, Parakeet retries both
-  model loading and an inference-time CUDA OOM on CPU, keeping the queue
-  available at reduced speed.
+  bindings disappear from a long-lived deployment. The CUDA-selected backend
+  stays on CUDA: model-load and inference OOM errors remain explicit job
+  failures instead of silently changing the requested execution device.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -163,9 +164,12 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.
+- History is loaded only when its tab is opened, 50 rows at a time. Search,
+  status filters, and all sort modes run against the complete retained history
+  on the server; “Load more” extends the same global result set.
 - History result links are encoded as safe URL path segments, so files with
   spaces or other path-sensitive characters can still be opened and downloaded
-  reliably from server-rendered History pages and stale browser tabs.
+  reliably from dynamically rendered History rows and stale browser tabs.
 - Details-on-demand panel is the canonical home for secondary history context:
   preview snippets, full timestamps, engine/language/backend metadata, output
   lists, and failure logs.
@@ -234,8 +238,8 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Reliability: sequential processing avoids model re-init churn and resource
   spikes, compact history keeps large job lists responsive, and the Spark
   container detects lost NVML/CUDA access before it can keep accepting jobs in
-  a permanently broken GPU context. CUDA model-load OOM has an explicit CPU
-  fallback so resource contention degrades throughput rather than availability.
+  a permanently broken GPU context. A CUDA OOM stays visible to the normal job
+  failure/retry path and never causes an implicit switch to CPU.
 
 ## Differentiators
 - Apple Silicon MLX acceleration (faster than CPU-only alternatives).
@@ -260,8 +264,8 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   recover the container process after GPU bindings disappear, while permanent
   prevention of the NVIDIA systemd-cgroup failure mode still belongs in host
   container-runtime configuration (CDI or the documented cgroup workaround).
-  CPU fallback covers CUDA model-load OOM but does not replace reserving enough
-  shared memory for GPU-speed transcription.
+  Because DGX Spark uses unified memory and this profile explicitly selects the
+  CUDA backend, it does not retry model loading or inference on CPU after OOM.
 - Cohere requires network access, an API key, and an explicit supported
   language; it is not an offline backend.
 - Designed for local, single-machine use; not a multi-user cloud service.

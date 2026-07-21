@@ -67,6 +67,9 @@
       if (updateHistory) {
         updateUrl(tabName, replaceHistory);
       }
+      window.dispatchEvent(
+        new CustomEvent("mlx-ui:tab-activated", { detail: { tab: tabName } })
+      );
     }
 
     function tabFromUrl() {
@@ -120,4 +123,3 @@
   app.tabs = app.tabs || {};
   app.tabs.init = initTabs;
 })();
-

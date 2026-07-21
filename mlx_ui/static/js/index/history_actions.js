@@ -103,7 +103,7 @@
         if (historyClearButton.disabled) {
           return;
         }
-        const count = historyList ? historyList.querySelectorAll(".history-row").length : 0;
+        const count = Number(historyClearButton.getAttribute("data-item-count") || 0);
         if (!count) {
           if (app.state) {
             app.state.updateHistoryClearState(0);
@@ -161,6 +161,7 @@
         } finally {
           if (app.state) {
             await app.state.refreshState();
+            await app.state.loadHistory({ reset: true });
           }
         }
       });
@@ -274,6 +275,7 @@
           } finally {
             if (app.state) {
               await app.state.refreshState();
+              await app.state.loadHistory({ reset: true });
             }
           }
         }

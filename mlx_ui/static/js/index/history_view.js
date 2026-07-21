@@ -62,35 +62,7 @@
     }
   }
 
-  function parseIsoMs(value) {
-    if (!value) {
-      return 0;
-    }
-    const ms = Date.parse(value);
-    return Number.isNaN(ms) ? 0 : ms;
-  }
-
-  function getHistoryRowMeta(row) {
-    const filenameEl = row ? row.querySelector(".history-filename") : null;
-    const filename = filenameEl ? filenameEl.textContent.trim() : "";
-    const filenameLower = filename.toLowerCase();
-    const timeMetaEl = row ? row.querySelector("[data-time-meta]") : null;
-    const status = timeMetaEl
-      ? (timeMetaEl.getAttribute("data-status") || "").toLowerCase()
-      : "";
-    const createdAt = timeMetaEl ? timeMetaEl.getAttribute("data-created-at") || "" : "";
-    const startedAt = timeMetaEl ? timeMetaEl.getAttribute("data-started-at") || "" : "";
-    const completedAt = timeMetaEl ? timeMetaEl.getAttribute("data-completed-at") || "" : "";
-    const anchorIso = completedAt || startedAt || createdAt;
-    return {
-      filename,
-      filenameLower,
-      status,
-      anchorMs: parseIsoMs(anchorIso),
-    };
-  }
-
-  function updateHistorySummary(visibleCount, totalCount, state) {
+  function updateHistorySummary(totalCount, state) {
     if (!historyViewSummary) {
       return;
     }
@@ -107,11 +79,7 @@
       return;
     }
     historyViewSummary.hidden = false;
-    if (visibleCount === totalCount) {
-      historyViewSummary.textContent = `${totalCount} ${totalCount === 1 ? "item" : "items"}`;
-      return;
-    }
-    historyViewSummary.textContent = `Showing ${visibleCount} of ${totalCount}`;
+    historyViewSummary.textContent = `${totalCount} ${totalCount === 1 ? "item" : "items"}`;
   }
 
   function updateHistoryFilteredEmpty(isVisible, state) {
@@ -147,62 +115,16 @@
       status: historyStatus.value || "all",
       sort: historySort.value || "newest",
     };
-    const query = state.query.trim().toLowerCase();
-    const statusFilter = state.status;
-    const sortMode = state.sort;
-
     const rows = Array.from(historyList.querySelectorAll(".history-row"));
-    const totalCount = rows.length;
-    if (totalCount === 0) {
-      historyList.style.display = "grid";
-      updateHistoryFilteredEmpty(false, state);
-      updateHistorySummary(0, 0, state);
-      return;
-    }
-
-    const metaRows = rows.map((row) => {
-      const meta = getHistoryRowMeta(row);
-      return { row, meta };
-    });
-
-    metaRows.sort((a, b) => {
-      if (sortMode === "name") {
-        const aName = a.meta.filenameLower;
-        const bName = b.meta.filenameLower;
-        const byName = aName.localeCompare(bName, undefined, { sensitivity: "base" });
-        if (byName !== 0) {
-          return byName;
-        }
-        return b.meta.anchorMs - a.meta.anchorMs;
-      }
-      if (sortMode === "oldest") {
-        return a.meta.anchorMs - b.meta.anchorMs;
-      }
-      return b.meta.anchorMs - a.meta.anchorMs;
-    });
-
-    const fragment = document.createDocumentFragment();
-    let visibleCount = 0;
-    metaRows.forEach(({ row, meta }) => {
-      const matchesQuery = !query || meta.filenameLower.includes(query);
-      const matchesStatus = statusFilter === "all" || meta.status === statusFilter;
-      const matches = matchesQuery && matchesStatus;
-      row.hidden = !matches;
-      if (matches) {
-        visibleCount += 1;
-      }
-      fragment.appendChild(row);
-    });
-    historyList.appendChild(fragment);
-
-    if (visibleCount === 0) {
+    const totalCount = Number(options.totalCount ?? rows.length);
+    if (rows.length === 0 && options.loaded) {
       historyList.style.display = "none";
       updateHistoryFilteredEmpty(true, state);
     } else {
       historyList.style.display = "grid";
       updateHistoryFilteredEmpty(false, state);
     }
-    updateHistorySummary(visibleCount, totalCount, state);
+    updateHistorySummary(totalCount, state);
     if (options.persist !== false) {
       persistHistoryViewState();
     }
@@ -224,11 +146,24 @@
       historySearch.addEventListener("input", () => {
         window.clearTimeout(historySearchTimeout);
         historySearchTimeout = window.setTimeout(() => {
-          applyHistoryView();
+          persistHistoryViewState();
+          if (app.state && typeof app.state.loadHistory === "function") {
+            app.state.loadHistory({ reset: true });
+          }
         }, 120);
       });
-      historyStatus.addEventListener("change", () => applyHistoryView());
-      historySort.addEventListener("change", () => applyHistoryView());
+      historyStatus.addEventListener("change", () => {
+        persistHistoryViewState();
+        if (app.state && typeof app.state.loadHistory === "function") {
+          app.state.loadHistory({ reset: true });
+        }
+      });
+      historySort.addEventListener("change", () => {
+        persistHistoryViewState();
+        if (app.state && typeof app.state.loadHistory === "function") {
+          app.state.loadHistory({ reset: true });
+        }
+      });
     }
 
     if (historyClearFilters) {
@@ -242,7 +177,10 @@
         if (historySort) {
           historySort.value = "newest";
         }
-        applyHistoryView();
+        persistHistoryViewState();
+        if (app.state && typeof app.state.loadHistory === "function") {
+          app.state.loadHistory({ reset: true });
+        }
         if (historySearch) {
           historySearch.focus();
         }

@@ -77,6 +77,12 @@ def init_db(db_path: Path) -> None:
     with _connect(db_path) as connection:
         connection.execute(SCHEMA)
         _migrate_schema(connection)
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_jobs_status_completed_created
+            ON jobs(status, completed_at, created_at)
+            """
+        )
         connection.commit()
 
 
@@ -381,6 +387,93 @@ def list_recent_history_jobs(db_path: Path, *, limit: int) -> list[JobRecord]:
             (limit,),
         ).fetchall()
     return [_job_record_from_row(row) for row in rows]
+
+
+def count_history_jobs(db_path: Path, *, status: str | None = None) -> int:
+    conditions = "status IN ('done', 'failed', 'cancelled')"
+    parameters: tuple[object, ...] = ()
+    if status is not None:
+        conditions += " AND status = ?"
+        parameters = (status,)
+    with _connect(db_path) as connection:
+        row = connection.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE {conditions}",
+            parameters,
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def list_history_page(
+    db_path: Path,
+    *,
+    limit: int,
+    offset: int,
+    query: str = "",
+    status: str | None = None,
+    sort: str = "newest",
+) -> tuple[list[JobRecord], int]:
+    if limit <= 0:
+        return [], 0
+    conditions = ["status IN ('done', 'failed', 'cancelled')"]
+    parameters: list[object] = []
+    normalized_query = query.strip()
+    if normalized_query:
+        conditions.append("LOWER(filename) LIKE ? ESCAPE '\\'")
+        escaped_query = (
+            normalized_query.lower()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
+        parameters.append(f"%{escaped_query}%")
+    if status is not None:
+        conditions.append("status = ?")
+        parameters.append(status)
+    where_sql = " AND ".join(conditions)
+    order_sql = {
+        "newest": "COALESCE(completed_at, created_at) DESC, id DESC",
+        "oldest": "COALESCE(completed_at, created_at) ASC, id ASC",
+        "name": (
+            "LOWER(filename) ASC, filename ASC, "
+            "COALESCE(completed_at, created_at) DESC, id DESC"
+        ),
+    }.get(sort)
+    if order_sql is None:
+        raise ValueError(f"Unsupported history sort: {sort}")
+    with _connect(db_path) as connection:
+        count_row = connection.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE {where_sql}",
+            parameters,
+        ).fetchone()
+        rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                filename,
+                status,
+                created_at,
+                upload_path,
+                language,
+                started_at,
+                completed_at,
+                error_message,
+                queue_position,
+                requested_engine,
+                effective_engine,
+                effective_implementation_id,
+                source_path,
+                source_relpath,
+                client,
+                client_job_id
+            FROM jobs
+            WHERE {where_sql}
+            ORDER BY {order_sql}
+            LIMIT ? OFFSET ?
+            """,
+            (*parameters, limit, offset),
+        ).fetchall()
+    total = int(count_row[0]) if count_row else 0
+    return [_job_record_from_row(row) for row in rows], total
 
 
 def find_job_by_client_job_id(

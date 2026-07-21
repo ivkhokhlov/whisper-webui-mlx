@@ -57,8 +57,7 @@
         }
 
         if (action === "clear-history") {
-          const historyList = app.dom ? app.dom.historyList : null;
-          const count = historyList ? historyList.querySelectorAll(".history-row").length : 0;
+          const count = Number(button.getAttribute("data-item-count") || 0);
           if (!count) {
             if (app.toasts) {
               app.toasts.notifySystem("History", "Already empty.", "success", {
@@ -122,6 +121,7 @@
           } finally {
             if (app.state) {
               await app.state.refreshState();
+              await app.state.loadHistory({ reset: true });
             }
             button.removeAttribute("disabled");
           }

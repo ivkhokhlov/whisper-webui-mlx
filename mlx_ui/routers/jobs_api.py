@@ -24,6 +24,7 @@ from mlx_ui.app_context import (
 from mlx_ui.db import (
     JobRecord,
     cancel_running_job,
+    count_history_jobs,
     delete_history_job,
     delete_history_jobs,
     delete_queued_job,
@@ -32,7 +33,7 @@ from mlx_ui.db import (
     insert_job,
     list_active_jobs,
     list_history_jobs,
-    list_jobs,
+    list_history_page,
     list_recent_history_jobs,
 )
 from mlx_ui.job_ui import queue_groups, serialize_job, split_jobs, worker_state
@@ -63,6 +64,9 @@ from mlx_ui.worker import cleanup_cancelled_job_artifacts, request_worker_cancel
 router = APIRouter()
 
 MACHINE_STATE_HISTORY_LIMIT = 100
+BROWSER_HISTORY_DEFAULT_LIMIT = 50
+BROWSER_HISTORY_MAX_LIMIT = 100
+BROWSER_STATE_RECENT_HISTORY_LIMIT = 10
 
 
 def _new_job_record(
@@ -103,6 +107,12 @@ def _serialize_active_job(job: JobRecord) -> dict[str, object]:
         "client": job.client,
         "client_job_id": job.client_job_id,
     }
+
+
+def _serialize_history_job(job: JobRecord) -> dict[str, object]:
+    payload = serialize_job(job)
+    payload["results"] = list_result_files(get_results_dir(), job.id)
+    return payload
 
 
 def _resolve_job_defaults(language: str | None) -> tuple[str | None, str]:
@@ -267,8 +277,11 @@ def api_state() -> dict[str, object]:
 
 @router.get("/api/browser/state")
 def api_browser_state() -> dict[str, object]:
-    jobs = list_jobs(get_db_path())
-    queue_jobs, history_jobs = split_jobs(jobs)
+    queue_jobs = list_active_jobs(get_db_path())
+    recent_history_jobs = list_recent_history_jobs(
+        get_db_path(),
+        limit=BROWSER_STATE_RECENT_HISTORY_LIMIT,
+    )
     running_job, queued_jobs = queue_groups(queue_jobs)
     return {
         "queue": [serialize_job(job) for job in queue_jobs],
@@ -278,9 +291,48 @@ def api_browser_state() -> dict[str, object]:
             "running": 1 if running_job else 0,
             "queued": len(queued_jobs),
         },
-        "history": [serialize_job(job) for job in history_jobs],
-        "results_by_job": _build_results_index(history_jobs),
-        "worker": worker_state(jobs),
+        "history_count": count_history_jobs(get_db_path()),
+        "recent_history": [serialize_job(job) for job in recent_history_jobs],
+        "worker": worker_state(queue_jobs),
+    }
+
+
+@router.get("/api/browser/history")
+def api_browser_history(
+    limit: int = Query(BROWSER_HISTORY_DEFAULT_LIMIT, ge=1, le=BROWSER_HISTORY_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    query: str = Query("", max_length=256),
+    status: str = Query("all"),
+    sort: str = Query("newest"),
+) -> dict[str, object]:
+    normalized_status = status.strip().lower()
+    if normalized_status not in {"all", "done", "failed", "cancelled"}:
+        raise HTTPException(status_code=422, detail="unsupported history status")
+    normalized_sort = sort.strip().lower()
+    if normalized_sort not in {"newest", "oldest", "name"}:
+        raise HTTPException(status_code=422, detail="unsupported history sort")
+    history_jobs, total = list_history_page(
+        get_db_path(),
+        limit=limit,
+        offset=offset,
+        query=query,
+        status=None if normalized_status == "all" else normalized_status,
+        sort=normalized_sort,
+    )
+    next_offset = offset + len(history_jobs)
+    return {
+        "items": [_serialize_history_job(job) for job in history_jobs],
+        "page": {
+            "limit": limit,
+            "offset": offset,
+            "returned": len(history_jobs),
+            "total": total,
+            "has_more": next_offset < total,
+            "next_offset": next_offset if next_offset < total else None,
+        },
+        "query": query.strip(),
+        "status": normalized_status,
+        "sort": normalized_sort,
     }
 
 

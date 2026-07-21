@@ -11,8 +11,19 @@
     historyPlaceholder,
     workerStatus,
     historyClearButton,
+    historyPagination,
+    historyLoadMore,
+    historyPageStatus,
     queueCountEls,
   } = app.dom || {};
+
+  const HISTORY_PAGE_SIZE = 50;
+  let historyItems = [];
+  let historyPage = null;
+  let historyLoaded = false;
+  let historyLoading = false;
+  let historyRequestId = 0;
+  let historyReloadPending = false;
 
   function updateQueueCount(count) {
     const label = count === 1 ? "file" : "files";
@@ -26,6 +37,7 @@
       return;
     }
     historyClearButton.disabled = !count;
+    historyClearButton.setAttribute("data-item-count", String(count));
   }
 
   function updateUploadDensity(queue, worker) {
@@ -42,7 +54,7 @@
     const historyButton = document.querySelector("[data-storage-action='clear-history']");
     const historyHint = document.querySelector("[data-storage-history-hint]");
     if (historyButton instanceof HTMLButtonElement) {
-      const count = Array.isArray(history) ? history.length : 0;
+      const count = historyCount(history);
       historyButton.disabled = !count;
       historyButton.setAttribute("data-item-count", String(count));
       historyButton.textContent = "Delete history";
@@ -108,17 +120,39 @@
     }
   }
 
+  function historyResultsIndex(jobs) {
+    return Object.fromEntries((jobs || []).map((job) => [job.id, job.results || []]));
+  }
+
+  function updateHistoryPagination() {
+    if (!historyPagination || !historyLoadMore) {
+      return;
+    }
+    const hasMore = Boolean(historyPage && historyPage.has_more);
+    historyPagination.hidden = !historyLoaded || (!hasMore && historyItems.length === 0);
+    historyLoadMore.hidden = !hasMore;
+    historyLoadMore.disabled = historyLoading;
+    if (historyPageStatus) {
+      const total = historyPage ? Number(historyPage.total || 0) : 0;
+      historyPageStatus.textContent = historyLoaded
+        ? `Showing ${historyItems.length} of ${total}`
+        : "";
+    }
+  }
+
   function renderHistory(listEl, placeholderEl, jobs, resultsByJob) {
     if (!listEl || !placeholderEl) {
       return;
     }
     if (!jobs || jobs.length === 0) {
       listEl.innerHTML = "";
-      placeholderEl.style.display = "grid";
-      updateHistoryClearState(0);
+      const total = historyPage ? Number(historyPage.total || 0) : 0;
+      placeholderEl.style.display = total === 0 ? "grid" : "none";
+      updateHistoryClearState(total);
       if (app.historyView) {
-        app.historyView.apply({ persist: false });
+        app.historyView.apply({ persist: false, loaded: historyLoaded, totalCount: total });
       }
+      updateHistoryPagination();
       return;
     }
     const openJobs = new Set();
@@ -149,9 +183,76 @@
       app.modals.wireHistoryDetails(listEl);
       app.modals.wireHistoryMenus(listEl);
     }
-    updateHistoryClearState(jobs.length);
+    const total = historyPage ? Number(historyPage.total || 0) : jobs.length;
+    updateHistoryClearState(total);
     if (app.historyView) {
-      app.historyView.apply({ persist: false });
+      app.historyView.apply({ persist: false, loaded: historyLoaded, totalCount: total });
+    }
+    updateHistoryPagination();
+  }
+
+  function currentHistoryFilters() {
+    return {
+      query: app.dom?.historySearch?.value || "",
+      status: app.dom?.historyStatus?.value || "all",
+      sort: app.dom?.historySort?.value || "newest",
+    };
+  }
+
+  async function loadHistory(options = {}) {
+    const reset = options.reset !== false;
+    if (historyLoading) {
+      if (!reset) {
+        return;
+      }
+      historyReloadPending = true;
+      return;
+    }
+    if (!reset && !(historyPage && historyPage.has_more)) {
+      return;
+    }
+    if (reset) {
+      historyItems = [];
+      historyPage = null;
+    }
+    historyLoading = true;
+    updateHistoryPagination();
+    const requestId = ++historyRequestId;
+    const filters = currentHistoryFilters();
+    const params = new URLSearchParams({
+      limit: String(HISTORY_PAGE_SIZE),
+      offset: String(reset ? 0 : historyItems.length),
+      query: filters.query,
+      status: filters.status,
+      sort: filters.sort,
+    });
+    try {
+      const response = await fetch(`/api/browser/history?${params}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`History request failed with HTTP ${response.status}`);
+      }
+      const payload = await response.json();
+      if (requestId !== historyRequestId) {
+        return;
+      }
+      historyItems = reset ? payload.items || [] : historyItems.concat(payload.items || []);
+      historyPage = payload.page || null;
+      historyLoaded = true;
+      renderHistory(historyList, historyPlaceholder, historyItems, historyResultsIndex(historyItems));
+      updateSettingsStorageState(null, { count: historyPage ? historyPage.total : 0 });
+    } catch (error) {
+      if (requestId === historyRequestId) {
+        console.warn("Failed to load history", error);
+      }
+    } finally {
+      if (requestId === historyRequestId) {
+        historyLoading = false;
+        updateHistoryPagination();
+        if (historyReloadPending) {
+          historyReloadPending = false;
+          loadHistory({ reset: true });
+        }
+      }
     }
   }
 
@@ -162,15 +263,21 @@
         return;
       }
       const payload = await response.json();
-      const resultsByJob = payload.results_by_job || {};
       const queue = payload.queue || [];
       const workerState = payload.worker && payload.worker.status ? payload.worker.status : "Idle";
       renderQueue(queueList, queuePlaceholder, queue, payload.worker || null);
-      renderHistory(historyList, historyPlaceholder, payload.history || [], resultsByJob);
       if (app.toasts) {
-        app.toasts.handleNotifications(payload.history || [], resultsByJob);
+        app.toasts.handleNotifications(payload.recent_history || [], {});
       }
-      updateSettingsStorageState(queue, payload.history || []);
+      updateSettingsStorageState(queue, { count: payload.history_count || 0 });
+      updateHistoryClearState(payload.history_count || 0);
+      if (historyLoaded && historyPage) {
+        const previousTotal = Number(historyPage.total || 0);
+        const nextTotal = Number(payload.history_count || 0);
+        if (previousTotal !== nextTotal) {
+          loadHistory({ reset: true });
+        }
+      }
       updateQueueCount(queue.filter((job) => job.status === "queued").length);
       updateUploadDensity(queue, payload.worker || null);
       if (payload.worker && workerStatus && app.workerCard) {
@@ -183,6 +290,13 @@
     }
   }
 
+  function historyCount(history) {
+    if (Array.isArray(history)) {
+      return history.length;
+    }
+    return history && Number.isFinite(Number(history.count)) ? Number(history.count) : 0;
+  }
+
   function initState() {
     if (app.state && app.state.__initialized) {
       return;
@@ -191,6 +305,7 @@
     app.state = {
       __initialized: true,
       refreshState,
+      loadHistory,
       renderQueue,
       renderHistory,
       updateQueueCount,
@@ -198,6 +313,18 @@
       updateSettingsStorageState,
       updateUploadDensity,
     };
+    if (historyLoadMore) {
+      historyLoadMore.addEventListener("click", () => loadHistory({ reset: false }));
+    }
+    window.addEventListener("mlx-ui:tab-activated", (event) => {
+      if (event.detail && event.detail.tab === "history" && !historyLoaded) {
+        loadHistory({ reset: true });
+      }
+    });
+    const activeHistoryPanel = document.querySelector('[data-panel="history"].is-active');
+    if (activeHistoryPanel) {
+      loadHistory({ reset: true });
+    }
   }
 
   app.state = app.state || {};

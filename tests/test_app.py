@@ -498,6 +498,7 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.get("/")
+        history_response = client.get("/api/browser/history")
 
     assert response.status_code == 200
     assert 'id="upload-title"' in response.text
@@ -512,7 +513,10 @@ def test_root_empty_states_hidden_when_jobs_exist(tmp_path: Path) -> None:
     assert "display: none" in history_placeholder.group(0)
 
     assert "alpha.txt" in response.text
-    assert "beta.txt" in response.text
+    assert "beta.txt" not in response.text
+    assert [item["filename"] for item in history_response.json()["items"]] == [
+        "beta.txt"
+    ]
 
 
 def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
@@ -591,15 +595,17 @@ def test_root_shows_engine_and_language_metadata_in_queue_worker_and_history(
 
     with TestClient(app) as client:
         response = client.get("/")
+        history_response = client.get("/api/browser/history")
 
     assert response.status_code == 200
     assert 'id="worker-indicator"' in response.text
     assert 'id="worker-context"' not in response.text
     assert "Cohere cloud · English" not in response.text
     assert "Cohere cloud · EN" in response.text
-    assert (
-        'data-preview-meta="Requested Cohere · cloud, used Whisper (CPU) · local · Language: French · Backend: whisper"'
-        in response.text
+    history_job = history_response.json()["items"][0]
+    assert history_job["ui"]["preview_meta"] == (
+        "Requested Cohere · cloud, used Whisper (CPU) · local · "
+        "Language: French · Backend: whisper"
     )
 
 
@@ -723,7 +729,7 @@ def test_api_state_includes_effective_implementation_metadata(tmp_path: Path) ->
     assert job_payload["ui"]["effective_implementation"]["id"] == "parakeet_mlx"
 
 
-def test_api_state_bounds_history_while_browser_state_remains_complete(
+def test_api_state_and_browser_history_have_independent_bounded_contracts(
     tmp_path: Path,
 ) -> None:
     _configure_app(tmp_path)
@@ -749,15 +755,107 @@ def test_api_state_bounds_history_while_browser_state_remains_complete(
     with TestClient(app) as client:
         machine_response = client.get("/api/state")
         browser_response = client.get("/api/browser/state")
+        browser_history_response = client.get("/api/browser/history?limit=50")
 
     assert machine_response.status_code == 200
     assert browser_response.status_code == 200
+    assert browser_history_response.status_code == 200
     machine_history = machine_response.json()["history"]
-    browser_history = browser_response.json()["history"]
+    browser_state = browser_response.json()
+    browser_history = browser_history_response.json()
     assert len(machine_history) == 100
     assert machine_history[0]["id"] == "history-104"
     assert machine_history[-1]["id"] == "history-005"
-    assert len(browser_history) == 105
+    assert "history" not in browser_state
+    assert "results_by_job" not in browser_state
+    assert browser_state["history_count"] == 105
+    assert len(browser_state["recent_history"]) == 10
+    assert browser_state["recent_history"][0]["id"] == "history-104"
+    assert len(browser_history["items"]) == 50
+    assert browser_history["items"][0]["id"] == "history-104"
+    assert browser_history["page"] == {
+        "limit": 50,
+        "offset": 0,
+        "returned": 50,
+        "total": 105,
+        "has_more": True,
+        "next_offset": 50,
+    }
+
+
+def test_browser_history_filters_sorts_and_validates_bounds(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+    fixtures = (
+        ("job-1", "zulu.wav", "done", "2026-07-21T10:00:00+00:00"),
+        ("job-2", "Alpha.wav", "failed", "2026-07-21T11:00:00+00:00"),
+        ("job-3", "alpha-final.wav", "done", "2026-07-21T12:00:00+00:00"),
+    )
+    for job_id, filename, status, timestamp in fixtures:
+        insert_job(
+            db_path,
+            JobRecord(
+                id=job_id,
+                filename=filename,
+                status=status,
+                created_at=timestamp,
+                completed_at=timestamp,
+                upload_path=str(tmp_path / filename),
+                language="auto",
+            ),
+        )
+
+    with TestClient(app) as client:
+        filtered = client.get(
+            "/api/browser/history?query=alpha&status=done&sort=name&limit=1"
+        )
+        oldest = client.get("/api/browser/history?sort=oldest")
+        bad_status = client.get("/api/browser/history?status=running")
+        bad_sort = client.get("/api/browser/history?sort=duration")
+        too_large = client.get("/api/browser/history?limit=101")
+
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()["items"]] == ["job-3"]
+    assert filtered.json()["page"]["total"] == 1
+    assert filtered.json()["sort"] == "name"
+    assert [item["id"] for item in oldest.json()["items"]] == [
+        "job-1",
+        "job-2",
+        "job-3",
+    ]
+    assert bad_status.status_code == 422
+    assert bad_sort.status_code == 422
+    assert too_large.status_code == 422
+
+
+def test_root_history_html_does_not_embed_retained_rows(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    db_path = Path(app.state.db_path)
+    init_db(db_path)
+    for index in range(120):
+        timestamp = f"2026-07-21T14:{index // 60:02d}:{index % 60:02d}+00:00"
+        insert_job(
+            db_path,
+            JobRecord(
+                id=f"history-root-{index:03d}",
+                filename=f"large-history-{index:03d}.wav",
+                status="done",
+                created_at=timestamp,
+                completed_at=timestamp,
+                upload_path=str(tmp_path / f"large-history-{index:03d}.wav"),
+                language="auto",
+            ),
+        )
+
+    with TestClient(app) as client:
+        response = client.get("/?tab=history")
+
+    assert response.status_code == 200
+    assert "large-history-000.wav" not in response.text
+    assert 'id="history-list"' in response.text
+    assert 'data-item-count="120"' in response.text
+    assert len(response.content) < 1_000_000
 
 
 def test_live_page_ok(tmp_path: Path, monkeypatch) -> None:
@@ -1593,11 +1691,13 @@ def test_history_lists_results_and_download_endpoint(tmp_path: Path) -> None:
     srt_path.write_text("subtitles", encoding="utf-8")
 
     with TestClient(app) as client:
-        response = client.get("/")
+        response = client.get("/api/browser/history")
 
         assert response.status_code == 200
-        assert f"/results/{job_id}/alpha%20beta.txt" in response.text
-        assert f"/results/{job_id}/alpha%20beta.srt" in response.text
+        assert response.json()["items"][0]["results"] == [
+            "alpha beta.srt",
+            "alpha beta.txt",
+        ]
 
         download = client.get(f"/results/{job_id}/alpha%20beta.txt")
         assert download.status_code == 200

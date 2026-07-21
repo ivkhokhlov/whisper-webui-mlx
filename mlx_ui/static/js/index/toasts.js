@@ -37,7 +37,7 @@
       .slice(0, 80);
   }
 
-  function buildToast(job, resultsByJob, opts) {
+  function buildToast(job, opts) {
     if (!toastStack) {
       return;
     }
@@ -218,7 +218,7 @@
     schedule(remaining);
   }
 
-  function handleNotifications(history, resultsByJob) {
+  function handleNotifications(history) {
     const completed = (history || []).filter((job) => job.status === "done" || job.status === "failed");
     if (!notificationsSeeded) {
       completed.forEach((job) => notifiedJobIds.add(job.id));
@@ -228,7 +228,7 @@
     completed.forEach((job) => {
       if (!notifiedJobIds.has(job.id)) {
         notifiedJobIds.add(job.id);
-        buildToast(job, resultsByJob, {
+        buildToast(job, {
           clickable: true,
           key: `job:${job.id}:${job.status}`,
         });
@@ -260,7 +260,6 @@
         filename: messageText,
         completed_at: new Date().toISOString(),
       },
-      {},
       {
         title: titleText,
         body: messageText,
@@ -341,4 +340,3 @@
   app.toasts = app.toasts || {};
   app.toasts.init = initToasts;
 })();
-

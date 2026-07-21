@@ -15,7 +15,7 @@ the macOS MLX release path.
 - App data: `./data-spark`
 - Hugging Face cache: `~/.cache/huggingface`
 - CUDA watchdog: enabled, probes GPU access every 15 seconds
-- CUDA OOM fallback: retries model loading on CPU
+- CUDA execution is strict: CUDA OOM remains a visible job failure
 - Container user: root by default, because the NGC NeMo image ships some
   Megatron/NeMo files without world-readable permissions
 
@@ -76,10 +76,11 @@ instant GPU access disappeared can still be marked failed; retry it after the
 container becomes healthy again.
 
 If CUDA remains visible but another service has reserved too much unified
-memory for the Parakeet model to load, the Spark image retries that model load
-on CPU. The active model remains on CPU until the container restarts, so jobs
-keep working at reduced speed instead of repeatedly failing with CUDA OOM. Set
-`PARAKEET_CUDA_OOM_CPU_FALLBACK=0` to make memory contention fail fast instead.
+memory, model loading or inference fails explicitly with CUDA OOM. The Spark
+profile does not silently retry on CPU: selecting the CUDA backend is an
+execution contract, and on DGX Spark the CPU and GPU already share the same
+physical memory pool. The normal queue failure/retry path remains responsible
+for surfacing and retrying the job after memory pressure is resolved.
 
 ### `NVML: Unknown Error` or `CUFFT_INTERNAL_ERROR`
 

@@ -14,8 +14,8 @@ from mlx_ui.app_context import (
     get_results_dir,
     get_uploads_dir,
 )
-from mlx_ui.db import list_jobs
-from mlx_ui.job_ui import build_job_ui, split_jobs, worker_state
+from mlx_ui.db import count_history_jobs, list_active_jobs
+from mlx_ui.job_ui import build_job_ui, worker_state
 from mlx_ui.settings import (
     CONFIGURABLE_ENGINE_CHOICES,
     build_cohere_snapshot,
@@ -31,7 +31,6 @@ from mlx_ui.languages import (
     list_parakeet_tdt_v3_supported_languages,
     parse_language,
 )
-from mlx_ui.storage import list_result_files
 
 router = APIRouter()
 
@@ -46,18 +45,13 @@ def favicon() -> FileResponse:
     return FileResponse(STATIC_DIR / "favicon.ico")
 
 
-def _build_results_index(job_ids: list[str]) -> dict[str, list[str]]:
-    results_dir = get_results_dir()
-    return {job_id: list_result_files(results_dir, job_id) for job_id in job_ids}
-
-
 @router.get("/", response_class=HTMLResponse)
 def read_root(request: Request):
-    jobs = list_jobs(get_db_path())
-    queue_jobs, history_jobs = split_jobs(jobs)
+    queue_jobs = list_active_jobs(get_db_path())
+    history_count = count_history_jobs(get_db_path())
     queued_count = sum(1 for job in queue_jobs if job.status == "queued")
     upload_is_busy = any(job.status in {"queued", "running"} for job in queue_jobs)
-    job_views = {job.id: build_job_ui(job) for job in jobs}
+    job_views = {job.id: build_job_ui(job) for job in queue_jobs}
     base_dir = get_base_dir()
     settings_snapshot = build_settings_snapshot(base_dir=base_dir)
     cohere_snapshot = build_cohere_snapshot(base_dir=base_dir)
@@ -93,10 +87,11 @@ def read_root(request: Request):
             "queue_jobs": queue_jobs,
             "queued_count": queued_count,
             "upload_is_busy": upload_is_busy,
-            "history_jobs": history_jobs,
+            "history_jobs": [],
+            "history_count": history_count,
             "job_views": job_views,
-            "results_by_job": _build_results_index([job.id for job in history_jobs]),
-            "worker": worker_state(jobs),
+            "results_by_job": {},
+            "worker": worker_state(queue_jobs),
             "settings_snapshot": settings_snapshot,
             "cohere_snapshot": cohere_snapshot,
             "telegram_snapshot": telegram_snapshot,

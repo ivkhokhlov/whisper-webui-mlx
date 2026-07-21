@@ -26,7 +26,6 @@
               {% set cohere_key_locked = cohere_snapshot.api_key_source == "env" %}
               {% set cohere_model_locked = settings_snapshot.sources.cohere_model == "env" %}
               {% set telegram_locked = telegram_snapshot.source == "env" %}
-              {% set history_count = history_jobs | length %}
               {% set queue_count_total = queue_jobs | length %}
               {% set update_locked = settings_snapshot.sources.update_check_enabled == "env" %}
               {% set log_locked = settings_snapshot.sources.log_level == "env" %}

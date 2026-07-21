@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -18,17 +17,7 @@ def _configure_app(tmp_path: Path) -> None:
     app.state.live_service = None
 
 
-def _extract_history_row(html: str, job_id: str) -> str:
-    match = re.search(
-        rf'<div\s+class="history-row"[^>]*data-job-id="{re.escape(job_id)}".*?<details class="job-details"[^>]*>.*?</details>\s*</div>',
-        html,
-        re.DOTALL,
-    )
-    assert match is not None
-    return match.group(0)
-
-
-def test_root_history_rows_use_lighter_summary_and_single_primary_action(
+def test_browser_history_rows_use_lighter_summary_and_single_primary_action(
     tmp_path: Path,
 ) -> None:
     _configure_app(tmp_path)
@@ -79,29 +68,22 @@ def test_root_history_rows_use_lighter_summary_and_single_primary_action(
     )
 
     with TestClient(app) as client:
-        response = client.get("/?tab=history")
+        response = client.get("/api/browser/history")
 
     assert response.status_code == 200
-    done_row = _extract_history_row(response.text, done_id)
-    failed_row = _extract_history_row(response.text, failed_id)
+    payload = response.json()
+    items = {item["id"]: item for item in payload["items"]}
+    done_job = items[done_id]
+    failed_job = items[failed_id]
 
-    assert 'class="status-badge is-done">Done<' in done_row
-    assert 'class="status-badge is-failed">Failed<' in failed_row
-    assert "data-time-meta" in done_row
-    assert "data-time-meta" in failed_row
-    assert 'class="job-primary"' in done_row
-    assert len(re.findall(r'class="job-primary', done_row)) == 1
-    assert len(re.findall(r'class="job-primary', failed_row)) == 1
-    assert 'data-action="preview"' in done_row
-    assert 'class="job-primary is-secondary js-only"' not in done_row
-    assert "output-chip" not in done_row
-    assert "output-chip" not in failed_row
-    assert "meta-chip" not in done_row
-    assert "meta-chip" not in failed_row
-    assert "Decoder crashed on frame 1" in failed_row
+    assert done_job["status"] == "done"
+    assert failed_job["status"] == "failed"
+    assert done_job["results"] == ["meeting.srt", "meeting.txt"]
+    assert failed_job["error_message"].startswith("Decoder crashed on frame 1")
+    assert done_job["ui"]["language"]["label"] == "French"
 
 
-def test_root_history_details_group_secondary_metadata_on_demand(
+def test_browser_history_exposes_secondary_metadata_on_demand(
     tmp_path: Path,
 ) -> None:
     _configure_app(tmp_path)
@@ -157,27 +139,18 @@ def test_root_history_details_group_secondary_metadata_on_demand(
     )
 
     with TestClient(app) as client:
-        response = client.get("/?tab=history")
+        response = client.get("/api/browser/history")
 
     assert response.status_code == 200
-    done_row = _extract_history_row(response.text, done_id)
-    failed_row = _extract_history_row(response.text, failed_id)
+    payload = response.json()
+    items = {item["id"]: item for item in payload["items"]}
+    done_job = items[done_id]
+    failed_job = items[failed_id]
 
-    assert 'aria-label="View details for customer-call.wav"' in done_row
-    assert ">Details<" in done_row
-    assert 'class="detail-label">Preview<' in done_row
-    assert 'class="detail-label">Outputs<' in done_row
-    assert 'class="detail-label">Processing<' in done_row
-    assert 'class="detail-label">Timeline<' in done_row
-    assert "Requested Cohere · cloud, used Whisper (CPU) · local" in done_row
-    assert ">Language</dt>" in done_row
-    assert ">French<" in done_row
-    assert "<code>whisper</code>" in done_row
-    assert "customer-call.txt" in done_row
-    assert "customer-call.srt" in done_row
-    assert "preview-meta-note" not in done_row
-
-    assert 'aria-label="View details for decoder.mp4"' in failed_row
-    assert 'class="detail-label">Failure log<' in failed_row
-    assert 'class="detail-label">Timeline<' in failed_row
-    assert "Decoder crashed on frame 1" in failed_row
+    assert done_job["ui"]["engine_summary"] == (
+        "Requested Cohere · cloud, used Whisper (CPU) · local"
+    )
+    assert done_job["ui"]["language"]["label"] == "French"
+    assert done_job["ui"]["effective_implementation"]["id"] == "whisper"
+    assert done_job["results"] == ["customer-call.srt", "customer-call.txt"]
+    assert failed_job["error_message"].startswith("Decoder crashed on frame 1")

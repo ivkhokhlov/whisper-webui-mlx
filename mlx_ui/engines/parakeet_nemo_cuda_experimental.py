@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-import gc
 import importlib
 import logging
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -35,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 _PARAKEET_FRAME_STRIDE_MULTIPLIER = 8.0
 PARAKEET_FFMPEG_PATH_ENV = "PARAKEET_FFMPEG_PATH"
-PARAKEET_CUDA_OOM_CPU_FALLBACK_ENV = "PARAKEET_CUDA_OOM_CPU_FALLBACK"
 _PARAKEET_SAMPLE_RATE = 16_000
 _PARAKEET_SAMPLE_WIDTH_BYTES = 2
 _NEMO_RUNTIME_LOCK = threading.RLock()
@@ -148,19 +145,17 @@ class ParakeetNemoCudaTranscriber:
         self.batch_size = max(1, int(batch_size or DEFAULT_PARAKEET_BATCH_SIZE))
         self.output_formats = normalize_requested_output_formats(output_formats)
         self._model = None
-        self._model_device: str | None = None
 
     def transcribe(self, job: JobRecord, results_dir: Path) -> Path:
         source_path = Path(job.upload_path)
         model = self._ensure_model()
         logger.info(
             "Running Parakeet for job %s "
-            "(model=%s, decoding=%s, batch_size=%s, device=%s)",
+            "(model=%s, decoding=%s, batch_size=%s)",
             job.id,
             self.repo_id,
             self.decoding_mode,
             self.batch_size,
-            self._model_device or "unknown",
         )
         with _prepare_parakeet_audio_source(source_path) as audio_source:
             with _prepare_parakeet_audio_chunks(
@@ -175,10 +170,7 @@ class ParakeetNemoCudaTranscriber:
                         batch_size=min(self.batch_size, len(chunks)),
                     )
                 except Exception as exc:  # pragma: no cover - backend passthrough
-                    hypotheses = self._retry_transcription_on_cpu_after_cuda_oom(
-                        exc,
-                        chunks,
-                    )
+                    raise RuntimeError(f"Parakeet transcription failed: {exc}") from exc
         transcript = _normalize_parakeet_transcript(
             model,
             hypotheses,
@@ -194,71 +186,6 @@ class ParakeetNemoCudaTranscriber:
             output_formats=self.output_formats,
         )
 
-    def _retry_transcription_on_cpu_after_cuda_oom(
-        self,
-        cuda_exc: Exception,
-        chunks: tuple[_ParakeetAudioChunk, ...],
-    ):
-        if not (
-            self._model_device == "cuda"
-            and _cuda_oom_cpu_fallback_enabled()
-            and _is_cuda_out_of_memory(cuda_exc)
-        ):
-            raise RuntimeError(f"Parakeet transcription failed: {cuda_exc}") from cuda_exc
-        logger.warning(
-            "CUDA memory became unavailable while transcribing; "
-            "reloading Parakeet on CPU because %s=1",
-            PARAKEET_CUDA_OOM_CPU_FALLBACK_ENV,
-        )
-        self._release_model()
-        model = self._load_cpu_model()
-        try:
-            return _transcribe_with_parakeet_model(
-                model,
-                [str(chunk.path) for chunk in chunks],
-                batch_size=min(self.batch_size, len(chunks)),
-            )
-        except Exception as cpu_exc:  # pragma: no cover - backend passthrough
-            raise RuntimeError(
-                "Parakeet transcription failed after CUDA OOM CPU fallback: "
-                f"{cpu_exc}"
-            ) from cpu_exc
-
-    def _release_model(self) -> None:
-        model = self._model
-        self._model = None
-        self._model_device = None
-        if model is not None:
-            try:
-                model.to("cpu")
-            except Exception:
-                pass
-        del model
-        gc.collect()
-        try:
-            import torch  # type: ignore[import-not-found]
-
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-
-    def _load_cpu_model(self):
-        from mlx_ui import transcriber as transcriber_module
-
-        nemo_asr, open_dict = transcriber_module._load_parakeet_runtime()
-        model = nemo_asr.models.ASRModel.from_pretrained(
-            self.repo_id,
-            map_location="cpu",
-        )
-        _configure_parakeet_decoding(
-            model,
-            open_dict=open_dict,
-            decoding_mode=self.decoding_mode,
-        )
-        self._model = model
-        self._model_device = "cpu"
-        return model
-
     def _ensure_model(self):
         if self._model is not None:
             return self._model
@@ -266,10 +193,7 @@ class ParakeetNemoCudaTranscriber:
 
         nemo_asr, open_dict = transcriber_module._load_parakeet_runtime()
         try:
-            model, model_device = _load_parakeet_model(
-                nemo_asr.models.ASRModel,
-                self.repo_id,
-            )
+            model = nemo_asr.models.ASRModel.from_pretrained(self.repo_id)
         except Exception as exc:  # pragma: no cover - depends on optional backend
             raise RuntimeError(
                 f"Failed to load Parakeet model '{self.repo_id}': {exc}"
@@ -280,44 +204,7 @@ class ParakeetNemoCudaTranscriber:
             decoding_mode=self.decoding_mode,
         )
         self._model = model
-        self._model_device = model_device
         return self._model
-
-
-def _load_parakeet_model(factory, repo_id: str):
-    try:
-        return factory.from_pretrained(repo_id), "cuda"
-    except Exception as cuda_exc:
-        if not (_cuda_oom_cpu_fallback_enabled() and _is_cuda_out_of_memory(cuda_exc)):
-            raise
-        cuda_error = str(cuda_exc)
-        cuda_exc.__traceback__ = None
-        gc.collect()
-        logger.warning(
-            "CUDA memory is unavailable while loading Parakeet model %s; "
-            "retrying on CPU because %s=1",
-            repo_id,
-            PARAKEET_CUDA_OOM_CPU_FALLBACK_ENV,
-        )
-        try:
-            return factory.from_pretrained(repo_id, map_location="cpu"), "cpu"
-        except Exception as cpu_exc:
-            raise RuntimeError(
-                f"CUDA model load failed: {cuda_error}; CPU fallback also failed: "
-                f"{cpu_exc}"
-            ) from cpu_exc
-
-
-def _cuda_oom_cpu_fallback_enabled() -> bool:
-    value = os.getenv(PARAKEET_CUDA_OOM_CPU_FALLBACK_ENV, "").strip().lower()
-    return value in {"1", "true", "yes", "on"}
-
-
-def _is_cuda_out_of_memory(exc: Exception) -> bool:
-    message = f"{type(exc).__name__}: {exc}".lower()
-    cuda_related = "cuda" in message or "cudart" in message
-    out_of_memory = "out of memory" in message or "memoryallocation" in message
-    return cuda_related and out_of_memory
 
 
 def _configure_parakeet_decoding(
