@@ -115,6 +115,8 @@ def test_spark_image_uses_cuda_supervisor_and_gpu_healthcheck() -> None:
     launcher = (ROOT_DIR / "docker-run-spark.sh").read_text(encoding="utf-8")
 
     assert "COPY pyproject.toml ./" in dockerfile
+    assert "COPY requirements-parakeet-nemo-cuda.txt ./" in dockerfile
+    assert "-r requirements-parakeet-nemo-cuda.txt" in dockerfile
     assert "COPY pyproject.toml ./" in cpu_dockerfile
     assert 'CMD ["python3", "-m", "mlx_ui.spark_container"]' in dockerfile
     assert "HEALTHCHECK" in dockerfile

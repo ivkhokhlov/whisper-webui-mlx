@@ -83,6 +83,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   maintainers do not confuse it with the supported release path.
 - Shared output writers so engines can produce `.txt` by default and `.json`,
   `.srt`, or `.vtt` when real metadata exists.
+- JSON transcript artifacts distinguish requested language mode from detected
+  evidence. Parakeet TDT v3 artifacts classify the completed transcript over
+  the model's 25 supported languages and expose both `language` and
+  `language_confidence`; short or low-confidence material stays unknown rather
+  than persisting the request sentinel `auto`.
 - A DGX Spark-oriented Docker profile for experimental Parakeet NeMo/CUDA
   deployments on Linux/NVIDIA hosts, with separate `data-spark` state, seeded
   Parakeet settings, Hugging Face cache reuse, localhost-only binding, and a

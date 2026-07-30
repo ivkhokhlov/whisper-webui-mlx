@@ -14,6 +14,8 @@ from mlx_ui.engines.common import (
     normalize_requested_output_formats,
     write_transcript_result,
 )
+from mlx_ui.language_detection import detect_parakeet_transcript_language
+from mlx_ui.transcript_result import TranscriptResult
 from mlx_ui.engines.parakeet_mlx_runtime import (
     build_parakeet_mlx_decoding_config,
     parakeet_mlx_runtime_unavailability_reason,
@@ -100,6 +102,19 @@ class ParakeetMlxTranscriber:
             model_id=self.model_id,
             fallback_language=job.language,
         )
+        if transcript.language in {None, "auto", "any", "und", "unknown"}:
+            language, confidence = detect_parakeet_transcript_language(
+                transcript.text
+            )
+            transcript = TranscriptResult(
+                text=transcript.text,
+                engine_id=transcript.engine_id,
+                model_id=transcript.model_id,
+                language=language,
+                language_confidence=confidence,
+                segments=transcript.segments,
+                words=transcript.words,
+            )
         return write_transcript_result(
             result=transcript,
             results_dir=results_dir,

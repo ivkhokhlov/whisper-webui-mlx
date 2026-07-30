@@ -105,6 +105,7 @@ def test_write_transcript_json_is_explicit(tmp_path: Path) -> None:
         engine_id="whisper_cpu",
         model_id="large-v3-turbo",
         language="en",
+        language_confidence=0.96,
         segments=(
             TranscriptSegment(
                 id=0,
@@ -129,6 +130,7 @@ def test_write_transcript_json_is_explicit(tmp_path: Path) -> None:
     assert payload == {
         "engine_id": "whisper_cpu",
         "language": "en",
+        "language_confidence": 0.96,
         "model_id": "large-v3-turbo",
         "segments": [
             {

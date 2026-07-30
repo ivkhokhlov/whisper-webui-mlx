@@ -7,5 +7,6 @@
 #   - ffmpeg (the bootstrap script installs it via Homebrew)
 parakeet-mlx>=0.5,<1.0
 huggingface-hub>=0.30,<1.0
+langid==1.1.6
 mlx>=0.29,<1.0
 safetensors>=0.4,<1.0

@@ -24,7 +24,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+COPY requirements-parakeet-nemo-cuda.txt ./
+RUN python3 -m pip install --no-cache-dir -r requirements-parakeet-nemo-cuda.txt
 
 COPY pyproject.toml ./
 COPY mlx_ui ./mlx_ui

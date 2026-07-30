@@ -459,6 +459,67 @@ def test_parakeet_nemo_cuda_transcriber_converts_video_to_wav(
     assert str(model.calls[0]["audio"][0]).endswith("parakeet-input.wav")
 
 
+def test_parakeet_nemo_cuda_detects_language_when_model_does_not_report_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    job.language = "auto"
+    results_dir = tmp_path / "results"
+    model = FakeParakeetModel(
+        outputs=[
+            {
+                "text": "Здравствуйте, сегодня мы обсуждаем условия договора.",
+                "timestamp": {
+                    "segment": [
+                        {
+                            "segment": "Здравствуйте, сегодня мы обсуждаем условия договора.",
+                            "start": 0.0,
+                            "end": 2.0,
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+    factory = FakeParakeetFactory(model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+
+    transcriber = ParakeetNemoCudaTranscriber(output_formats=("txt", "json"))
+    transcriber.transcribe(job, results_dir)
+
+    payload = json.loads((results_dir / job.id / "sample.json").read_text("utf-8"))
+    assert payload["language"] == "ru"
+    assert 0.8 <= payload["language_confidence"] <= 1.0
+
+
+def test_parakeet_nemo_cuda_keeps_language_unknown_for_short_ambiguous_text(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    job.language = "auto"
+    results_dir = tmp_path / "results"
+    model = FakeParakeetModel(outputs=[{"text": "Mm-hmm."}])
+    factory = FakeParakeetFactory(model)
+    fake_nemo_asr = SimpleNamespace(models=SimpleNamespace(ASRModel=factory))
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_runtime",
+        lambda: (fake_nemo_asr, _fake_open_dict),
+    )
+
+    transcriber = ParakeetNemoCudaTranscriber(output_formats=("txt", "json"))
+    transcriber.transcribe(job, results_dir)
+
+    payload = json.loads((results_dir / job.id / "sample.json").read_text("utf-8"))
+    assert payload["language"] is None
+    assert payload["language_confidence"] is None
+
+
 def test_parakeet_nemo_cuda_transcriber_requires_ffmpeg_for_video(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -679,6 +740,30 @@ def test_parakeet_mlx_transcriber_lazy_loads_and_reuses_model(
 
     assert runtime.calls == ["mlx-community/parakeet-tdt-0.6b-v3"]
     assert len(model.calls) == 2
+
+
+def test_parakeet_mlx_transcriber_detects_language_for_auto_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    job = _make_job(tmp_path)
+    job.language = "auto"
+    results_dir = tmp_path / "results"
+    model = FakeParakeetMlxModel(
+        {"text": "Bonjour, nous discutons aujourd'hui des conditions du contrat."}
+    )
+    runtime = FakeParakeetMlxRuntime(model)
+    monkeypatch.setattr(
+        transcriber_module,
+        "_load_parakeet_mlx_runtime",
+        lambda: runtime.from_pretrained,
+    )
+
+    transcriber = ParakeetMlxTranscriber(output_formats=("txt", "json"))
+    transcriber.transcribe(job, results_dir)
+
+    payload = json.loads((results_dir / job.id / "sample.json").read_text("utf-8"))
+    assert payload["language"] == "fr"
+    assert 0.8 <= payload["language_confidence"] <= 1.0
 
 
 def test_parakeet_mlx_transcriber_passes_beam_decoding_config_when_supported(

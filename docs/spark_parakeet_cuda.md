@@ -34,6 +34,12 @@ The script writes `data-spark/settings.json` on first run with:
 
 It does not overwrite an existing settings file.
 
+JSON transcript artifacts contain the automatically classified ISO 639-1
+`language` and a normalized `language_confidence` when the completed transcript
+is long and distinctive enough. The detector is restricted to Parakeet TDT
+v3's 25 supported languages. Ambiguous or very short transcripts keep both
+fields null instead of echoing the request mode `auto`.
+
 ## Common overrides
 
 ```bash

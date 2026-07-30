@@ -40,6 +40,7 @@ class TranscriptResult:
     engine_id: str
     model_id: str | None = None
     language: str | None = None
+    language_confidence: float | None = None
     segments: tuple[TranscriptSegment, ...] = field(default_factory=tuple)
     words: tuple[TranscriptWordTiming, ...] = field(default_factory=tuple)
 
@@ -101,6 +102,7 @@ def write_transcript_json(result: TranscriptResult, path: Path) -> Path:
         "engine_id": result.engine_id,
         "model_id": result.model_id,
         "language": result.language,
+        "language_confidence": result.language_confidence,
         "segments": [_serialize_segment(segment) for segment in result.segments],
         "words": [_serialize_word(word) for word in result.words],
     }

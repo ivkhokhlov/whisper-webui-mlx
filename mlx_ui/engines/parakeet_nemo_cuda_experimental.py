@@ -23,6 +23,7 @@ from mlx_ui.engines.common import (
     normalize_requested_output_formats,
     write_transcript_result,
 )
+from mlx_ui.language_detection import detect_parakeet_transcript_language
 from mlx_ui.transcript_result import (
     TranscriptResult,
     TranscriptSegment,
@@ -275,14 +276,15 @@ def _normalize_parakeet_transcript(
             )
         )
     if not parts:
-        return TranscriptResult(
+        result = TranscriptResult(
             text="",
             engine_id=PARAKEET_TDT_V3_ENGINE,
             model_id=model_id,
-            language=fallback_language,
+            language=_provider_reported_language(None, fallback_language),
         )
+        return _with_detected_parakeet_language(result)
     if len(parts) == 1:
-        return parts[0]
+        return _with_detected_parakeet_language(parts[0])
     combined_segments = tuple(
         segment for part in parts for segment in part.segments if segment.text.strip()
     )
@@ -290,17 +292,16 @@ def _normalize_parakeet_transcript(
         word for part in parts for word in part.words if word.text.strip()
     )
     text = _compose_transcript_text(parts, combined_segments, combined_words)
-    language = next(
-        (part.language for part in parts if part.language), fallback_language
-    )
-    return TranscriptResult(
+    language = next((part.language for part in parts if part.language), None)
+    result = TranscriptResult(
         text=text,
         engine_id=PARAKEET_TDT_V3_ENGINE,
         model_id=model_id,
-        language=language,
+        language=_provider_reported_language(language, fallback_language),
         segments=combined_segments,
         words=combined_words,
     )
+    return _with_detected_parakeet_language(result)
 
 
 def _normalize_parakeet_hypothesis(
@@ -326,9 +327,40 @@ def _normalize_parakeet_hypothesis(
         text=text,
         engine_id=PARAKEET_TDT_V3_ENGINE,
         model_id=model_id,
-        language=_extract_hypothesis_language(hypothesis) or fallback_language,
+        language=_provider_reported_language(
+            _extract_hypothesis_language(hypothesis),
+            fallback_language,
+        ),
         segments=segments,
         words=words,
+    )
+
+
+def _provider_reported_language(
+    language: str | None,
+    fallback_language: str,
+) -> str | None:
+    candidate = (language or "").strip().lower()
+    if candidate and candidate not in {"auto", "any", "und", "unknown"}:
+        return candidate
+    fallback = (fallback_language or "").strip().lower()
+    if fallback and fallback not in {"auto", "any", "und", "unknown"}:
+        return fallback
+    return None
+
+
+def _with_detected_parakeet_language(result: TranscriptResult) -> TranscriptResult:
+    if result.language is not None:
+        return result
+    language, confidence = detect_parakeet_transcript_language(result.text)
+    return TranscriptResult(
+        text=result.text,
+        engine_id=result.engine_id,
+        model_id=result.model_id,
+        language=language,
+        language_confidence=confidence,
+        segments=result.segments,
+        words=result.words,
     )
 
 

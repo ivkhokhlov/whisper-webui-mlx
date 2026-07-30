@@ -178,6 +178,7 @@ def test_requirements_profiles_keep_optional_engines_explicit() -> None:
     assert "parakeet-mlx" in parakeet_mlx
     assert "huggingface-hub" in parakeet_mlx
     assert "mlx" in parakeet_mlx
+    assert "langid==1.1.6" in parakeet_mlx
     assert "safetensors" in parakeet_mlx
     assert "cohere" in cohere
 

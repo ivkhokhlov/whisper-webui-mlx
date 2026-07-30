@@ -167,6 +167,13 @@ terminal status and result filenames. The legacy `GET /api/state` contract is
 also machine-safe and retains only the newest 100 terminal jobs; the browser
 uses `GET /api/browser/state` when it needs complete retained history.
 
+When JSON output is enabled, each transcript artifact includes `language` and
+`language_confidence`. Whisper uses its backend-reported language. Parakeet TDT
+v3 does not expose a language-ID field through its NeMo hypothesis, so mlx-ui
+classifies the completed transcript over the model's 25 supported languages.
+Short or low-confidence material remains `null`; the submitted request value
+`language=auto` is never returned as a detected language.
+
 ### Hot folder intake
 
 Repo/dev mode can watch a local input folder and enqueue new audio/video files
