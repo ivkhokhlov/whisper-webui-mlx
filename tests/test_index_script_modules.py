@@ -33,6 +33,7 @@ def test_index_script_partial_loads_external_modules() -> None:
         "queue_actions.js",
         "history_actions.js",
         "storage_actions.js",
+        "recorder.js",
         "main.js",
     ]
     for name in expected_files:

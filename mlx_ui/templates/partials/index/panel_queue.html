@@ -130,6 +130,39 @@
                 </div>
               </div>
             </form>
+            <div class="upload-card record-card" id="record-card">
+              <div class="upload-header">
+                <div class="upload-header-main">
+                  <h3 class="upload-title">Record audio</h3>
+                  <p class="upload-subtitle">
+                    Record your voice here, listen back, then add the recording to the queue.
+                  </p>
+                </div>
+              </div>
+              <div class="record-controls">
+                <button class="job-primary is-secondary" id="record-start" type="button">
+                  Record
+                </button>
+                <button class="job-primary is-danger" id="record-stop" type="button" hidden>
+                  Stop
+                </button>
+                <span class="record-status" id="record-status" aria-live="polite"></span>
+              </div>
+              <div class="record-preview" id="record-preview" hidden>
+                <audio class="record-playback" id="record-playback" controls preload="metadata"></audio>
+                <div class="record-preview-meta">
+                  <span class="record-name" id="record-name"></span>
+                </div>
+                <div class="upload-actions">
+                  <div class="upload-actions-buttons">
+                    <button class="cta" id="record-add" type="button">Add to queue</button>
+                    <button class="job-primary is-secondary" id="record-discard" type="button">
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="job-list" aria-live="polite" id="queue-list">
               {% set offset = 1 if queue_jobs | selectattr("status", "equalto", "running") | list | length > 0 else 0 %}
               {% set queue_index = namespace(value=0) %}

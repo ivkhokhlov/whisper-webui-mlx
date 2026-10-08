@@ -39,6 +39,9 @@
   if (app.storageActions && typeof app.storageActions.init === "function") {
     app.storageActions.init();
   }
+  if (app.recorder && typeof app.recorder.init === "function") {
+    app.recorder.init();
+  }
 
   const { queueEmptyCta, historyEmptyCta } = app.dom || {};
   if (queueEmptyCta) {

@@ -1460,6 +1460,48 @@
         gap: 10px;
       }
 
+      .record-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .record-status {
+        font-size: 0.92rem;
+        color: var(--ink-muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .record-status.is-recording {
+        color: var(--status-error-text);
+      }
+
+      .record-status.is-recording::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 8px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .record-preview {
+        display: grid;
+        gap: 12px;
+      }
+
+      .record-playback {
+        width: 100%;
+      }
+
+      .record-preview-meta {
+        font-size: 0.85rem;
+        color: var(--ink-muted);
+        overflow-wrap: anywhere;
+      }
+
       .cta {
         appearance: none;
         border: 1px solid transparent;

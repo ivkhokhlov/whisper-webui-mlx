@@ -108,6 +108,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 ## Key features
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
+- In-browser voice recording on the Queue tab: users can capture a microphone
+  take (MediaRecorder), listen back, and add it to the same transcription
+  queue as uploaded files. Recordings ride the existing `/upload` intake as
+  webm/ogg/m4a, so they inherit the same language/engine defaults and queue
+  visibility; browsers without microphone capture simply hide the card.
 - Local automation job intake via `POST /api/jobs`, with required ownership
   metadata, the same language/engine defaults as UI uploads, and the same queue
   visibility through `/api/state`.

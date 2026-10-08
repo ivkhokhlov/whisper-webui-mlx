@@ -77,6 +77,15 @@
     pickFolderButton: document.querySelector("[data-upload-pick='folder']"),
     queueEmptyCta: document.querySelector("[data-queue-empty-cta]"),
     historyEmptyCta: document.querySelector("[data-history-empty-cta]"),
+    recordCard: document.getElementById("record-card"),
+    recordStart: document.getElementById("record-start"),
+    recordStop: document.getElementById("record-stop"),
+    recordStatus: document.getElementById("record-status"),
+    recordPreview: document.getElementById("record-preview"),
+    recordPlayback: document.getElementById("record-playback"),
+    recordName: document.getElementById("record-name"),
+    recordAdd: document.getElementById("record-add"),
+    recordDiscard: document.getElementById("record-discard"),
   };
 
   app.dom.confirmModalOk = app.dom.confirmModal

@@ -198,6 +198,24 @@ def test_root_includes_upload_ui_structure(tmp_path: Path) -> None:
     assert re.search(r'class="dropzone(?![^"]*is-compact)', response.text)
 
 
+def test_root_includes_record_ui_structure(tmp_path: Path) -> None:
+    _configure_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="record-card"' in response.text
+    assert 'id="record-start"' in response.text
+    assert 'id="record-stop"' in response.text
+    assert 'id="record-status"' in response.text
+    assert 'id="record-preview"' in response.text
+    assert 'id="record-playback"' in response.text
+    assert 'id="record-name"' in response.text
+    assert 'id="record-add"' in response.text
+    assert 'id="record-discard"' in response.text
+    assert "Record audio" in response.text
+
+
 def test_root_worker_card_is_quiet_when_idle(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     with TestClient(app) as client:
