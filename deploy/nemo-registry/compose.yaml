@@ -1,0 +1,28 @@
+services:
+  registry:
+    image: registry:3.0.0@sha256:6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/etc/distribution/config.yml:ro
+      - ./auth:/auth:ro
+      - ./storage:/var/lib/registry
+    networks:
+      - coolify
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: coolify
+      traefik.http.routers.mlx-ui-images.rule: Host(`${REGISTRY_HOST:?Set REGISTRY_HOST}`)
+      traefik.http.routers.mlx-ui-images.entrypoints: https
+      traefik.http.routers.mlx-ui-images.tls: "true"
+      traefik.http.routers.mlx-ui-images.tls.certresolver: letsencrypt
+      traefik.http.routers.mlx-ui-images.service: mlx-ui-images
+      traefik.http.services.mlx-ui-images.loadbalancer.server.port: "5000"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+networks:
+  coolify:
+    external: true

@@ -5,7 +5,8 @@
 #   - requirements-parakeet-mlx.txt
 #   - requirements-cohere.txt
 # The bootstrap scripts choose the right profile for the current machine.
-fastapi>=0.115.6,<0.116
+fastapi>=0.121.3,<0.122
+starlette>=0.49.1,<0.51
 jinja2>=3.1.4,<4.0
-uvicorn>=0.32.1,<0.33
+uvicorn>=0.42.0,<0.43
 python-multipart>=0.0.21,<0.1

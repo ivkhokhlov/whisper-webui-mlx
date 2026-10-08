@@ -1,0 +1,14 @@
+version: 0.1
+log:
+  level: warn
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+auth:
+  htpasswd:
+    realm: NeMo image cache
+    path: /auth/htpasswd
+proxy:
+  remoteurl: https://nvcr.io

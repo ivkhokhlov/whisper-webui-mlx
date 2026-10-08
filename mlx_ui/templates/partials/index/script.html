@@ -1,21 +1,21 @@
     <script>
       document.documentElement.classList.add("js");
     </script>
-    <script src="/static/js/index/core.js"></script>
-    <script src="/static/js/index/utils.js"></script>
-    <script src="/static/js/index/time.js"></script>
-    <script src="/static/js/index/tabs.js"></script>
-    <script src="/static/js/index/history_view.js"></script>
-    <script src="/static/js/index/render_jobs.js"></script>
-    <script src="/static/js/index/toasts.js"></script>
-    <script src="/static/js/index/modals.js"></script>
-    <script src="/static/js/index/worker_card.js"></script>
-    <script src="/static/js/index/state.js"></script>
-    <script src="/static/js/index/uploads.js"></script>
-    <script src="/static/js/index/settings.js"></script>
-    <script src="/static/js/index/queue_actions.js"></script>
-    <script src="/static/js/index/history_actions.js"></script>
-    <script src="/static/js/index/storage_actions.js"></script>
-    <script src="/static/js/index/recorder.js"></script>
-    <script src="/static/js/index/main.js"></script>
-
+    {% set asset_version = runtime_snapshot.about.version %}
+    <script src="/static/js/index/core.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/utils.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/time.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/tabs.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/history_view.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/render_jobs.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/toasts.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/modals.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/worker_card.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/state.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/uploads.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/settings.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/queue_actions.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/history_actions.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/storage_actions.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/recorder.js?v={{ asset_version }}"></script>
+    <script src="/static/js/index/main.js?v={{ asset_version }}"></script>

@@ -13,7 +13,7 @@ def test_index_script_partial_loads_external_modules() -> None:
     source = script_partial.read_text(encoding="utf-8")
 
     assert 'document.documentElement.classList.add("js")' in source
-    assert 'src="/static/js/index/main.js"' in source
+    assert 'src="/static/js/index/main.js?v={{ asset_version }}"' in source
     assert "(function" not in source
 
     static_dir = ROOT_DIR / "mlx_ui" / "static" / "js" / "index"

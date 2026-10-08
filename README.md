@@ -286,6 +286,11 @@ job history and machine-job lookup metadata, so an expired terminal job remains
 queryable but has no downloadable result files.
 
 ### Manual dev loop
+
+`requirements.txt` and `pyproject.toml` describe the common web dependencies;
+`poetry.lock` locks those dependencies and the development tools. Install a
+transcription backend through its `requirements-*.txt` profile. The launcher
+and packaged runtime builder select those profiles for the target platform.
 ```bash
 make dev-deps
 make run

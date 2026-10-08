@@ -9,3 +9,8 @@ data-spark
 *.db
 *.log
 *.zip
+deploy/nemo-registry/auth
+deploy/nemo-registry/credentials
+deploy/nemo-registry/storage
+.env
+.env.*

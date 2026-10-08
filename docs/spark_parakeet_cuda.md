@@ -7,7 +7,8 @@ the macOS MLX release path.
 ## Runtime
 
 - Image: built from `Dockerfile.spark`
-- Base image: `nvcr.io/nvidia/nemo:26.02.01` by default
+- Base image: official `nvcr.io/nvidia/nemo:26.02.01`, pinned by manifest digest
+  in `Dockerfile.spark` and `docker-run-spark.sh`
 - Backend: `parakeet_nemo_cuda`
 - Experimental gate: `PARAKEET_NEMO_CUDA_EXPERIMENTAL=1`
 - Default model: `nvidia/parakeet-tdt-0.6b-v3`
@@ -51,6 +52,29 @@ RUN_AS_ROOT=0 ./docker-run-spark.sh
 
 Use `RUN_AS_ROOT=0` only with a base image whose NeMo/Megatron files are readable
 by arbitrary UIDs.
+
+On home-spark, direct NGC access returns HTTP 403. The production build instead
+uses the private [NeMo image cache](../deploy/nemo-registry/README.md) on vps-nl,
+with the same NVIDIA digest. `NEMO_BASE_IMAGE` is a build-time Coolify variable;
+Docker credentials belong to Coolify's SSH user on the build host. For the
+standalone launcher, select the mirror explicitly:
+
+```bash
+docker login registry.m10a.space
+NEMO_BASE_IMAGE=registry.m10a.space/nvidia/nemo:26.02.01@sha256:5852a213751955315a5dd54ce50eff69ac87d474f33968135fc88f1cdbb1dd06 ./docker-run-spark.sh
+```
+
+Build from this upstream image. A prior application image, or an exported and
+imported filesystem, is not a NeMo base and must not be assigned its official
+tag. The cache configuration and recovery procedure are versioned with the app.
+
+The web app uses FastAPI 0.121.3 and Uvicorn 0.42, compatible with the newer
+Starlette required by this NeMo image. Do not downgrade the container's web
+stack to FastAPI 0.115/Starlette 0.46. The upstream NVIDIA image also contains
+unrelated training/inference packages with pre-existing `pip check` warnings.
+The application does not claim that every optional package in this full NeMo
+image has a consistent dependency set; validate the ASR path with real GPU
+inference when changing its base.
 
 ## Media handling
 

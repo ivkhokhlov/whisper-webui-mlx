@@ -216,6 +216,23 @@ def test_root_includes_record_ui_structure(tmp_path: Path) -> None:
     assert "Record audio" in response.text
 
 
+def test_root_script_urls_change_with_app_version(tmp_path: Path, monkeypatch) -> None:
+    _configure_app(tmp_path)
+    script_urls = []
+    with TestClient(app) as client:
+        for version in ("0.1.47", "0.1.48"):
+            monkeypatch.setattr(
+                "mlx_ui.runtime_metadata_about.read_local_version", lambda: version
+            )
+            response = client.get("/")
+            urls = re.findall(r'<script src="([^"]+)"', response.text)
+            assert urls
+            assert all(url.endswith(f"?v={version}") for url in urls)
+            assert f"/static/js/index/recorder.js?v={version}" in urls
+            script_urls.append(set(urls))
+    assert script_urls[0].isdisjoint(script_urls[1])
+
+
 def test_root_worker_card_is_quiet_when_idle(tmp_path: Path) -> None:
     _configure_app(tmp_path)
     with TestClient(app) as client:
@@ -1254,12 +1271,8 @@ def test_machine_job_lookup_returns_owned_terminal_result(tmp_path: Path) -> Non
     (result_dir / "audio.json").write_text("{}", encoding="utf-8")
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/machine/jobs/callhub-transcription/command-123"
-        )
-        missing = client.get(
-            "/api/machine/jobs/callhub-transcription/missing-command"
-        )
+        response = client.get("/api/machine/jobs/callhub-transcription/command-123")
+        missing = client.get("/api/machine/jobs/callhub-transcription/missing-command")
 
     assert response.status_code == 200
     assert response.json()["id"] == "machine-job"

@@ -68,12 +68,19 @@
     }
 
     const supported = Boolean(
+      window.isSecureContext &&
       navigator.mediaDevices &&
         typeof navigator.mediaDevices.getUserMedia === "function" &&
         window.MediaRecorder
     );
     if (!supported) {
-      card.hidden = true;
+      startButton.disabled = true;
+      setStatus(
+        window.isSecureContext
+          ? "Microphone recording is not supported in this browser."
+          : "Open this page over HTTPS or localhost to record audio.",
+        false
+      );
       return;
     }
 
@@ -86,6 +93,7 @@
     let timerId = null;
     let startedAt = 0;
     let uploadInFlight = false;
+    let recordingFailed = false;
 
     function notifyError(message) {
       if (app.toasts) {
@@ -142,6 +150,11 @@
       const type = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "";
       recorder = null;
       const recorded = new Blob(chunks, { type });
+      if (recordingFailed) {
+        resetToIdle();
+        notifyError("Audio recording failed. Try again.");
+        return;
+      }
       if (recorded.size === 0) {
         resetToIdle();
         notifyError("Recording is empty. Try again.");
@@ -178,11 +191,22 @@
         return;
       }
       chunks = [];
+      recordingFailed = false;
       const mimeType = pickMimeType();
       try {
         recorder = mimeType
           ? new MediaRecorder(stream, { mimeType })
           : new MediaRecorder(stream);
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        });
+        recorder.addEventListener("stop", finalizeRecording);
+        recorder.addEventListener("error", () => {
+          recordingFailed = true;
+        });
+        recorder.start();
       } catch (error) {
         console.error("MediaRecorder init failed", error);
         recorder = null;
@@ -192,13 +216,6 @@
         notifyError("Audio recording is not supported in this browser.");
         return;
       }
-      recorder.addEventListener("dataavailable", (event) => {
-        if (event.data && event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      });
-      recorder.addEventListener("stop", finalizeRecording);
-      recorder.start();
       startedAt = Date.now();
       timerId = setInterval(updateTimer, 500);
       updateTimer();
@@ -221,15 +238,27 @@
       uploadInFlight = true;
       addButton.disabled = true;
       discardButton.disabled = true;
+      startButton.disabled = true;
       addButton.textContent = "Queuing…";
       try {
         const formData = new FormData();
         formData.append("files", blob, filename);
+        if (dom.uploadForm) {
+          const language = new FormData(dom.uploadForm).get("language");
+          if (language) {
+            formData.append("language", language);
+          }
+        }
         const response = await fetch("/upload", {
           method: "POST",
           body: formData,
         });
         if (response.ok) {
+          const destination = new URL(response.url);
+          if (destination.searchParams.has("queue_error")) {
+            window.location = destination.href;
+            return;
+          }
           if (app.toasts) {
             app.toasts.storePendingToast({
               title: "Queue",
@@ -253,6 +282,7 @@
         uploadInFlight = false;
         addButton.disabled = false;
         discardButton.disabled = false;
+        startButton.disabled = false;
         addButton.textContent = "Add to queue";
       }
     }
@@ -261,6 +291,15 @@
     stopButton.addEventListener("click", stopRecording);
     discardButton.addEventListener("click", resetToIdle);
     addButton.addEventListener("click", addToQueue);
+    window.addEventListener("pagehide", () => {
+      if (timerId) {
+        clearInterval(timerId);
+      }
+      releaseStream();
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    });
 
     app.recorder.__initialized = true;
   }

@@ -95,6 +95,15 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   bindings disappear from a long-lived deployment. The CUDA-selected backend
   stays on CUDA: model-load and inference OOM errors remain explicit job
   failures instead of silently changing the requested execution device.
+  The Spark image uses the official NVIDIA NeMo image pinned by digest.
+  Where direct NGC access is unavailable, a private authenticated image cache
+  supplies the same upstream image. The Dockerfile and cache configuration
+  live in the repository, so a rebuild does not depend on a renamed previous
+  application image. Compatible FastAPI/Uvicorn versions keep the web layer
+  aligned with the NeMo container's Starlette requirements.
+  The common web dependencies and Poetry lock stay synchronized; optional
+  transcription engines are installed from the platform-specific requirements
+  profiles used by the launcher and packaged runtime builder.
 
 ## Target users
 - Individuals or small teams with sensitive audio (legal, research, product,
@@ -111,8 +120,12 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - In-browser voice recording on the Queue tab: users can capture a microphone
   take (MediaRecorder), listen back, and add it to the same transcription
   queue as uploaded files. Recordings ride the existing `/upload` intake as
-  webm/ogg/m4a, so they inherit the same language/engine defaults and queue
-  visibility; browsers without microphone capture simply hide the card.
+  webm/ogg/m4a, so they use the language selected in the upload form, the
+  configured engine, and the same queue visibility. Unsupported browsers or
+  insecure connections show why recording is unavailable. Capture startup
+  failures release the microphone and allow another attempt. Browser scripts
+  include the application version in their URLs so deployments cannot reuse
+  older initialization modules with new page markup.
 - Local automation job intake via `POST /api/jobs`, with required ownership
   metadata, the same language/engine defaults as UI uploads, and the same queue
   visibility through `/api/state`.
