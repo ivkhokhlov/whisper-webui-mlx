@@ -4,6 +4,8 @@ import subprocess
 import sys
 import tomllib
 
+from packaging.requirements import Requirement
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
@@ -139,16 +141,18 @@ def test_run_sh_forwards_optional_bootstrap_flags(tmp_path: Path) -> None:
     ]
 
 
-def test_pyproject_declares_optional_engine_dependency_groups() -> None:
+def test_poetry_lock_matches_common_web_requirements() -> None:
     pyproject = tomllib.loads((ROOT_DIR / "pyproject.toml").read_text("utf-8"))
-    groups = pyproject["tool"]["poetry"]["group"]
-
-    assert "whisper_mlx" in groups
-    assert "whisper_cpu" in groups
-    assert "cohere" in groups
-    assert "whisper-turbo-mlx" in groups["whisper_mlx"]["dependencies"]
-    assert "openai-whisper" in groups["whisper_cpu"]["dependencies"]
-    assert "cohere" in groups["cohere"]["dependencies"]
+    lock = tomllib.loads((ROOT_DIR / "poetry.lock").read_text("utf-8"))
+    locked_versions = {
+        package["name"]: package["version"] for package in lock["package"]
+    }
+    for line in (ROOT_DIR / "requirements.txt").read_text("utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        requirement = Requirement(line)
+        assert requirement.name in pyproject["tool"]["poetry"]["dependencies"]
+        assert locked_versions[requirement.name] in requirement.specifier
 
 
 def test_requirements_profiles_keep_optional_engines_explicit() -> None:

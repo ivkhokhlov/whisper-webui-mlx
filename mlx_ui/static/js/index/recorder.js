@@ -60,10 +60,17 @@
     const statusEl = dom.recordStatus;
     const preview = dom.recordPreview;
     const playback = dom.recordPlayback;
+    const playButton = dom.recordPlay;
+    const seekInput = dom.recordSeek;
+    const playbackTime = dom.recordTime;
+    const downloadLink = dom.recordDownload;
     const nameEl = dom.recordName;
     const addButton = dom.recordAdd;
     const discardButton = dom.recordDiscard;
     if (!card || !startButton || !stopButton || !preview || !playback || !addButton || !discardButton) {
+      return;
+    }
+    if (!playButton || !seekInput || !playbackTime || !downloadLink) {
       return;
     }
 
@@ -92,6 +99,7 @@
     let filename = "";
     let timerId = null;
     let startedAt = 0;
+    let recordedDuration = 0;
     let uploadInFlight = false;
     let recordingFailed = false;
 
@@ -113,8 +121,51 @@
     }
 
     function updateTimer() {
-      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      const elapsed = Math.max(0, Math.floor((performance.now() - startedAt) / 1000));
       setStatus(`Recording ${formatClock(elapsed)}`, true);
+    }
+
+    function updatePlayback() {
+      // MediaRecorder WebM blobs can report Infinity until playback finishes.
+      // Capture time supplies a usable timeline without rewriting the audio.
+      const duration = Number.isFinite(playback.duration) && playback.duration > 0
+        ? playback.duration
+        : recordedDuration;
+      const position = Math.min(duration, Math.max(0, playback.currentTime || 0));
+      const isPlaying = !playback.paused && !playback.ended;
+      const action = isPlaying ? "Pause recording" : "Play recording";
+      playButton.dataset.playing = String(isPlaying);
+      playButton.setAttribute("aria-label", action);
+      playButton.title = action;
+      playButton.disabled = !blob;
+      seekInput.max = String(duration);
+      seekInput.value = String(position);
+      seekInput.disabled = !blob || duration <= 0;
+      const progress = duration > 0 ? (position / duration) * 100 : 0;
+      seekInput.style.setProperty("--playback-progress", `${progress}%`);
+      const elapsed = formatClock(playback.ended ? Math.ceil(duration) : Math.floor(position));
+      const total = formatClock(Math.ceil(duration));
+      playbackTime.textContent = `${elapsed} / ${total}`;
+      seekInput.setAttribute("aria-valuetext", `${elapsed} of ${total}`);
+    }
+
+    async function togglePlayback() {
+      if (!blob) {
+        return;
+      }
+      if (!playback.paused) {
+        playback.pause();
+        return;
+      }
+      if (playback.ended) {
+        playback.currentTime = 0;
+      }
+      try {
+        await playback.play();
+      } catch (error) {
+        console.error("Recording playback failed", error);
+        notifyError("Can’t play the recording. You can still download it.");
+      }
     }
 
     function releaseStream() {
@@ -125,6 +176,7 @@
     }
 
     function resetToIdle() {
+      playback.pause();
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
         blobUrl = null;
@@ -132,8 +184,12 @@
       blob = null;
       chunks = [];
       filename = "";
+      recordedDuration = 0;
       playback.removeAttribute("src");
       playback.load();
+      downloadLink.removeAttribute("href");
+      downloadLink.removeAttribute("download");
+      updatePlayback();
       preview.hidden = true;
       stopButton.hidden = true;
       startButton.hidden = false;
@@ -142,6 +198,9 @@
     }
 
     function finalizeRecording() {
+      if (!recordedDuration) {
+        recordedDuration = Math.max(0, (performance.now() - startedAt) / 1000);
+      }
       if (timerId) {
         clearInterval(timerId);
         timerId = null;
@@ -164,6 +223,9 @@
       filename = `recording-${formatTimestamp(new Date())}.${extensionForType(type)}`;
       blobUrl = URL.createObjectURL(blob);
       playback.src = blobUrl;
+      downloadLink.href = blobUrl;
+      downloadLink.download = filename;
+      updatePlayback();
       if (nameEl) {
         const size = app.utils ? app.utils.formatBytes(blob.size) : `${blob.size} B`;
         nameEl.textContent = `${filename} · ${size}`;
@@ -216,7 +278,7 @@
         notifyError("Audio recording is not supported in this browser.");
         return;
       }
-      startedAt = Date.now();
+      startedAt = performance.now();
       timerId = setInterval(updateTimer, 500);
       updateTimer();
       startButton.hidden = true;
@@ -226,6 +288,7 @@
 
     function stopRecording() {
       if (recorder && recorder.state !== "inactive") {
+        recordedDuration = Math.max(0, (performance.now() - startedAt) / 1000);
         setStatus("Finishing…", false);
         recorder.stop();
       }
@@ -291,12 +354,27 @@
     stopButton.addEventListener("click", stopRecording);
     discardButton.addEventListener("click", resetToIdle);
     addButton.addEventListener("click", addToQueue);
-    window.addEventListener("pagehide", () => {
+    playButton.addEventListener("click", togglePlayback);
+    seekInput.addEventListener("input", () => {
+      if (blob) {
+        playback.currentTime = Number(seekInput.value);
+        updatePlayback();
+      }
+    });
+    ["loadedmetadata", "durationchange", "timeupdate", "play", "pause", "ended", "seeked"].forEach((event) => {
+      playback.addEventListener(event, updatePlayback);
+    });
+    playback.addEventListener("error", () => {
+      if (blob) {
+        notifyError("Can’t play the recording. You can still download it.");
+      }
+    });
+    window.addEventListener("pagehide", (event) => {
       if (timerId) {
         clearInterval(timerId);
       }
       releaseStream();
-      if (blobUrl) {
+      if (blobUrl && !event.persisted) {
         URL.revokeObjectURL(blobUrl);
       }
     });

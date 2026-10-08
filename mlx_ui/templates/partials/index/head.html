@@ -1492,8 +1492,141 @@
         gap: 12px;
       }
 
-      .record-playback {
+      .record-player {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        padding: 16px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+      }
+
+      .record-player-toggle {
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      .record-player-toggle:hover {
+        background: var(--accent-strong);
+      }
+
+      .record-player-toggle:disabled {
+        background: var(--button-disabled-bg);
+        color: var(--button-disabled-text);
+        cursor: not-allowed;
+      }
+
+      .record-player-toggle[data-playing="true"] .record-icon-play,
+      .record-player-toggle[data-playing="false"] .record-icon-pause {
+        display: none;
+      }
+
+      .record-player-timeline {
+        min-width: 0;
+        display: grid;
+        gap: 6px;
+      }
+
+      .record-player-heading {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 4px 12px;
+      }
+
+      .record-player-label {
+        font-size: 0.88rem;
+        font-weight: 600;
+      }
+
+      .record-playback-time {
+        color: var(--ink-muted);
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .record-seek {
+        appearance: none;
+        -webkit-appearance: none;
         width: 100%;
+        height: 20px;
+        margin: 0;
+        background: transparent;
+        cursor: pointer;
+      }
+
+      .record-seek::-webkit-slider-runnable-track {
+        height: 5px;
+        border-radius: 999px;
+        background: linear-gradient(to right,
+          var(--accent) var(--playback-progress, 0%),
+          var(--line-strong) var(--playback-progress, 0%));
+      }
+
+      .record-seek::-webkit-slider-thumb {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 14px;
+        height: 14px;
+        margin-top: -4.5px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .record-seek::-moz-range-track {
+        height: 5px;
+        border-radius: 999px;
+        background: var(--line-strong);
+      }
+
+      .record-seek::-moz-range-progress {
+        height: 5px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+
+      .record-seek::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .record-download {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        min-height: 40px;
+        padding: 8px 12px;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 560px) {
+        .record-player {
+          grid-template-columns: auto minmax(0, 1fr);
+          gap: 12px;
+          padding: 12px;
+        }
+
+        .record-download {
+          grid-column: 1 / -1;
+        }
       }
 
       .record-preview-meta {
@@ -2702,6 +2835,8 @@
       }
 
       .cta:focus-visible,
+      .record-player-toggle:focus-visible,
+      .record-seek:focus-visible,
       .job-primary:focus-visible,
       .preview-action:focus-visible,
       .file-remove:focus-visible,

@@ -118,8 +118,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - Batch uploads via browser (files or folders) with preflight summary and
   filtering; queued, one-at-a-time processing.
 - In-browser voice recording on the Queue tab: users can capture a microphone
-  take (MediaRecorder), listen back, and add it to the same transcription
-  queue as uploaded files. Recordings ride the existing `/upload` intake as
+  take (MediaRecorder) from a card above the file-upload card. A styled preview
+  player provides play/pause, seeking, elapsed/total time, and a direct download
+  of the original recording before submission. Users can listen back and add
+  the take to the same transcription queue as uploaded files. Recordings ride
+  the existing `/upload` intake as
   webm/ogg/m4a, so they use the language selected in the upload form, the
   configured engine, and the same queue visibility. Unsupported browsers or
   insecure connections show why recording is unavailable. Capture startup
