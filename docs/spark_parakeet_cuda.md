@@ -140,6 +140,43 @@ driver as described in the official
 The watchdog is a recovery guard, not a substitute for that host-level
 prevention.
 
+## Queue recovery after database resource errors
+
+`Too many open files` followed by SQLite `unable to open database file` can
+prevent a reserved job from entering `running`. The browser presents `reserved`
+as running, so inspect the raw SQLite status and `started_at` before treating
+this as hung inference. HTTP/GPU health alone does not prove queue progress.
+
+From version 0.1.50, database connections close deterministically, including
+query and setup failures. The worker retains failed state writes for retry
+before claiming another job. A failed start releases only its own reservation;
+completed inference and Telegram delivery are not repeated while saving the
+terminal state. Upload cleanup follows the successful terminal write.
+
+For a reservation orphaned by an older release:
+
+1. Record the image, container, queue counts, last completion, process open-file
+   limit, descriptor count, and relevant logs. Confirm the candidate has raw
+   status `reserved`, null `started_at` and `effective_engine`, and its upload
+   still exists; do not reset an active inference job.
+2. Stop only the application container. Create a backup using SQLite's backup
+   API and preserve the logs before changing the database.
+3. Return the confirmed reservation to `queued` with a conditional update on
+   its ID and the verified state. Preserve its queue position, upload, and
+   `client`/`client_job_id`. Check exactly one row changed.
+4. Start the container with the same image, configuration, and mounts. Requeue
+   before startup: normal crash recovery marks leftover `reserved`/`running`
+   records failed rather than automatically repeating potentially active work.
+5. Verify the recovered job and subsequent jobs complete. Observe descriptors
+   and error logs under sustained polling; raising the open-file limit alone
+   does not fix a connection leak. Compare completion and arrival rates when
+   estimating backlog drain time, since callers can keep adding new work.
+
+In the home-spark deployment, runtime data is mounted from
+`/home/neo/services/mlx-ui/data-spark` to `/app/data`. A Coolify deployment of
+the updated `master` rebuilds `Dockerfile.spark`; verify its commit/image and
+real queue progress after the deployment finishes.
+
 ## home-spark notes
 
 Keep this service bound to `127.0.0.1`. If it is exposed through FRP or a

@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,13 +54,24 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path, timeout=SQLITE_BUSY_TIMEOUT_SECONDS)
-    connection.row_factory = sqlite3.Row
-    connection.execute(
-        f"PRAGMA busy_timeout = {int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}"
+@contextmanager
+def _connect(
+    db_path: Path, *, isolation_level: str | None = ""
+) -> Iterator[sqlite3.Connection]:
+    connection = sqlite3.connect(
+        db_path,
+        isolation_level=isolation_level,
+        timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
     )
-    return connection
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            f"PRAGMA busy_timeout = {int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}"
+        )
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def _job_record_from_data(job_data: dict[str, object]) -> JobRecord:
@@ -782,6 +795,19 @@ def mark_job_running(
     return cursor.rowcount > 0
 
 
+def requeue_reserved_job(db_path: Path, job_id: str) -> bool:
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            UPDATE jobs
+            SET status = 'queued'
+            WHERE id = ? AND status = 'reserved'
+            """,
+            (job_id,),
+        )
+    return cursor.rowcount > 0
+
+
 def mark_job_done(
     db_path: Path,
     job_id: str,
@@ -834,16 +860,7 @@ def claim_next_job(
     effective_engine: str | None = None,
 ) -> JobRecord | None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(
-        db_path,
-        isolation_level=None,
-        timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
-    )
-    connection.row_factory = sqlite3.Row
-    connection.execute(
-        f"PRAGMA busy_timeout = {int(SQLITE_BUSY_TIMEOUT_SECONDS * 1000)}"
-    )
-    try:
+    with _connect(db_path, isolation_level=None) as connection:
         connection.execute("BEGIN IMMEDIATE")
         running = connection.execute(
             """
@@ -854,7 +871,6 @@ def claim_next_job(
             """
         ).fetchone()
         if running is not None:
-            connection.execute("COMMIT")
             return None
         row = connection.execute(
             """
@@ -886,9 +902,11 @@ def claim_next_job(
             """
         ).fetchone()
         if row is None:
-            connection.execute("COMMIT")
             return None
         job_id = row["id"]
+        job_data = dict(row)
+        job_data["status"] = "reserved"
+        job = _job_record_from_data(job_data)
         connection.execute(
             """
             UPDATE jobs
@@ -897,15 +915,7 @@ def claim_next_job(
             """,
             (job_id,),
         )
-        connection.execute("COMMIT")
-        job_data = dict(row)
-        job_data["status"] = "reserved"
-        return _job_record_from_data(job_data)
-    except Exception:
-        connection.execute("ROLLBACK")
-        raise
-    finally:
-        connection.close()
+        return job
 
 
 def _now_utc() -> str:

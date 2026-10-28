@@ -72,9 +72,16 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   result files have a configurable retention period (3 days by default);
   cleanup removes only downloads/previews while preserving SQLite job history,
   statuses, and machine-job lookup compatibility.
-- Queue state commits tolerate transient SQLite writer contention, and an
-  unexpected iteration failure is logged without terminating the background
-  worker, so queued machine jobs continue after a concurrent intake burst.
+- SQLite connections close after every operation, including failed queries and
+  setup, so sustained machine intake and polling do not accumulate database
+  file descriptors while waiting for Python's garbage collector.
+- Queue state commits tolerate transient SQLite writer contention. If a job
+  cannot enter `running`, the worker returns its reservation to the queue with
+  the original upload and caller metadata intact. A failed recovery or terminal
+  status write remains owned by the worker and is retried before another job
+  starts; completed inference is not repeated just to save its status. Uploads
+  are removed only after the terminal state is saved, and cancellation still
+  works while a database write is awaiting retry.
 - A packaged macOS distribution path (self-contained `.app` + DMG) so a
   non-technical user can install, double-click, and use the same localhost UX
   without cloning the repo or installing Python.

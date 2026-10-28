@@ -3,18 +3,22 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 import threading
 import time
+from typing import Literal
 
 from mlx_ui.db import (
+    JobRecord,
+    cancel_running_job,
     claim_next_job,
     mark_job_done,
     mark_job_failed,
     mark_job_running,
-    update_job_status,
+    requeue_reserved_job,
 )
 from mlx_ui.engine_registry import create_transcriber
 from mlx_ui.hot_folder import (
@@ -37,6 +41,15 @@ _worker_lock = threading.Lock()
 _worker_instance: Worker | None = None
 _SQLITE_BUSY_RETRY_LIMIT = 5
 _SQLITE_BUSY_RETRY_BASE_SECONDS = 0.1
+
+
+@dataclass
+class _PendingJobTransition:
+    job: JobRecord
+    status: Literal["queued", "done", "failed", "cancelled"]
+    completed_at: str
+    error_message: str | None = None
+    attempts: int = 0
 
 
 class Worker:
@@ -77,6 +90,7 @@ class Worker:
         self._current_job_started_at: str | None = None
         self._current_transcriber: Transcriber | None = None
         self._cancel_requested = False
+        self._pending_transition: _PendingJobTransition | None = None
 
     def start(self) -> None:
         if self.is_running():
@@ -166,11 +180,30 @@ class Worker:
                 self._stop_event.wait(self.poll_interval)
 
     def run_once(self) -> bool:
+        if self._pending_transition is not None:
+            return self._commit_pending_transition()
         if self._paused_event.is_set():
             return False
         job = claim_next_job(self.db_path)
         if job is None:
             return False
+        self._set_current_job(job, None)
+        try:
+            return self._process_claimed_job(job)
+        except Exception as exc:
+            if self._is_cancel_requested(job.id):
+                return self._finish_job(job, "cancelled")
+            logger.exception("Worker failed to process job %s", job.id)
+            return self._finish_job(
+                job,
+                "failed",
+                error_message=_truncate_error(str(exc) or exc.__class__.__name__),
+            )
+        finally:
+            if self._pending_transition is None:
+                self._clear_current_job(job.id)
+
+    def _process_claimed_job(self, job: JobRecord) -> bool:
         try:
             (
                 transcriber,
@@ -179,118 +212,129 @@ class Worker:
             ) = self._resolve_transcriber_for_job(job)
         except Exception as exc:
             _log_transcriber_resolution_error(job.id, exc)
-            mark_job_failed(
-                self.db_path,
-                job.id,
-                completed_at=_now_utc(),
+            return self._finish_job(
+                job,
+                "failed",
                 error_message=_truncate_error(str(exc) or exc.__class__.__name__),
             )
-            self._quarantine_failed_hot_folder_upload(job)
-            cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
-            return True
         started_at = _now_utc()
         job.started_at = started_at
         job.effective_engine = effective_engine
         job.effective_implementation_id = effective_implementation_id
-        self._set_current_job(job, transcriber)
-        if not mark_job_running(
-            self.db_path,
-            job.id,
-            started_at=started_at,
-            effective_engine=effective_engine,
-            effective_implementation_id=effective_implementation_id,
-        ):
+        with self._state_lock:
+            self._current_job_started_at = started_at
+            self._current_transcriber = transcriber
+        if self._is_cancel_requested(job.id):
+            return self._finish_job(job, "cancelled")
+        try:
+            started = _retry_sqlite_busy(
+                mark_job_running,
+                self.db_path,
+                job.id,
+                started_at=started_at,
+                effective_engine=effective_engine,
+                effective_implementation_id=effective_implementation_id,
+            )
+        except Exception:
+            logger.exception(
+                "Worker could not start job %s; returning its reservation to the queue",
+                job.id,
+            )
+            return self._finish_job(job, "queued")
+        if not started:
             logger.warning(
                 "Worker lost reservation for job %s before starting transcription",
                 job.id,
             )
-            self._clear_current_job(job.id)
-            self._quarantine_failed_hot_folder_upload(job)
-            cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
             return True
+        if self._is_cancel_requested(job.id):
+            return self._finish_job(job, "cancelled")
+        result_path = transcriber.transcribe(job, self.results_dir)
+        if self._is_cancel_requested(job.id):
+            return self._finish_job(job, "cancelled")
         try:
-            try:
-                result_path = transcriber.transcribe(job, self.results_dir)
-            except Exception as exc:
-                if self._is_cancel_requested(job.id):
-                    logger.info("Worker cancelled job %s during transcription", job.id)
-                    self._mark_job_cancelled(job.id)
-                    cleanup_cancelled_job_artifacts(
-                        job,
-                        uploads_dir=self.uploads_dir,
-                        results_dir=self.results_dir,
-                        hot_folder_output_dir=self._hot_folder_output_dir(),
-                    )
-                    return True
-                logger.exception("Worker failed to transcribe job %s", job.id)
-                mark_job_failed(
-                    self.db_path,
+            maybe_send_telegram(job, result_path)
+        except Exception:
+            logger.exception(
+                "Worker failed to deliver Telegram message for job %s", job.id
+            )
+        if self._is_cancel_requested(job.id):
+            return self._finish_job(job, "cancelled")
+        if job.source_path:
+            output_dir = self._hot_folder_output_dir()
+            if output_dir is not None:
+                export_hot_folder_transcript(
+                    job=job,
+                    result_path=result_path,
+                    output_dir=output_dir,
+                )
+        return self._finish_job(job, "done")
+
+    def _finish_job(
+        self,
+        job: JobRecord,
+        status: Literal["queued", "done", "failed", "cancelled"],
+        *,
+        error_message: str | None = None,
+    ) -> bool:
+        self._pending_transition = _PendingJobTransition(
+            job, status, _now_utc(), error_message
+        )
+        with self._state_lock:
+            self._current_transcriber = None
+        return self._commit_pending_transition()
+
+    def _commit_pending_transition(self) -> bool:
+        pending = self._pending_transition
+        assert pending is not None
+        job = pending.job
+        try:
+            changed = _retry_sqlite_busy(self._persist_pending_transition, pending)
+        except (sqlite3.Error, OSError) as exc:
+            pending.attempts += 1
+            if pending.attempts == 1 or pending.attempts % 60 == 0:
+                logger.warning(
+                    "Worker could not persist job %s as %s; retaining it for retry: %s",
                     job.id,
-                    completed_at=_now_utc(),
-                    error_message=_truncate_error(str(exc) or exc.__class__.__name__),
+                    pending.status,
+                    exc,
                 )
-                self._quarantine_failed_hot_folder_upload(job)
+            return False
+        try:
+            if changed and pending.status == "cancelled":
+                cleanup_cancelled_job_artifacts(
+                    job,
+                    uploads_dir=self.uploads_dir,
+                    results_dir=self.results_dir,
+                    hot_folder_output_dir=self._hot_folder_output_dir(),
+                )
+            elif changed and pending.status in {"done", "failed"}:
+                if pending.status == "failed":
+                    self._quarantine_failed_hot_folder_upload(job)
                 cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
-                return True
-            if self._is_cancel_requested(job.id):
-                logger.info("Worker cancelled job %s after transcription", job.id)
-                self._mark_job_cancelled(job.id)
-                cleanup_cancelled_job_artifacts(
-                    job,
-                    uploads_dir=self.uploads_dir,
-                    results_dir=self.results_dir,
-                    hot_folder_output_dir=self._hot_folder_output_dir(),
-                )
-                return True
-            try:
-                maybe_send_telegram(job, result_path)
-            except Exception:
-                logger.exception(
-                    "Worker failed to deliver Telegram message for job %s", job.id
-                )
-            if self._is_cancel_requested(job.id):
-                logger.info("Worker cancelled job %s before export", job.id)
-                self._mark_job_cancelled(job.id)
-                cleanup_cancelled_job_artifacts(
-                    job,
-                    uploads_dir=self.uploads_dir,
-                    results_dir=self.results_dir,
-                    hot_folder_output_dir=self._hot_folder_output_dir(),
-                )
-                return True
-            if job.source_path:
-                output_dir = resolve_hot_folder_output_dir(
-                    base_dir=self.base_dir,
-                    env=self.env,
-                )
-                if output_dir is not None:
-                    export_hot_folder_transcript(
-                        job=job,
-                        result_path=result_path,
-                        output_dir=output_dir,
-                    )
-            if self._is_cancel_requested(job.id):
-                logger.info("Worker cancelled job %s before completion", job.id)
-                self._mark_job_cancelled(job.id)
-                cleanup_cancelled_job_artifacts(
-                    job,
-                    uploads_dir=self.uploads_dir,
-                    results_dir=self.results_dir,
-                    hot_folder_output_dir=self._hot_folder_output_dir(),
-                )
-                return True
-            _retry_sqlite_busy(
-                mark_job_done,
+        finally:
+            self._pending_transition = None
+            self._clear_current_job(job.id)
+        return True
+
+    def _persist_pending_transition(self, pending: _PendingJobTransition) -> bool:
+        job = pending.job
+        if self._is_cancel_requested(job.id):
+            pending.status = "cancelled"
+        if pending.status == "queued":
+            return requeue_reserved_job(self.db_path, job.id)
+        if pending.status == "cancelled":
+            return cancel_running_job(self.db_path, job.id)
+        if pending.status == "failed":
+            return mark_job_failed(
                 self.db_path,
                 job.id,
-                completed_at=_now_utc(),
+                completed_at=pending.completed_at,
+                error_message=pending.error_message,
             )
-            cleanup_upload_path(job.upload_path, self.uploads_dir, job.id)
-            return True
-        finally:
-            self._clear_current_job(job.id)
+        return mark_job_done(self.db_path, job.id, completed_at=pending.completed_at)
 
-    def _set_current_job(self, job, transcriber: Transcriber) -> None:
+    def _set_current_job(self, job, transcriber: Transcriber | None) -> None:
         with self._state_lock:
             self._current_job_id = job.id
             self._current_job_filename = job.filename
@@ -323,15 +367,6 @@ class Worker:
     def _is_cancel_requested(self, job_id: str) -> bool:
         with self._state_lock:
             return self._current_job_id == job_id and self._cancel_requested
-
-    def _mark_job_cancelled(self, job_id: str) -> None:
-        update_job_status(
-            self.db_path,
-            job_id,
-            "cancelled",
-            completed_at=_now_utc(),
-            error_message="",
-        )
 
 
 def start_worker(
