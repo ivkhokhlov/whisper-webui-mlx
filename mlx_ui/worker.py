@@ -21,6 +21,7 @@ from mlx_ui.db import (
     requeue_reserved_job,
 )
 from mlx_ui.engine_registry import create_transcriber
+from mlx_ui.media_duration import probe_audio_duration
 from mlx_ui.hot_folder import (
     export_hot_folder_transcript,
     quarantine_failed_hot_folder_upload,
@@ -268,6 +269,7 @@ class Worker:
                     result_path=result_path,
                     output_dir=output_dir,
                 )
+        job.audio_duration_seconds = probe_audio_duration(Path(job.upload_path))
         return self._finish_job(job, "done")
 
     def _finish_job(
@@ -332,7 +334,12 @@ class Worker:
                 completed_at=pending.completed_at,
                 error_message=pending.error_message,
             )
-        return mark_job_done(self.db_path, job.id, completed_at=pending.completed_at)
+        return mark_job_done(
+            self.db_path,
+            job.id,
+            completed_at=pending.completed_at,
+            audio_duration_seconds=job.audio_duration_seconds,
+        )
 
     def _set_current_job(self, job, transcriber: Transcriber | None) -> None:
         with self._state_lock:

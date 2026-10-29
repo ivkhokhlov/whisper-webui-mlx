@@ -197,6 +197,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - The Queue intake area now scales with workload: it stays prominent when idle
   and collapses into a tighter banner once jobs are queued or running, giving
   the worker and queue list more vertical priority without removing drag/drop.
+- Completed History cards show the original audio duration beside completion
+  and explicitly labelled processing time, without opening Details. Duration is
+  measured locally from the source media before upload cleanup and retained in
+  SQLite even after transcript files expire. Older jobs without recorded duration
+  omit this value; metadata probing failures never fail a completed transcript.
 - Compact History view with filename, one clear status marker, one primary row
   action, and quieter toolbar controls, while output formats and metadata move
   behind overflow actions or details.

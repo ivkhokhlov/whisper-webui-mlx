@@ -562,6 +562,11 @@
       status === "failed" && job.error_message ? summarizeError(job.error_message, 96) : "";
     const isOpen = openJobs ? openJobs.has(job.id) : false;
     const isMenuOpen = openMenus ? openMenus.has(job.id) : false;
+    const audioDuration = job.audio_duration_seconds;
+    const audioMeta =
+      typeof audioDuration === "number" && Number.isFinite(audioDuration) && audioDuration > 0 && app.time
+        ? `<span class="history-audio-duration">Audio ${app.time.formatDuration(audioDuration * 1000)}</span>`
+        : "";
     const timeMeta = `
       <div
         class="history-time"
@@ -615,6 +620,8 @@
             <div class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</div>
           </div>
           <div class="history-subline">
+            ${audioMeta}
+            ${audioMeta ? '<span class="history-summary-separator" aria-hidden="true">·</span>' : ""}
             ${timeMeta}
             ${errorSummary}
           </div>

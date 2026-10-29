@@ -43,6 +43,7 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
         assert "source_path" in columns
         assert "source_relpath" in columns
         assert "client" in columns
+        assert "audio_duration_seconds" in columns
         assert "client_job_id" in columns
         row = connection.execute(
             """
@@ -77,6 +78,7 @@ def test_init_db_adds_missing_columns(tmp_path: Path) -> None:
     assert jobs[0].effective_implementation_id is None
     assert jobs[0].client is None
     assert jobs[0].client_job_id is None
+    assert jobs[0].audio_duration_seconds is None
 
 
 def test_init_db_backfills_effective_implementation_id_from_legacy_backend(

@@ -143,7 +143,7 @@
     ) {
       const duration = calculateDuration(startedAt || createdAt, completedAt);
       if (duration) {
-        text += ` · ${duration}`;
+        text += ` · Processing ${duration}`;
       }
     }
     return { text, title: absolute };

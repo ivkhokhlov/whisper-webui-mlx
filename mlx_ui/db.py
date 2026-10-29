@@ -29,6 +29,7 @@ class JobRecord:
     source_relpath: str | None = None
     client: str | None = None
     client_job_id: str | None = None
+    audio_duration_seconds: float | None = None
 
 
 SCHEMA = """
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     source_path TEXT,
     source_relpath TEXT,
     client TEXT,
-    client_job_id TEXT
+    client_job_id TEXT,
+    audio_duration_seconds REAL
 );
 """
 
@@ -138,6 +140,8 @@ def _migrate_schema(connection: sqlite3.Connection) -> None:
         """,
         (AUTO_LANGUAGE, LEGACY_AUTO_LANGUAGE),
     )
+    if not _table_has_column(connection, "jobs", "audio_duration_seconds"):
+        connection.execute("ALTER TABLE jobs ADD COLUMN audio_duration_seconds REAL")
     _backfill_effective_implementation_ids(connection)
     _backfill_queue_positions(connection)
 
@@ -263,9 +267,10 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job.id,
@@ -285,6 +290,7 @@ def insert_job(db_path: Path, job: JobRecord) -> None:
                 job.source_relpath,
                 job.client,
                 job.client_job_id,
+                job.audio_duration_seconds,
             ),
         )
         connection.commit()
@@ -311,7 +317,8 @@ def list_jobs(db_path: Path) -> list[JobRecord]:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             ORDER BY
                 CASE
@@ -355,7 +362,8 @@ def list_active_jobs(db_path: Path) -> list[JobRecord]:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE status IN ('queued', 'running', 'reserved')
             ORDER BY
@@ -391,7 +399,8 @@ def list_recent_history_jobs(db_path: Path, *, limit: int) -> list[JobRecord]:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE status IN ('done', 'failed', 'cancelled')
             ORDER BY COALESCE(completed_at, created_at) DESC, id DESC
@@ -477,7 +486,8 @@ def list_history_page(
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE {where_sql}
             ORDER BY {order_sql}
@@ -515,7 +525,8 @@ def find_job_by_client_job_id(
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE client = ? AND client_job_id = ?
             ORDER BY created_at DESC, id DESC
@@ -549,7 +560,8 @@ def get_job(db_path: Path, job_id: str) -> JobRecord | None:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE id = ?
             """,
@@ -607,7 +619,8 @@ def list_history_jobs(db_path: Path) -> list[JobRecord]:
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE status IN ('done', 'failed', 'cancelled')
             """
@@ -813,6 +826,7 @@ def mark_job_done(
     job_id: str,
     *,
     completed_at: str | None = None,
+    audio_duration_seconds: float | None = None,
 ) -> bool:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     completed_at_value = completed_at or _now_utc()
@@ -821,10 +835,11 @@ def mark_job_done(
             """
             UPDATE jobs
             SET status = 'done',
-                completed_at = ?
+                completed_at = ?,
+                audio_duration_seconds = ?
             WHERE id = ? AND status = 'running'
             """,
-            (completed_at_value, job_id),
+            (completed_at_value, audio_duration_seconds, job_id),
         )
         connection.commit()
     return cursor.rowcount > 0
@@ -891,7 +906,8 @@ def claim_next_job(
                 source_path,
                 source_relpath,
                 client,
-                client_job_id
+                client_job_id,
+                audio_duration_seconds
             FROM jobs
             WHERE status = 'queued'
             ORDER BY
