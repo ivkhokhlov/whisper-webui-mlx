@@ -144,6 +144,9 @@
     if (!listEl || !placeholderEl) {
       return;
     }
+    const focusedMenuJob = listEl
+      .querySelector(".job-menu > summary:focus")
+      ?.closest(".history-row")?.dataset.jobId;
     if (!jobs || jobs.length === 0) {
       listEl.innerHTML = "";
       const total = historyPage ? Number(historyPage.total || 0) : 0;
@@ -153,6 +156,9 @@
         app.historyView.apply({ persist: false, loaded: historyLoaded, totalCount: total });
       }
       updateHistoryPagination();
+      if (focusedMenuJob) {
+        app.modals?.focusHistoryMenu?.(focusedMenuJob);
+      }
       return;
     }
     const openJobs = new Set();
@@ -189,6 +195,9 @@
       app.historyView.apply({ persist: false, loaded: historyLoaded, totalCount: total });
     }
     updateHistoryPagination();
+    if (focusedMenuJob) {
+      app.modals?.focusHistoryMenu?.(focusedMenuJob);
+    }
   }
 
   function currentHistoryFilters() {

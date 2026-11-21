@@ -20,6 +20,8 @@
     pickFolderButton,
   } = app.dom || {};
 
+  const uploadLanguage = uploadForm?.elements.namedItem("language");
+  let languageOverridden = false;
   const pendingItems = [];
   let skippedCount = 0;
   let showAllFiles = false;
@@ -435,6 +437,10 @@
       renderFileList();
       setQueueBusy(queueBusy);
 
+      uploadLanguage?.addEventListener("change", () => {
+        languageOverridden = true;
+      });
+
       if (pickFilesButton) {
         pickFilesButton.addEventListener("click", () => fileInput.click());
       }
@@ -589,11 +595,19 @@
           pendingItems.forEach((item) => {
             formData.append("files", item.file, item.displayPath || item.file.name);
           });
+          if (languageOverridden && uploadLanguage?.value) {
+            formData.set("language", uploadLanguage.value);
+          }
           const response = await fetch("/upload", {
             method: "POST",
             body: formData,
           });
           if (response.ok) {
+            const destination = new URL(response.url, window.location.href);
+            if (response.redirected && destination.searchParams.has("queue_error")) {
+              window.location.assign(destination.pathname + destination.search);
+              return;
+            }
             const count = pendingItems.length;
             const label = count === 1 ? "file" : "files";
             if (app.toasts) {
@@ -636,6 +650,11 @@
     app.uploads.__initialized = true;
     app.uploads.guideToUpload = guideToUpload;
     app.uploads.setQueueBusy = setQueueBusy;
+    app.uploads.setDefaultLanguage = (settings) => {
+      if (settings && uploadLanguage instanceof HTMLSelectElement && !languageOverridden) {
+        uploadLanguage.value = settings.engine === "parakeet_tdt_v3" ? "auto" : settings.default_language;
+      }
+    };
   }
 
   app.uploads = app.uploads || {};

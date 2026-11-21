@@ -146,7 +146,10 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   the output folder's `.failed/` directory so bad files do not loop forever. In
   repo/dev mode, hot folder defaults to `./input` → `./output` and is enabled
   automatically when both folders exist.
-- Batch-level language selector plus a persisted default language setting.
+- Queue uploads use the current default language until a user chooses a
+  language for the batch. Saving a new default updates an untouched choice
+  without reloading the page. Parakeet TDT v3 shows an error for an unsupported
+  language before any files are added to the queue.
 - Requested/effective engine tracking per job, exposed in the queue/history
   lists and preview metadata.
 - Compact utility header with a short operational sentence plus a worker status
@@ -216,6 +219,9 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
   lists, and failure logs.
 - Lazy-loaded transcript preview snippets to avoid loading full results for
   every job.
+- Closing a transcript preview returns keyboard focus to More actions for the
+  same result even if History refreshes. If the result is gone, focus moves to
+  History search.
 - History action menus (⋯) dismiss on outside click for faster triage.
 - Per-item history deletion and bulk “delete all results” controls with
   confirmations, removing stored outputs from disk.
@@ -251,6 +257,11 @@ not depend on a system/Homebrew Python install or the old port-8000 convention.
 - UI copy across Queue, History, Settings, and Live is now shorter and more
   operational, reducing repeated local/beta/history explanations while keeping
   cloud behavior, environment locks, and destructive actions explicit.
+- Status badges and History filter captions use at least 12 px at the
+  default browser text size. Placeholders and status text have stronger
+  contrast. Settings checkbox labels, including Enable hot folder, provide a
+  click area at least 24 px tall and remain operable with Space.
+  [Editable screen map with 30 synthetic states](design/whisper-webui-mlx.pen)
 - Settings -> About reflects the app version from `pyproject.toml`, so the UI
   stays in sync with the current local build/version bump.
 - Runtime metadata reports which local Whisper and Parakeet models appear to be

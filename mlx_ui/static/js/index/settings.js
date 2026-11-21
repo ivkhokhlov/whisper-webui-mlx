@@ -565,6 +565,7 @@
 
           hasSavedOnce = true;
           updateSettingsSourcePills(payload);
+          app.uploads?.setDefaultLanguage?.(payload?.settings);
           if (payload && payload.cohere_snapshot) {
             updateCohereSnapshot(payload.cohere_snapshot);
           }
