@@ -6,6 +6,7 @@
 
   const {
     historyList,
+    historySearch,
     previewModal,
     previewModalTitle,
     previewModalMeta,
@@ -258,15 +259,11 @@
     }
   }
 
-  function openPreviewModal() {
-    if (!previewModal) {
+  function openPreviewModal(trigger, jobId) {
+    if (!previewModal || !previewModal.hidden) {
       return;
     }
-    previewModalReturnFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (!previewModal.hidden) {
-      return;
-    }
+    previewModalReturnFocus = { trigger, jobId };
     previewModal.hidden = false;
     document.body.classList.add("is-modal-open");
     document.addEventListener("keydown", onPreviewModalKeyDown);
@@ -274,6 +271,13 @@
     if (closeButton instanceof HTMLElement) {
       closeButton.focus();
     }
+  }
+
+  function focusHistoryMenu(jobId) {
+    const summary = historyList?.querySelector(
+      `.history-row[data-job-id="${CSS.escape(jobId)}"] .job-menu > summary`
+    );
+    (summary || historySearch)?.focus();
   }
 
   function closePreviewModal() {
@@ -296,10 +300,16 @@
       previewModalMeta.textContent = `Preview snippet (up to ${PREVIEW_MODAL_CHARS} characters). Use Open or Download for the full file.`;
     }
     setPreviewModalLinks("", "");
-    if (previewModalReturnFocus && document.contains(previewModalReturnFocus)) {
-      previewModalReturnFocus.focus();
-    }
+    const returnFocus = previewModalReturnFocus;
     previewModalReturnFocus = null;
+    if (returnFocus) {
+      const { trigger, jobId } = returnFocus;
+      if (trigger.isConnected) {
+        trigger.focus();
+      } else {
+        focusHistoryMenu(jobId);
+      }
+    }
   }
 
   let confirmModalResolve = null;
@@ -443,7 +453,8 @@
       setPreviewModalLinks("", "");
     }
 
-    openPreviewModal();
+    const menuTrigger = actionEl.closest(".job-menu")?.querySelector("summary");
+    openPreviewModal(menuTrigger || actionEl, jobId);
 
     try {
       const payload = await fetchPreviewSnippet(jobId, previewUrl);
@@ -718,6 +729,7 @@
       openConfirmModal,
       openPreviewForHistoryRow,
       closePreviewModal,
+      focusHistoryMenu,
       copyPreviewForJob,
       wireHistoryDetails,
       wireHistoryMenus,

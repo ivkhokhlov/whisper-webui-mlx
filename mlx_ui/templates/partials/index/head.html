@@ -19,7 +19,7 @@
         --shadow-accent: 0 8px 18px rgba(185, 82, 44, 0.16);
         --status-success-bg: #e7f4ec;
         --status-success-border: #c9e4d4;
-        --status-success-text: #2f7d32;
+        --status-success-text: #2c742f;
         --status-success-surface: rgba(231, 244, 236, 0.8);
         --status-success-surface-soft: rgba(231, 244, 236, 0.48);
         --status-active-bg: var(--status-success-bg);
@@ -190,7 +190,7 @@
       }
 
       .status-label {
-        font-size: 0.68rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.12em;
         color: var(--accent-strong);
@@ -591,7 +591,7 @@
       }
 
       .settings-meta-label {
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -630,7 +630,7 @@
       }
 
       .settings-path-name {
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -741,7 +741,7 @@
       }
 
       .settings-save-title {
-        font-size: 0.74rem;
+        font-size: 0.75rem;
         font-weight: 800;
         letter-spacing: 0.1em;
         text-transform: uppercase;
@@ -886,6 +886,12 @@
         box-shadow: 0 0 0 3px rgba(244, 210, 210, 0.6);
       }
 
+      .settings-input::placeholder,
+      .history-input::placeholder {
+        color: var(--ink-muted);
+        opacity: 1;
+      }
+
       .settings-input:focus {
         outline: 2px solid var(--accent-strong);
         outline-offset: 1px;
@@ -895,6 +901,7 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        min-block-size: 24px;
         font-weight: 600;
       }
 
@@ -902,6 +909,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        min-block-size: 24px;
         font-size: 0.85rem;
         color: var(--ink-muted);
       }
@@ -1258,7 +1266,6 @@
       .dropzone.is-compact .dropzone-helper {
         grid-column: 2;
         grid-row: 2;
-        font-size: 0.72rem;
       }
 
       .file-summary {
@@ -1811,7 +1818,7 @@
       }
 
       .history-tool-label {
-        font-size: 0.63rem;
+        font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -1962,7 +1969,7 @@
       }
 
       .history-summary-separator {
-        color: rgba(112, 91, 79, 0.58);
+        color: #705b4f;
         flex: 0 0 auto;
       }
 
@@ -1972,7 +1979,7 @@
         border-radius: 999px;
         border: 1px solid transparent;
         padding: 2px 7px;
-        font-size: 0.62rem;
+        font-size: 0.75rem;
         font-weight: 700;
         letter-spacing: 0.09em;
         text-transform: uppercase;
@@ -2263,11 +2270,11 @@
       }
 
       .detail-label {
-        font-size: 0.68rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.1em;
         font-weight: 700;
-        color: rgba(112, 91, 79, 0.82);
+        color: #705b4f;
       }
 
       .detail-line {
@@ -2480,7 +2487,7 @@
       }
 
       .job-summary-separator {
-        color: rgba(112, 91, 79, 0.58);
+        color: #705b4f;
         flex: 0 0 auto;
       }
 
@@ -2731,7 +2738,7 @@
       .empty-kicker {
         text-transform: uppercase;
         letter-spacing: 0.16em;
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         color: var(--accent-strong);
         font-weight: 700;
       }
@@ -2927,7 +2934,7 @@
       .modal__kicker {
         text-transform: uppercase;
         letter-spacing: 0.16em;
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         color: var(--accent-strong);
         font-weight: 800;
       }
@@ -3072,7 +3079,7 @@
       }
 
       .toast__title {
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 0.14em;
         font-weight: 700;
